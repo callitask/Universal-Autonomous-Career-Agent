@@ -165,30 +165,30 @@ class ChatbotResolver:
 
     def detect_ui_control(self) -> str:
         """
-        Classifies the active interactive UI input mechanism.
-        Safeguarded against False Positives (like matching .chipMsg branding logo).
+        Classifies the active interactive UI input mechanism in the chatbot footer/drawer.
+        Returns: 'CONTENTEDITABLE', 'RADIO_CHIP', 'DROPDOWN', 'FILE_UPLOAD', or 'UNKNOWN'.
+        Strictly excludes branding containers like '.chipMsg'.
         """
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
         
+        # 1. File Upload Input
         file_input = drawer.locator("input[type='file'], input.chatbot_Uploader, input[id*='Uploader']")
         if file_input.count() > 0 and file_input.first.is_visible():
             return "FILE_UPLOAD"
 
+        # 2. Free-text Contenteditable Textarea (Top priority if visible in footer)
         textarea = drawer.locator(
-            "input[placeholder*='message'], "
-            "input[placeholder*='Type'], "
-            "input.chatbot_userInput, "
-            "input:not([type='file']):not([type='radio']):not([type='checkbox']), "
-            "textarea, "
             "div.textArea[contenteditable='true'], "
             "div[contenteditable='true'][id^='userInput_'], "
             ".textAreaWrapper div[contenteditable='true'], "
             "div.chatbot_userInput, "
-            "div[contenteditable='true']"
+            "input[type='text'], "
+            "textarea"
         )
         if textarea.count() > 0 and textarea.first.is_visible():
             return "CONTENTEDITABLE"
 
+        # 3. Legitimate Radio Chips / Options (Strictly excluding .chipMsg logo container)
         chips = drawer.locator(
             "div.radioItem, "
             "div.choiceChip, "
@@ -201,17 +201,23 @@ class ChatbotResolver:
         if chips.count() > 0 and chips.first.is_visible():
             return "RADIO_CHIP"
 
+        # 4. Dropdown Select Menu
         select_dropdown = drawer.locator("select, div.custom-select, div[class*='dropdown']")
         if select_dropdown.count() > 0 and select_dropdown.first.is_visible():
             return "DROPDOWN"
 
-        body_textarea = self.page.locator("input[placeholder*='message'], div.textArea[contenteditable='true'], div[id^='userInput_']").first
+        # Fallback Check on Entire Page
+        body_textarea = self.page.locator("div.textArea[contenteditable='true'], div[id^='userInput_']").first
         if body_textarea.count() > 0 and body_textarea.is_visible():
             return "CONTENTEDITABLE"
 
         return "UNKNOWN"
 
     def resolve_answer(self, question: str, options: Optional[List[str]] = None, control_type: str = "CONTENTEDITABLE") -> str:
+        """
+        Grounded resolution pipeline utilizing the Dual-Brain AI Client.
+        Directly enforces Directive 2.5: Zero Hardcoded Regex Intercepts.
+        """
         q_clean = question.strip()
         log_step("AI BRAIN", f"Grounded Resume Analysis -> Evaluating question against candidate resume...")
         ai_response = self.ai.answer_screening_question(
@@ -226,24 +232,25 @@ class ChatbotResolver:
         return cleaned_ans
 
     def execute_contenteditable_input(self, answer: str) -> bool:
+        """Injects text into contenteditable container and commits submission."""
         selectors = [
-            "input[placeholder*='message']",
-            "input[placeholder*='Type']",
-            "input.chatbot_userInput",
-            ".chatbot_DrawerContentWrapper input[type='text']",
-            ".chatbot_DrawerContentWrapper input:not([type='file']):not([type='radio']):not([type='checkbox'])",
             "div.textArea[contenteditable='true']",
             "div[contenteditable='true'][id^='userInput_']",
+            "div[contenteditable='true']",
             ".textAreaWrapper div[contenteditable='true']",
             "div.chatbot_userInput",
-            "div[contenteditable='true']",
+            "input[type='text']",
             "textarea"
         ]
-        
         textarea = None
-        drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
-        
-        if drawer.count() > 0:
+        for sel in selectors:
+            loc = self.page.locator(sel).first
+            if loc.count() > 0 and loc.is_visible():
+                textarea = loc
+                break
+
+        if not textarea:
+            drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
             for sel in selectors:
                 loc = drawer.locator(sel).first
                 if loc.count() > 0 and loc.is_visible():
@@ -251,17 +258,10 @@ class ChatbotResolver:
                     break
 
         if not textarea:
-            for sel in selectors:
-                loc = self.page.locator(sel).first
-                if loc.count() > 0 and loc.is_visible():
-                    textarea = loc
-                    break
-
-        if not textarea:
-            log_step("WARNING", "Could not locate input/textarea container in chatbot drawer.")
+            log_step("WARNING", "Could not locate contenteditable textarea in chatbot drawer.")
             return False
 
-        log_step("CHATBOT", f"Targeting interactive input container in drawer...")
+        log_step("CHATBOT", f"Targeting contenteditable container: div.textArea[contenteditable='true']")
         
         self.scroll_drawer_to_bottom()
         textarea.click(force=True)
@@ -271,50 +271,36 @@ class ChatbotResolver:
         self.page.keyboard.press(mod_key)
         self.page.keyboard.press("Backspace")
         self.page.wait_for_timeout(100)
+
         self.page.keyboard.type(str(answer), delay=30)
         self.page.wait_for_timeout(200)
 
-        # Robust React Synthetic Event Dispatcher
         self.page.evaluate("""(ans) => {
-            const inputs = document.querySelectorAll(
-                '.chatbot_DrawerContentWrapper input:not([type="file"]):not([type="radio"]):not([type="checkbox"]), input[placeholder*="message"], input[placeholder*="Type"], div.textArea[contenteditable="true"], div[contenteditable="true"], div[id^="userInput_"], textarea'
-            );
-            for (const el of inputs) {
-                if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-                    el.value = ans;
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                } else if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') {
+            const el = document.querySelector('div.textArea[contenteditable="true"], div[contenteditable="true"], div[id^="userInput_"]');
+            if (el) {
+                if (!el.innerText || el.innerText.trim() === '') {
                     el.innerText = ans;
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
                 }
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
             }
-
-            const sendBtns = document.querySelectorAll(
-                '.sendMsgbtn_container .send, div[id^="sendMsg_"], button:has-text("Save"), button:has-text("Submit"), button:has-text("Next")'
-            );
-            for (const btn of sendBtns) {
-                btn.classList.remove('disabled');
-                btn.removeAttribute('disabled');
+            const sendDiv = document.querySelector('.sendMsgbtn_container .send, div[id^="sendMsg_"]');
+            if (sendDiv) {
+                sendDiv.classList.remove('disabled');
             }
         }""", str(answer))
-
         self.page.wait_for_timeout(300)
 
         send_btn_selectors = [
-            ".chatbot_DrawerContentWrapper button:has-text('Save')",
-            "button:has-text('Save')",
             ".sendMsgbtn_container .sendMsg",
             "div[id^='sendMsgbtn_container'] .sendMsg",
             "div[id^='sendMsg_'] .sendMsg",
             ".sendMsgbtn_container div.send:not(.disabled) .sendMsg",
             ".sendMsg",
             "span.chatBot-send",
-            "button:has-text('Send')",
-            "button:has-text('Submit')"
+            "button:has-text('Save')",
+            "button:has-text('Send')"
         ]
-
         clicked = False
         for btn_sel in send_btn_selectors:
             btn_loc = self.page.locator(btn_sel).first
@@ -325,7 +311,7 @@ class ChatbotResolver:
                 break
 
         if not clicked:
-            log_step("CHATBOT", "Save button selector click unconfirmed; pressing Enter key")
+            log_step("CHATBOT", "Save button not clicked via selector; pressing Enter key")
             self.page.keyboard.press("Enter")
 
         self.page.wait_for_timeout(1000)
