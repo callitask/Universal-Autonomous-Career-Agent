@@ -231,7 +231,7 @@ class ChatbotResolver:
             "input[placeholder*='Type']",
             "input.chatbot_userInput",
             ".chatbot_DrawerContentWrapper input[type='text']",
-            ".chatbot_DrawerContentWrapper input",
+            ".chatbot_DrawerContentWrapper input:not([type='file']):not([type='radio']):not([type='checkbox'])",
             "div.textArea[contenteditable='true']",
             "div[contenteditable='true'][id^='userInput_']",
             ".textAreaWrapper div[contenteditable='true']",
@@ -277,7 +277,7 @@ class ChatbotResolver:
         # Robust React Synthetic Event Dispatcher
         self.page.evaluate("""(ans) => {
             const inputs = document.querySelectorAll(
-                '.chatbot_DrawerContentWrapper input, input[placeholder*="message"], input[placeholder*="Type"], div.textArea[contenteditable="true"], div[contenteditable="true"], div[id^="userInput_"], textarea'
+                '.chatbot_DrawerContentWrapper input:not([type="file"]):not([type="radio"]):not([type="checkbox"]), input[placeholder*="message"], input[placeholder*="Type"], div.textArea[contenteditable="true"], div[contenteditable="true"], div[id^="userInput_"], textarea'
             );
             for (const el of inputs) {
                 if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
@@ -292,7 +292,7 @@ class ChatbotResolver:
             }
 
             const sendBtns = document.querySelectorAll(
-                '.sendMsgbtn_container .send, div[id^="sendMsg_"], button:has-text("Save"), button'
+                '.sendMsgbtn_container .send, div[id^="sendMsg_"], button:has-text("Save"), button:has-text("Submit"), button:has-text("Next")'
             );
             for (const btn of sendBtns) {
                 btn.classList.remove('disabled');
