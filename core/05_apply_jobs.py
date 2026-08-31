@@ -2,8 +2,8 @@
 ================================================================================
 UNIVERSAL AUTONOMOUS CAREER AGENT: APPLICATION ENGINE
 File: core/05_apply_jobs.py
-Description: Full-lifecycle autonomous job application executor supporting 
-             1-click apply, external redirect gating, and reverse-engineered 
+Description: Full-lifecycle autonomous job application executor supporting
+             1-click apply, external redirect gating, and reverse-engineered
              Naukri chatbot drawer automation with real-time telemetry streaming.
 ================================================================================
 """
@@ -40,11 +40,13 @@ def log_section(title: str) -> None:
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {title}")
     print(f"{'=' * 80}")
 
+
 def log_step(category: str, message: str) -> None:
     print(f"[{category.upper():<14}] {message}")
 
+
 def log_substep(category: str, message: str) -> None:
-    print(f"  └─ [{category}] {message}")
+    print(f"    [{category}] {message}")
 
 
 class ChatbotResolver:
@@ -105,7 +107,8 @@ class ChatbotResolver:
             "div[class*='chatbot_MessageContainer'] li.botItem, "
             "div[id*='Messages'] li.botItem, "
             ".chatbot_DrawerContentWrapper li.botItem, "
-            "li.botItem.chatbot_ListItem"
+            "li.botItem.chatbot_ListItem, "
+            "li.botItem"
         )
         count = bot_items.count()
         if count == 0:
@@ -172,17 +175,20 @@ class ChatbotResolver:
             return "FILE_UPLOAD"
 
         textarea = drawer.locator(
+            "input[placeholder*='message'], "
+            "input[placeholder*='Type'], "
+            "input.chatbot_userInput, "
+            "input:not([type='file']):not([type='radio']):not([type='checkbox']), "
+            "textarea, "
             "div.textArea[contenteditable='true'], "
             "div[contenteditable='true'][id^='userInput_'], "
             ".textAreaWrapper div[contenteditable='true'], "
             "div.chatbot_userInput, "
-            "input[type='text'], "
-            "textarea"
+            "div[contenteditable='true']"
         )
         if textarea.count() > 0 and textarea.first.is_visible():
             return "CONTENTEDITABLE"
 
-        # Explicitly avoid div[class*='chip'] which accidentally matches .chipMsg logo.
         chips = drawer.locator(
             "div.radioItem, "
             "div.choiceChip, "
@@ -199,7 +205,7 @@ class ChatbotResolver:
         if select_dropdown.count() > 0 and select_dropdown.first.is_visible():
             return "DROPDOWN"
 
-        body_textarea = self.page.locator("div.textArea[contenteditable='true'], div[id^='userInput_']").first
+        body_textarea = self.page.locator("input[placeholder*='message'], div.textArea[contenteditable='true'], div[id^='userInput_']").first
         if body_textarea.count() > 0 and body_textarea.is_visible():
             return "CONTENTEDITABLE"
 
@@ -221,23 +227,23 @@ class ChatbotResolver:
 
     def execute_contenteditable_input(self, answer: str) -> bool:
         selectors = [
+            "input[placeholder*='message']",
+            "input[placeholder*='Type']",
+            "input.chatbot_userInput",
+            ".chatbot_DrawerContentWrapper input[type='text']",
+            ".chatbot_DrawerContentWrapper input",
             "div.textArea[contenteditable='true']",
             "div[contenteditable='true'][id^='userInput_']",
-            "div[contenteditable='true']",
             ".textAreaWrapper div[contenteditable='true']",
             "div.chatbot_userInput",
-            "input[type='text']",
+            "div[contenteditable='true']",
             "textarea"
         ]
+        
         textarea = None
-        for sel in selectors:
-            loc = self.page.locator(sel).first
-            if loc.count() > 0 and loc.is_visible():
-                textarea = loc
-                break
-
-        if not textarea:
-            drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
+        drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
+        
+        if drawer.count() > 0:
             for sel in selectors:
                 loc = drawer.locator(sel).first
                 if loc.count() > 0 and loc.is_visible():
@@ -245,10 +251,17 @@ class ChatbotResolver:
                     break
 
         if not textarea:
-            log_step("WARNING", "Could not locate contenteditable textarea in chatbot drawer.")
+            for sel in selectors:
+                loc = self.page.locator(sel).first
+                if loc.count() > 0 and loc.is_visible():
+                    textarea = loc
+                    break
+
+        if not textarea:
+            log_step("WARNING", "Could not locate input/textarea container in chatbot drawer.")
             return False
 
-        log_step("CHATBOT", f"Targeting contenteditable container: div.textArea[contenteditable='true']")
+        log_step("CHATBOT", f"Targeting interactive input container in drawer...")
         
         self.scroll_drawer_to_bottom()
         textarea.click(force=True)
@@ -258,36 +271,50 @@ class ChatbotResolver:
         self.page.keyboard.press(mod_key)
         self.page.keyboard.press("Backspace")
         self.page.wait_for_timeout(100)
-
         self.page.keyboard.type(str(answer), delay=30)
         self.page.wait_for_timeout(200)
 
+        # Robust React Synthetic Event Dispatcher
         self.page.evaluate("""(ans) => {
-            const el = document.querySelector('div.textArea[contenteditable="true"], div[contenteditable="true"], div[id^="userInput_"]');
-            if (el) {
-                if (!el.innerText || el.innerText.trim() === '') {
+            const inputs = document.querySelectorAll(
+                '.chatbot_DrawerContentWrapper input, input[placeholder*="message"], input[placeholder*="Type"], div.textArea[contenteditable="true"], div[contenteditable="true"], div[id^="userInput_"], textarea'
+            );
+            for (const el of inputs) {
+                if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                    el.value = ans;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                } else if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') {
                     el.innerText = ans;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
                 }
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            const sendDiv = document.querySelector('.sendMsgbtn_container .send, div[id^="sendMsg_"]');
-            if (sendDiv) {
-                sendDiv.classList.remove('disabled');
+
+            const sendBtns = document.querySelectorAll(
+                '.sendMsgbtn_container .send, div[id^="sendMsg_"], button:has-text("Save"), button'
+            );
+            for (const btn of sendBtns) {
+                btn.classList.remove('disabled');
+                btn.removeAttribute('disabled');
             }
         }""", str(answer))
+
         self.page.wait_for_timeout(300)
 
         send_btn_selectors = [
+            ".chatbot_DrawerContentWrapper button:has-text('Save')",
+            "button:has-text('Save')",
             ".sendMsgbtn_container .sendMsg",
             "div[id^='sendMsgbtn_container'] .sendMsg",
             "div[id^='sendMsg_'] .sendMsg",
             ".sendMsgbtn_container div.send:not(.disabled) .sendMsg",
             ".sendMsg",
             "span.chatBot-send",
-            "button:has-text('Save')",
-            "button:has-text('Send')"
+            "button:has-text('Send')",
+            "button:has-text('Submit')"
         ]
+
         clicked = False
         for btn_sel in send_btn_selectors:
             btn_loc = self.page.locator(btn_sel).first
@@ -298,7 +325,7 @@ class ChatbotResolver:
                 break
 
         if not clicked:
-            log_step("CHATBOT", "Save button not clicked via selector; pressing Enter key")
+            log_step("CHATBOT", "Save button selector click unconfirmed; pressing Enter key")
             self.page.keyboard.press("Enter")
 
         self.page.wait_for_timeout(1000)
@@ -318,6 +345,7 @@ class ChatbotResolver:
             f"ul.ChoiceList li:has-text('{safe_opt}')",
             f"div.optionItem:has-text('{safe_opt}')"
         ]
+
         chip = None
         for sel in chip_selectors:
             loc = self.page.locator(sel).first
@@ -377,7 +405,7 @@ class ChatbotResolver:
             "application submitted"
         ]
         
-        # We also check the main page body in case the drawer dismissed itself upon success
+        # DOM check in drawer and page body
         page_text = self.page.locator("body").inner_text().lower()
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
         
@@ -483,7 +511,7 @@ class ApplicationEngine:
         
         log_section(f"Processing Application: {company} | {title}")
         log_step("NAVIGATE", f"Opening Job URL: {url}")
-
+        
         try:
             page.bring_to_front()
             page.goto(url, wait_until="domcontentloaded", timeout=45000)
@@ -529,7 +557,7 @@ class ApplicationEngine:
         apply_clicked = False
         for sel in apply_btn_selectors:
             loc = page.locator(sel).first
-            if loc.count() > 0 and loc.is_visible():
+            if loc.count() > 0 and loc.first.is_visible():
                 txt = loc.inner_text().strip()
                 log_step("CLICK", f"Clicking native apply trigger: '{txt}' ({sel})")
                 loc.click(force=True)
@@ -562,7 +590,7 @@ class ApplicationEngine:
         ]
         for s_sel in success_selectors:
             loc = page.locator(s_sel).first
-            if loc.count() > 0 and loc.is_visible():
+            if loc.count() > 0 and loc.first.is_visible():
                 log_step("SUCCESS", f"1-Click Apply confirmed via '{loc.inner_text().strip()}'")
                 return "APPLIED_1CLICK"
 
@@ -570,15 +598,15 @@ class ApplicationEngine:
         return "FAILED"
 
     def _handle_chatbot_loop(self, page, resolver: ChatbotResolver, job: Dict[str, Any]) -> str:
-        max_iterations = 20
+        max_iterations = 25
         iteration = 0
         tailored_pdf = job.get("pdf_path") or job.get("tailored_pdf", "")
-        last_answered_question = None
+        question_attempts: Dict[str, int] = {}
 
         while iteration < max_iterations:
             iteration += 1
             page.wait_for_timeout(1500)
-
+            
             is_done, done_msg = resolver.check_completion_status()
             if is_done:
                 log_step("SUCCESS", f"Application Completed! {done_msg}")
@@ -586,17 +614,27 @@ class ApplicationEngine:
 
             active_q, filtered_greeting = resolver.extract_active_question()
             
-            # Polling lock to prevent answering the same question before DOM updates
-            if not active_q or active_q == last_answered_question:
-                log_step("CHATBOT", f"Iteration {iteration}: Awaiting next recruiter question or completion confirmation...")
+            if not active_q:
+                log_step("CHATBOT", f"Iteration {iteration}: Awaiting recruiter question or completion confirmation...")
                 page.wait_for_timeout(2000)
                 continue
 
-            if filtered_greeting:
+            attempts = question_attempts.get(active_q, 0)
+            if attempts >= 3:
+                log_step("WARNING", f"Max submission attempts reached for question: '{active_q}'. Checking completion...")
+                is_done, _ = resolver.check_completion_status()
+                if is_done:
+                    return "APPLIED_CHATBOT"
+                page.wait_for_timeout(2000)
+                continue
+
+            question_attempts[active_q] = attempts + 1
+
+            if filtered_greeting and attempts == 0:
                 log_step("CHATBOT", f"Filtered Preamble: \"{filtered_greeting}\"")
 
             print(f"\n{'-' * 60}")
-            log_step("CHATBOT QUESTION", f"\"{active_q}\"")
+            log_step("CHATBOT QUESTION", f"\"{active_q}\" (Attempt {attempts + 1})")
             print(f"{'-' * 60}")
 
             control_type = resolver.detect_ui_control()
@@ -607,7 +645,7 @@ class ApplicationEngine:
                 log_step("ACTION", f"Submitting text response: \"{ans}\"")
                 success = resolver.execute_contenteditable_input(ans)
                 if not success:
-                    log_step("WARNING", "Failed typing into contenteditable container.")
+                    log_step("WARNING", "Failed typing into input container.")
 
             elif control_type == "RADIO_CHIP":
                 drawer = page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
@@ -625,7 +663,7 @@ class ApplicationEngine:
                     opt_t = chip_locs.nth(idx).inner_text().strip()
                     if opt_t and opt_t not in options:
                         options.append(opt_t)
-
+                        
                 log_step("CHOICES", f"{options}")
                 best_opt = resolver.resolve_answer(active_q, options=options, control_type="RADIO_CHIP")
                 log_step("ACTION", f"Selecting Option: \"{best_opt}\"")
@@ -645,11 +683,10 @@ class ApplicationEngine:
                     log_step("ACTION", f"Selected Dropdown Value: \"{best_opt}\"")
 
             else:
-                log_step("WARNING", "Unknown control type. Attempting generic contenteditable fallback...")
+                log_step("WARNING", "Unknown control type. Attempting generic input fallback...")
                 ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
                 resolver.execute_contenteditable_input(ans)
 
-            last_answered_question = active_q
             page.wait_for_timeout(2500)
 
         is_done, _ = resolver.check_completion_status()
@@ -669,8 +706,8 @@ class ApplicationEngine:
         
         context = self.browser_mgr.get_context()
         page = self.browser_mgr.new_page()
-
         applied_count = 0
+
         for job in jobs_queue:
             if applied_count >= max_applications:
                 log_step("LIMIT", f"Reached target application batch limit of {max_applications}.")
@@ -678,7 +715,7 @@ class ApplicationEngine:
 
             status = self.apply_single_job(page, job)
             self.stats["total"] += 1
-
+            
             company = job.get("company", "Unknown")
             job_title = job.get("job_title") or job.get("title", "Unknown")
             pdf_path = job.get("pdf_path") or job.get("tailored_pdf", "")
@@ -732,12 +769,12 @@ class ApplicationEngine:
             time.sleep(2.0)
 
         log_section("APPLICATION BATCH EXECUTION SUMMARY")
-        print(f"  • Total Jobs Evaluated:      {self.stats['total']}")
-        print(f"  • Applied (1-Click):         {self.stats['applied_1click']}")
-        print(f"  • Applied (Chatbot Solved):  {self.stats['applied_chatbot']}")
-        print(f"  • External Redirects Saved:  {self.stats['redirect_external']}")
-        print(f"  • Skipped / Already Applied: {self.stats['skipped']}")
-        print(f"  • Failed:                    {self.stats['failed']}")
+        print(f"    Total Jobs Evaluated:      {self.stats['total']}")
+        print(f"    Applied (1-Click):         {self.stats['applied_1click']}")
+        print(f"    Applied (Chatbot Solved):  {self.stats['applied_chatbot']}")
+        print(f"    External Redirects Saved:  {self.stats['redirect_external']}")
+        print(f"    Skipped / Already Applied: {self.stats['skipped']}")
+        print(f"    Failed:                    {self.stats['failed']}")
         print(f"{'=' * 80}\n")
 
 
