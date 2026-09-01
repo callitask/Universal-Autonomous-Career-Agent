@@ -230,12 +230,14 @@ class ChatbotResolver:
     def get_radio_options(self) -> List[str]:
         """
         Executes a deep DOM extraction to locate and return the labels associated 
-        with any visible radio buttons, lists, or choice chips.
+        with any visible radio buttons, lists, or choice chips. Strictly avoids extracting 
+        chatbot conversational text.
         """
         options = self.page.evaluate("""() => {
             const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
             const opts = new Set();
             
+            // Strategy A: Explicit Radio Inputs (New Naukri Structure)
             const radios = drawer.querySelectorAll('input[type="radio"], input[type="checkbox"]');
             if (radios.length > 0) {
                 radios.forEach(r => {
@@ -256,6 +258,7 @@ class ChatbotResolver:
                 });
             }
             
+            // Strategy B: Choice Chips (Legacy Naukri Structure)
             if (opts.size === 0) {
                 const chips = drawer.querySelectorAll('.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"]');
                 chips.forEach(c => {
@@ -337,12 +340,21 @@ class ChatbotResolver:
                     el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
                     el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
                 }
-                const btn = document.querySelector(
-                    '.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .sendMsg, button:has-text("Save")'
-                );
+                
+                // Pure Vanilla JS without Playwright extensions to prevent SyntaxError
+                const btn = document.querySelector('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .sendMsg');
                 if (btn) {
                     btn.classList.remove('disabled');
                     btn.removeAttribute('disabled');
+                } else {
+                    const btns = document.querySelectorAll('button');
+                    for (let b of btns) {
+                        if ((b.innerText || '').toLowerCase().includes('save')) {
+                            b.classList.remove('disabled');
+                            b.removeAttribute('disabled');
+                            break;
+                        }
+                    }
                 }
                 return true;
             }
@@ -753,17 +765,21 @@ class ApplicationEngine:
             ans = ""
             if control_type == "RADIO_CHIP":
                 options = resolver.get_radio_options()
-                log_step("CHOICES", f"{options}")
                 
-                ans = resolver.resolve_answer(active_q, options=options, control_type="RADIO_CHIP")
-                log_step("ACTION", f"Selecting Option: \"{ans}\"")
-                
-                selection_ok = resolver.execute_chip_selection(ans)
-                if not selection_ok:
-                    log_step("WARNING", "Native JS click failed. Attempting contenteditable fallback...")
-                    resolver.execute_contenteditable_input(ans)
+                if not options:
+                    log_step("WARNING", "RADIO_CHIP detected but no options found. Falling back to text.")
+                    control_type = "CONTENTEDITABLE"
+                else:
+                    log_step("CHOICES", f"{options}")
+                    ans = resolver.resolve_answer(active_q, options=options, control_type="RADIO_CHIP")
+                    log_step("ACTION", f"Selecting Option: \"{ans}\"")
+                    
+                    selection_ok = resolver.execute_chip_selection(ans)
+                    if not selection_ok:
+                        log_step("WARNING", "Native JS click failed. Attempting contenteditable fallback...")
+                        resolver.execute_contenteditable_input(ans)
 
-            elif control_type == "CONTENTEDITABLE":
+            if control_type == "CONTENTEDITABLE":
                 ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
                 log_step("ACTION", f"Submitting text response: \"{ans}\"")
                 success = resolver.execute_contenteditable_input(ans)
@@ -786,7 +802,7 @@ class ApplicationEngine:
                 else:
                     ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
                     resolver.execute_contenteditable_input(ans)
-            else:
+            elif control_type not in ["RADIO_CHIP", "CONTENTEDITABLE", "FILE_UPLOAD", "DROPDOWN"]:
                 log_step("WARNING", "Unknown control type. Attempting generic input fallback...")
                 ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
                 resolver.execute_contenteditable_input(ans)
