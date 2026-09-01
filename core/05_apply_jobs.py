@@ -226,14 +226,12 @@ class ChatbotResolver:
     def get_radio_options(self) -> List[str]:
         """
         Executes a deep DOM extraction to locate and return the labels associated 
-        with any visible radio buttons, lists, or choice chips. Strictly avoids extracting 
-        chatbot conversational text.
+        with any visible radio buttons, lists, or choice chips.
         """
         options = self.page.evaluate("""() => {
             const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
             const opts = new Set();
             
-            // Strategy A: Explicit Radio Inputs (New Naukri Structure)
             const radios = drawer.querySelectorAll('input[type="radio"], input[type="checkbox"]');
             if (radios.length > 0) {
                 radios.forEach(r => {
@@ -254,7 +252,6 @@ class ChatbotResolver:
                 });
             }
             
-            // Strategy B: Choice Chips (Legacy Naukri Structure)
             if (opts.size === 0) {
                 const chips = drawer.querySelectorAll('.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"]');
                 chips.forEach(c => {
@@ -383,11 +380,10 @@ class ChatbotResolver:
             const cleanTarget = targetText.toLowerCase().trim();
             const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
             
-            // Priority 1: Label matching a specific input ID
             const labels = drawer.querySelectorAll('label');
             for (let lbl of labels) {
                 if (lbl.innerText.toLowerCase().trim() === cleanTarget) {
-                    lbl.click(); // Click the label natively
+                    lbl.click();
                     const radioId = lbl.getAttribute('for');
                     if (radioId) {
                         const radioInput = document.getElementById(radioId);
@@ -400,10 +396,9 @@ class ChatbotResolver:
                 }
             }
             
-            // Priority 2: Generic elements matching text
             const elements = drawer.querySelectorAll('span, div, button');
             for (let el of elements) {
-                if (el.children.length > 2) continue; // Skip layout wrappers
+                if (el.children.length > 2) continue;
                 let text = (el.innerText || '').toLowerCase().trim();
                 
                 if (text === cleanTarget) {
@@ -470,7 +465,8 @@ class ChatbotResolver:
             "profile shared",
             "thank you",
             "reached the recruiter",
-            "applied on"
+            "applied on",
+            "applied to"
         ]
         
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
@@ -586,7 +582,6 @@ class ApplicationEngine:
             log_step("ERROR", f"Navigation timeout or failure: {e}")
             return "FAILED"
 
-        # Check for External Redirect Button
         ext_btn_selectors = [
             "button:has-text('Apply on company website')",
             "a:has-text('Apply on company website')",
@@ -601,7 +596,6 @@ class ApplicationEngine:
                 self.record_external_redirect(job, url)
                 return "REDIRECT_EXTERNAL"
 
-        # Check if already applied
         already_applied_selectors = [
             "button:has-text('Already Applied')",
             "span:has-text('Already Applied')",
@@ -613,7 +607,6 @@ class ApplicationEngine:
                 log_step("STATUS", "Already applied previously. Skipping.")
                 return "SKIPPED_ALREADY_APPLIED"
 
-        # Trigger Apply Button
         apply_btn_selectors = [
             "button#apply-button",
             "button.apply-button",
@@ -639,28 +632,51 @@ class ApplicationEngine:
 
         resolver = ChatbotResolver(page, self.ctx, self.ai)
         drawer_opened = False
+        applied_1click = False
+        success_msg = ""
+
+        # Wait loop for either Chatbot Drawer OR Page Redirect/Success Marker
         for _ in range(16):
             page.wait_for_timeout(500)
             if resolver.is_drawer_open():
                 drawer_opened = True
+                break
+            
+            # Check for URL redirect to success page
+            if "/myapply/saveApply" in page.url or "myapply/historypage" in page.url:
+                applied_1click = True
+                success_msg = "Redirected to Naukri success page"
+                break
+                
+            # Check for explicit DOM success markers
+            success_selectors = [
+                "div.apply-message:has-text('successfully applied')",
+                "div[class*='success-message']:has-text('applied')",
+                "div.apply-message:has-text('applied')",
+                ".applied-txt:has-text('Applied')",
+                "span:has-text('Applied to')",
+                "div:has-text('Applied to \"')"
+            ]
+            for s_sel in success_selectors:
+                try:
+                    loc = page.locator(s_sel).first
+                    if loc.count() > 0 and loc.is_visible():
+                        applied_1click = True
+                        success_msg = loc.inner_text().strip()[:50]
+                        break
+                except Exception:
+                    pass
+            
+            if applied_1click:
                 break
 
         if drawer_opened:
             log_step("CHATBOT", "Interactive Chatbot Drawer opened! Entering screening loop...")
             return self._handle_chatbot_loop(page, resolver, job)
 
-        # C1 Compliance: Check for explicit success banners; otherwise return FAILED
-        success_selectors = [
-            "div.apply-message:has-text('successfully applied')",
-            "div[class*='success-message']:has-text('applied')",
-            "div.apply-message:has-text('applied')",
-            ".applied-txt:has-text('Applied')"
-        ]
-        for s_sel in success_selectors:
-            loc = page.locator(s_sel).first
-            if loc.count() > 0 and loc.first.is_visible():
-                log_step("SUCCESS", f"1-Click Apply confirmed via '{loc.inner_text().strip()}'")
-                return "APPLIED_1CLICK"
+        if applied_1click:
+            log_step("SUCCESS", f"1-Click Apply confirmed via DOM or URL redirect: {success_msg}")
+            return "APPLIED_1CLICK"
 
         log_step("FAILED", "Apply button clicked but no confirmation or drawer appeared.")
         return "FAILED"
