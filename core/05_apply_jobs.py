@@ -169,12 +169,46 @@ class ChatbotResolver:
         return active_question, filtered_greeting
 
     def detect_ui_control(self) -> str:
+        """
+        Detects active UI control with strict priority:
+        1. FILE_UPLOAD
+        2. RADIO_CHIP / OPTION ITEMS (Evaluated before contenteditable to prevent false text routing)
+        3. DROPDOWN (select / custom dropdown)
+        4. CONTENTEDITABLE (free text / textarea)
+        """
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
-        
+
+        # 1. Check for File Upload
         file_input = drawer.locator("input[type='file'], input.chatbot_Uploader, input[id*='Uploader']")
         if file_input.count() > 0 and file_input.first.is_visible():
             return "FILE_UPLOAD"
 
+        # 2. Check for Choice Chips, Radio Buttons, or Option Lists (BEFORE contenteditable)
+        chips = drawer.locator(
+            "div.radioItem, "
+            "div.choiceChip, "
+            "div.clickableChip, "
+            "div.optionItem, "
+            "div[class*='radioItem'], "
+            "label[class*='radio'], "
+            "ul.ChoiceList li, "
+            "div[class*='chipItem'], "
+            "div.customRadio"
+        )
+        if chips.count() > 0 and chips.first.is_visible():
+            return "RADIO_CHIP"
+
+        # Check for radio buttons in body if not in drawer
+        page_chips = self.page.locator(".chatbot_DrawerContentWrapper div.radioItem, .chatbot_DrawerContentWrapper div.choiceChip, div.radioItem, div.choiceChip")
+        if page_chips.count() > 0 and page_chips.first.is_visible():
+            return "RADIO_CHIP"
+
+        # 3. Check for Dropdowns
+        select_dropdown = drawer.locator("select, div.custom-select, div[class*='dropdown']")
+        if select_dropdown.count() > 0 and select_dropdown.first.is_visible():
+            return "DROPDOWN"
+
+        # 4. Check for ContentEditable / Text Inputs
         textarea = drawer.locator(
             "div.textArea[contenteditable='true'], "
             "div[id^='userInput_'], "
@@ -186,22 +220,6 @@ class ChatbotResolver:
         )
         if textarea.count() > 0 and textarea.first.is_visible():
             return "CONTENTEDITABLE"
-
-        chips = drawer.locator(
-            "div.radioItem, "
-            "div.choiceChip, "
-            "div.clickableChip, "
-            "div[class*='radioItem'], "
-            "label[class*='radio'], "
-            "ul.ChoiceList li, "
-            "div.optionItem"
-        )
-        if chips.count() > 0 and chips.first.is_visible():
-            return "RADIO_CHIP"
-
-        select_dropdown = drawer.locator("select, div.custom-select, div[class*='dropdown']")
-        if select_dropdown.count() > 0 and select_dropdown.first.is_visible():
-            return "DROPDOWN"
 
         body_textarea = self.page.locator("div.textArea[contenteditable='true'], div[id^='userInput_']").first
         if body_textarea.count() > 0 and body_textarea.is_visible():
@@ -244,29 +262,65 @@ class ChatbotResolver:
         return None
 
     def execute_contenteditable_input(self, answer: str) -> bool:
+        """
+        H5 Protocol: React ContentEditable injection standard.
+        - Focuses via force click
+        - Selects and clears existing text
+        - Injects text via keyboard insert_text
+        - Executes document.execCommand fallback
+        - Dispatches synthetic events (input, change, keydown, keyup)
+        - Removes .disabled class and disabled attributes from send button before clicking
+        """
         input_loc = self._get_input_field()
         if not input_loc:
             log_step("WARNING", "Could not locate contenteditable textarea in chatbot drawer.")
             return False
 
         log_step("CHATBOT", f"Targeting interactive input container with answer: '{answer}'")
-        
         self.scroll_drawer_to_bottom()
+
         try:
             input_loc.click(force=True)
             human_jitter(100, 250)
-
             mod_key = "Meta+A" if sys.platform == "darwin" else "Control+A"
             self.page.keyboard.press(mod_key)
             self.page.keyboard.press("Backspace")
             human_jitter(50, 150)
 
-            human_type(self.page, str(answer))
+            # Direct insert_text to trigger React hooks
+            self.page.keyboard.insert_text(str(answer))
+            human_jitter(100, 200)
+
+            # H5 React synthetic event dispatch and DOM command fallback
+            js_dispatch = """
+            (ans) => {
+                const el = document.querySelector(
+                    'div.textArea[contenteditable="true"], div[id*="userInput"], .textAreaWrapper div[contenteditable="true"]'
+                );
+                if (el) {
+                    el.focus();
+                    if (!el.innerText || el.innerText.trim() === '') {
+                        document.execCommand('insertText', false, ans);
+                    }
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
+                    el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
+                }
+                const btn = document.querySelector(
+                    '.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .sendMsg, button:has-text("Save")'
+                );
+                if (btn) {
+                    btn.classList.remove('disabled');
+                    btn.removeAttribute('disabled');
+                }
+                return true;
+            }
+            """
+            self.page.evaluate(js_dispatch, str(answer))
             human_jitter(150, 300)
 
-            self.page.keyboard.press("Enter")
-            human_jitter(200, 400)
-
+            # Click send / save trigger
             send_btn_selectors = [
                 ".sendMsgbtn_container .sendMsg",
                 "div[id*='sendMsg'] .sendMsg",
@@ -286,10 +340,7 @@ class ChatbotResolver:
                     break
 
             if not clicked:
-                self.page.evaluate("""() => {
-                    const btn = document.querySelector('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg');
-                    if (btn) btn.click();
-                }""")
+                self.page.keyboard.press("Enter")
 
             self.page.wait_for_timeout(1500)
             return True
@@ -298,6 +349,10 @@ class ChatbotResolver:
             return False
 
     def execute_chip_selection(self, matched_option: str) -> bool:
+        """
+        H3 Protocol: Escapes single quotes and tries multi-selector pattern
+        to reliably locate and click the target choice chip or radio item.
+        """
         self.scroll_drawer_to_bottom()
         
         safe_opt = matched_option.replace("'", "\\'")
@@ -305,10 +360,12 @@ class ChatbotResolver:
             f"div.radioItem:has-text('{safe_opt}')",
             f"div.choiceChip:has-text('{safe_opt}')",
             f"div.clickableChip:has-text('{safe_opt}')",
+            f"div.optionItem:has-text('{safe_opt}')",
             f"div[class*='radioItem']:has-text('{safe_opt}')",
             f"label:has-text('{safe_opt}')",
             f"ul.ChoiceList li:has-text('{safe_opt}')",
-            f"div.optionItem:has-text('{safe_opt}')"
+            f"li:has-text('{safe_opt}')",
+            f"span:has-text('{safe_opt}')"
         ]
 
         chip = None
@@ -318,23 +375,39 @@ class ChatbotResolver:
                 chip = loc
                 break
 
+        # Fallback to DOM iteration if direct text selector fails
+        if not chip:
+            drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
+            all_chips = drawer.locator("div.radioItem, div.choiceChip, div.clickableChip, div.optionItem, label, ul.ChoiceList li")
+            opt_clean = matched_option.lower().strip()
+            for idx in range(all_chips.count()):
+                candidate_chip = all_chips.nth(idx)
+                if candidate_chip.is_visible():
+                    c_text = candidate_chip.inner_text().lower().strip()
+                    if c_text == opt_clean or re.search(rf'\b{re.escape(opt_clean)}\b', c_text):
+                        chip = candidate_chip
+                        break
+
         if chip:
             log_step("CHATBOT", f"Clicking choice chip: '{matched_option}'")
             chip.click(force=True)
-            self.page.wait_for_timeout(500)
+            self.page.wait_for_timeout(600)
             
+            # Click Save/Next/Submit button if required
             save_btn = self.page.locator(
                 ".sendMsgbtn_container .sendMsg, "
                 "div[id*='sendMsg'] .sendMsg, "
                 ".footerWrapper button:has-text('Save'), "
                 "button:has-text('Save'), "
-                "button:has-text('Next')"
+                "button:has-text('Next'), "
+                "button:has-text('Submit')"
             ).first
             if save_btn.count() > 0 and save_btn.is_visible():
                 save_btn.click(force=True)
                 self.page.wait_for_timeout(800)
             return True
 
+        log_step("WARNING", f"Could not find selectable chip element for option: '{matched_option}'")
         return False
 
     def execute_file_upload(self, tailored_pdf_path: Optional[str] = None) -> bool:
@@ -356,27 +429,30 @@ class ChatbotResolver:
 
         log_step("CHATBOT", f"Uploading resume PDF: {target_pdf}")
         file_input.set_input_files(target_pdf)
-        self.page.wait_for_timeout(1000)
+        self.page.wait_for_timeout(2000)
         return True
 
     def check_completion_status(self) -> Tuple[bool, str]:
+        """
+        C3 Guardrail Compliance:
+        Drawer dismissal != completion. Only explicit DOM success markers count.
+        """
         success_markers = [
             "applied successfully",
             "application has been submitted",
             "thank you for applying",
             "your application has reached",
             "successfully applied",
-            "application submitted"
+            "application submitted",
+            "you have applied"
         ]
         
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
-        if drawer.count() == 0 or not drawer.is_visible():
-            return True, "Chatbot drawer dismissed; application confirmed."
-
-        drawer_text = drawer.inner_text().lower()
-        for marker in success_markers:
-            if marker in drawer_text:
-                return True, f"Detected success marker in drawer: '{marker}'"
+        if drawer.count() > 0 and drawer.is_visible():
+            drawer_text = drawer.inner_text().lower()
+            for marker in success_markers:
+                if marker in drawer_text:
+                    return True, f"Detected success marker in drawer: '{marker}'"
 
         page_text = self.page.locator("body").inner_text().lower()
         for marker in success_markers:
@@ -453,8 +529,8 @@ class ApplicationEngine:
                     records = json.load(f)
             except Exception:
                 records = []
-
-        exists = any(r.get("url") == job.get("url") for r in records)
+        
+        exists = any(r.get("original_url") == job.get("url") or r.get("url") == job.get("url") for r in records)
         if not exists:
             records.append({
                 "job_title": job.get("job_title") or job.get("title"),
@@ -484,6 +560,7 @@ class ApplicationEngine:
             log_step("ERROR", f"Navigation timeout or failure: {e}")
             return "FAILED"
 
+        # Check for External Redirect Button
         ext_btn_selectors = [
             "button:has-text('Apply on company website')",
             "a:has-text('Apply on company website')",
@@ -498,6 +575,7 @@ class ApplicationEngine:
                 self.record_external_redirect(job, url)
                 return "REDIRECT_EXTERNAL"
 
+        # Check if already applied
         already_applied_selectors = [
             "button:has-text('Already Applied')",
             "span:has-text('Already Applied')",
@@ -509,6 +587,7 @@ class ApplicationEngine:
                 log_step("STATUS", "Already applied previously. Skipping.")
                 return "SKIPPED_ALREADY_APPLIED"
 
+        # Trigger Apply Button
         apply_btn_selectors = [
             "button#apply-button",
             "button.apply-button",
@@ -517,7 +596,7 @@ class ApplicationEngine:
             "div.apply-button-container button",
             ".styles_jds-apply-button__WbS2i button"
         ]
-
+        
         apply_clicked = False
         for sel in apply_btn_selectors:
             loc = page.locator(sel).first
@@ -544,6 +623,7 @@ class ApplicationEngine:
             log_step("CHATBOT", "Interactive Chatbot Drawer opened! Entering screening loop...")
             return self._handle_chatbot_loop(page, resolver, job)
 
+        # C1 Compliance: Check for explicit success banners; otherwise return FAILED
         success_selectors = [
             "div.apply-message:has-text('successfully applied')",
             "div[class*='success-message']:has-text('applied')",
@@ -564,7 +644,6 @@ class ApplicationEngine:
         iteration = 0
         tailored_pdf = job.get("pdf_path") or job.get("tailored_pdf", "")
         
-        # AG 2.0 Feature: Per-Job QA Audit Directory next to resumes
         company = job.get("company", "Company")
         job_title = job.get("job_title") or job.get("title", "Role")
         clean_c = re.sub(r"[^\w\s-]", "", company).strip().replace(" ", "_")[:50]
@@ -627,34 +706,39 @@ class ApplicationEngine:
             log_step("CONTROL TYPE", f"{control_type}")
 
             ans = ""
-            if control_type == "CONTENTEDITABLE":
-                ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
-                log_step("ACTION", f"Submitting text response: \"{ans}\"")
-                success = resolver.execute_contenteditable_input(ans)
-                if not success:
-                    log_step("WARNING", "Failed typing into input container.")
-
-            elif control_type == "RADIO_CHIP":
+            if control_type == "RADIO_CHIP":
                 drawer = page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
                 chip_locs = drawer.locator(
                     "div.radioItem, "
                     "div.choiceChip, "
                     "div.clickableChip, "
+                    "div.optionItem, "
                     "div[class*='radioItem'], "
                     "label[class*='radio'], "
                     "ul.ChoiceList li, "
-                    "div.optionItem"
+                    "div[class*='chipItem']"
                 )
+                
                 options = []
                 for idx in range(chip_locs.count()):
                     opt_t = chip_locs.nth(idx).inner_text().strip()
                     if opt_t and opt_t not in options:
                         options.append(opt_t)
-                        
+                
                 log_step("CHOICES", f"{options}")
                 ans = resolver.resolve_answer(active_q, options=options, control_type="RADIO_CHIP")
                 log_step("ACTION", f"Selecting Option: \"{ans}\"")
-                resolver.execute_chip_selection(ans)
+                selection_ok = resolver.execute_chip_selection(ans)
+                if not selection_ok:
+                    log_step("WARNING", "Choice chip click failed. Attempting contenteditable fallback...")
+                    resolver.execute_contenteditable_input(ans)
+
+            elif control_type == "CONTENTEDITABLE":
+                ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
+                log_step("ACTION", f"Submitting text response: \"{ans}\"")
+                success = resolver.execute_contenteditable_input(ans)
+                if not success:
+                    log_step("WARNING", "Failed typing into input container.")
 
             elif control_type == "FILE_UPLOAD":
                 log_step("ACTION", "Resume File Upload requested by screening drawer.")
@@ -669,7 +753,9 @@ class ApplicationEngine:
                     ans = resolver.resolve_answer(active_q, options=options, control_type="DROPDOWN")
                     select_el.select_option(label=ans)
                     log_step("ACTION", f"Selected Dropdown Value: \"{ans}\"")
-
+                else:
+                    ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
+                    resolver.execute_contenteditable_input(ans)
             else:
                 log_step("WARNING", "Unknown control type. Attempting generic input fallback...")
                 ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
@@ -697,7 +783,7 @@ class ApplicationEngine:
         log_section("UNIVERSAL CAREER AGENT: APPLICATION BATCH START")
         log_step("PROFILE", f"Candidate: {self.ctx.candidate_name}")
         log_step("SANDBOX", f"Profile Directory: {self.ctx.profile_dir}")
-
+        
         jobs_queue = self.load_application_manifest()
         if not jobs_queue:
             log_step("INFO", "No evaluated jobs found in search_manifest.json to apply for.")
@@ -708,26 +794,25 @@ class ApplicationEngine:
         context = self.browser_mgr.get_context()
         page = self.browser_mgr.new_page()
         applied_count = 0
-
+        
         for job in jobs_queue:
             if applied_count >= max_applications:
                 log_step("LIMIT", f"Reached target application batch limit of {max_applications}.")
                 break
-
+            
             status = self.apply_single_job(page, job)
             self.stats["total"] += 1
             
             company = job.get("company", "Unknown")
             job_title = job.get("job_title") or job.get("title", "Unknown")
             pdf_path = job.get("pdf_path") or job.get("tailored_pdf", "")
-
+            
             if status in ["APPLIED_1CLICK", "APPLIED_CHATBOT"]:
                 applied_count += 1
                 if status == "APPLIED_1CLICK":
                     self.stats["applied_1click"] += 1
                 else:
                     self.stats["applied_chatbot"] += 1
-
                 self.record_tracker_entry({
                     "company": company,
                     "job_title": job_title,
@@ -738,7 +823,6 @@ class ApplicationEngine:
                     "pdf_path": pdf_path,
                     "notes": f"Applied autonomously via {status}"
                 })
-
             elif status == "REDIRECT_EXTERNAL":
                 self.stats["redirect_external"] += 1
                 self.record_tracker_entry({
@@ -751,10 +835,8 @@ class ApplicationEngine:
                     "pdf_path": pdf_path,
                     "notes": "External employer site redirect saved to saved_external_jobs.json"
                 })
-
             elif status == "SKIPPED_ALREADY_APPLIED":
                 self.stats["skipped"] += 1
-
             else:
                 self.stats["failed"] += 1
                 self.record_tracker_entry({
@@ -766,7 +848,7 @@ class ApplicationEngine:
                     "status": "FAILED",
                     "notes": "Application could not be committed or drawer failed"
                 })
-
+            
             time.sleep(2.0)
 
         log_section("APPLICATION BATCH EXECUTION SUMMARY")

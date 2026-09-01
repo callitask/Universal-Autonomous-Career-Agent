@@ -1,12 +1,17 @@
 """
-04_job_discovery.py
+================================================================================
+UNIVERSAL AUTONOMOUS CAREER AGENT
+File: core/04_job_discovery.py
+================================================================================
 Universal Batched Discovery Engine (Naukri + LinkedIn)
-- Deep Analysis: Reads full descriptions for accurate AI matching.
-- Strict Domain & Title Gating: Completely dynamic, reading purely from candidate config target_jobs constraints.
+- Strict Domain & Title Gating: Completely dynamic, reading purely from candidate 
+  config target_jobs constraints. Includes C6 strict negative gating and positive domain gating.
 - Score Threshold: Automatically qualifies and applies to roles scoring >= 40%.
 - Micro-batched (BATCH_SIZE=1) for synchronous tailor -> upload -> apply isolation.
 - 100% Config-Driven & Profile Agnostic. Zero blocking terminal calls.
+================================================================================
 """
+
 import os
 import sys
 import json
@@ -20,7 +25,7 @@ import logging
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-# Force standard output to UTF-8 and line-buffering
+# Force standard output to UTF-8 and line-buffering (H4 Guardrail)
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 except Exception:
@@ -33,11 +38,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from core.utils.profile_context import ProfileContext
-from ai_client import AIClient
+from core.ai_client import AIClient
 
 BATCH_SIZE = 1
 MAX_PAGES_PER_SEARCH = 3
 MATCH_THRESHOLD = 40
+
 
 def get_already_processed_urls(profile_dir: Path) -> set:
     """C2 & N1 Fix: Safely parses CSV files handling both new and legacy headers for deduplication."""
@@ -58,7 +64,7 @@ def get_already_processed_urls(profile_dir: Path) -> set:
                     # 2. Try Legacy Schema (Role maps to title in processed_ledger)
                     if "Role" in row and row["Role"]:
                         processed.add(row["Role"].strip().lower())
-                        
+                    
                     # 3. DIRECTIVE 7.2 Fallback: Scan all row values for URL patterns
                     for val in row.values():
                         if val and isinstance(val, str) and ("http://" in val or "https://" in val):
@@ -72,18 +78,49 @@ def get_already_processed_urls(profile_dir: Path) -> set:
                         processed.add(item["url"].strip().lower())
                     if item.get("title"): 
                         processed.add(item["title"].strip().lower())
+                    if item.get("original_url"):
+                        processed.add(item["original_url"].strip().lower())
             except Exception:
                 pass
                 
     return processed
 
+
 def is_title_allowed(title: str, target_keywords: list, negative_keywords: list) -> bool:
-    """C6 Fix: Strictly rejects titles containing negative keywords unconditionally."""
-    title_lower = title.lower()
+    """
+    C6 Fix: Strictly rejects titles containing negative keywords unconditionally.
+    Positive Alignment: Requires the title to match at least one target keyword logically.
+    """
+    title_lower = title.lower().strip()
+
+    # 1. Absolute Negative Rejection (C6 Guardrail)
     for neg in negative_keywords:
-        if neg.lower() in title_lower:
+        neg_clean = neg.strip().lower()
+        if neg_clean and re.search(rf'\b{re.escape(neg_clean)}\b', title_lower):
             return False
-    return True
+
+    # 2. Strict Positive Alignment (Domain Relevance)
+    if not target_keywords:
+        return True
+
+    title_tokens = set([t for t in re.split(r'[\s/,-]+', title_lower) if len(t) > 2])
+    
+    for target in target_keywords:
+        target_clean = target.strip().lower()
+        if not target_clean: 
+            continue
+        
+        # Direct substring/phrase match
+        if target_clean in title_lower:
+            return True
+            
+        # Token overlap match (e.g. "software engineer" vs "engineer, software")
+        target_tokens = set([t for t in re.split(r'[\s/,-]+', target_clean) if len(t) > 2])
+        if target_tokens and target_tokens.issubset(title_tokens):
+            return True
+
+    return False
+
 
 def cleanup_browser_tabs(context):
     try:
@@ -93,6 +130,7 @@ def cleanup_browser_tabs(context):
             pages = context.pages
     except Exception:
         pass
+
 
 def process_batch(batch: list, profile_dir: Path, platform: str):
     if not batch:
@@ -124,21 +162,25 @@ def process_batch(batch: list, profile_dir: Path, platform: str):
     
     print(f"\n  ---> Resuming Discovery Sweep...\n", flush=True)
 
+
 def run_batched_discovery(profile_path: str):
     profile_dir = Path(profile_path).resolve()
     ctx = ProfileContext(profile_dir, BASE_DIR)
     config = ctx.config
-    config_path = profile_dir / "candidate_config.json"
     resume_path = profile_dir / "resume.md"
     resume_text = resume_path.read_text(encoding="utf-8") if resume_path.exists() else ""
     
     processed_ledger = get_already_processed_urls(profile_dir)
     ai = AIClient(ctx)
+    
     cand = config.get("candidate", {})
     target = config.get("target_jobs", {})
     cdp_url = cand.get("cdp_url", "http://127.0.0.1:9222")
     
     keywords = target.get("keywords", [])
+    recommended = target.get("recommended_titles", [])
+    all_positive_targets = keywords + recommended
+    
     negative_keywords = target.get("negative_keywords", [])
     locations = target.get("locations", [])
     platforms = [p.lower() for p in target.get("platforms", ["naukri"])]
@@ -260,8 +302,8 @@ def run_batched_discovery(profile_path: str):
                             if url.lower() in processed_ledger or title.lower() in processed_ledger:
                                 continue
                                 
-                            if not is_title_allowed(title, keywords, negative_keywords):
-                                print(f"  -> Deep Scanning: {title} @ {company}... [DOMAIN/TITLE REJECTED]", flush=True)
+                            if not is_title_allowed(title, all_positive_targets, negative_keywords):
+                                print(f"  -> Rejecting Irrelevant Job: {title} @ {company} [DOMAIN GATED]", flush=True)
                                 processed_ledger.add(url.lower())
                                 continue
                                 
