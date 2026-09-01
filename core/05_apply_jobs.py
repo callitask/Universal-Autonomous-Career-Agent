@@ -181,6 +181,7 @@ class ChatbotResolver:
         """
         Detects active UI control using aggressive native JS evaluation to pierce
         React virtual DOM wrappers and detect raw structural intents.
+        Strictly ignores .chipMsg (Naukri Bot Logo) to prevent false radio detection.
         """
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
 
@@ -192,7 +193,10 @@ class ChatbotResolver:
             const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
             if (drawer.querySelector('input[type="radio"], input[type="checkbox"]')) return true;
             
-            const chips = drawer.querySelectorAll('div[class*="radio"], div[class*="chip"], label[class*="radio"], div.optionItem, label.ssrc__label');
+            // Target valid choice chips while STRICTLY IGNORING the bot logo (.chipMsg)
+            const chips = Array.from(drawer.querySelectorAll('.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"], label.ssrc__label'));
+            
+            // Only return true if we found actual options (not bot avatar logos)
             if (chips.length > 0) return true;
             
             return false;
@@ -380,10 +384,11 @@ class ChatbotResolver:
             const cleanTarget = targetText.toLowerCase().trim();
             const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
             
+            // Priority 1: Label matching a specific input ID
             const labels = drawer.querySelectorAll('label');
             for (let lbl of labels) {
                 if (lbl.innerText.toLowerCase().trim() === cleanTarget) {
-                    lbl.click();
+                    lbl.click(); // Click the label natively
                     const radioId = lbl.getAttribute('for');
                     if (radioId) {
                         const radioInput = document.getElementById(radioId);
@@ -396,9 +401,10 @@ class ChatbotResolver:
                 }
             }
             
+            // Priority 2: Generic elements matching text
             const elements = drawer.querySelectorAll('span, div, button');
             for (let el of elements) {
-                if (el.children.length > 2) continue;
+                if (el.children.length > 2) continue; // Skip layout wrappers
                 let text = (el.innerText || '').toLowerCase().trim();
                 
                 if (text === cleanTarget) {
@@ -635,20 +641,17 @@ class ApplicationEngine:
         applied_1click = False
         success_msg = ""
 
-        # Wait loop for either Chatbot Drawer OR Page Redirect/Success Marker
         for _ in range(16):
             page.wait_for_timeout(500)
             if resolver.is_drawer_open():
                 drawer_opened = True
                 break
             
-            # Check for URL redirect to success page
             if "/myapply/saveApply" in page.url or "myapply/historypage" in page.url:
                 applied_1click = True
                 success_msg = "Redirected to Naukri success page"
                 break
                 
-            # Check for explicit DOM success markers
             success_selectors = [
                 "div.apply-message:has-text('successfully applied')",
                 "div[class*='success-message']:has-text('applied')",
@@ -788,7 +791,6 @@ class ApplicationEngine:
                 ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
                 resolver.execute_contenteditable_input(ans)
 
-            # Persist Q&A to job's ques_ans_chatbot.json audit file
             qa_history.append({
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "question": active_q,
@@ -887,10 +889,6 @@ class ApplicationEngine:
         print(f"    Failed:                    {self.stats['failed']}", flush=True)
         print(f"{'=' * 80}\n", flush=True)
 
-
-# ==============================================================================
-# ENTRYPOINT
-# ==============================================================================
 
 def main():
     parser = argparse.ArgumentParser(description="Autonomous Job Application Engine")
