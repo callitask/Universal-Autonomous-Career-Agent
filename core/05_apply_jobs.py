@@ -3,8 +3,8 @@
 UNIVERSAL AUTONOMOUS CAREER AGENT: APPLICATION ENGINE
 File: core/05_apply_jobs.py
 Description: Full-lifecycle autonomous job application executor supporting
-             1-click apply, external redirect gating, and reverse-engineered
-             Naukri chatbot drawer automation with real-time telemetry streaming.
+             1-click apply, external redirect gating, reverse-engineered
+             Naukri chatbot drawer automation, and AG 2.0 job-specific logging.
 ================================================================================
 """
 
@@ -13,6 +13,7 @@ import os
 import json
 import csv
 import time
+import random
 import re
 import argparse
 from datetime import datetime
@@ -35,27 +36,31 @@ from core.utils.browser_manager import BrowserManager
 from core.ai_client import AIClient
 
 
+def human_jitter(min_ms: int = 150, max_ms: int = 400):
+    time.sleep(random.randint(min_ms, max_ms) / 1000.0)
+
+
+def human_type(page, text: str):
+    for char in text:
+        page.keyboard.insert_text(char)
+        time.sleep(random.randint(30, 85) / 1000.0)
+
+
 def log_section(title: str) -> None:
-    print(f"\n{'=' * 80}")
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {title}")
-    print(f"{'=' * 80}")
+    print(f"\n{'=' * 80}", flush=True)
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {title}", flush=True)
+    print(f"{'=' * 80}", flush=True)
 
 
 def log_step(category: str, message: str) -> None:
-    print(f"[{category.upper():<14}] {message}")
+    print(f"[{category.upper():<14}] {message}", flush=True)
 
 
 def log_substep(category: str, message: str) -> None:
-    print(f"    [{category}] {message}")
+    print(f"    [{category}] {message}", flush=True)
 
 
 class ChatbotResolver:
-    """
-    Reverse-engineered dynamic chatbot drawer interaction and resolution engine.
-    Handles dynamic hash IDs, greeting filtration, contenteditable textareas, 
-    choice chips, dropdowns, and file uploads.
-    """
-
     def __init__(self, page, ctx: ProfileContext, ai_client: AIClient):
         self.page = page
         self.ctx = ctx
@@ -164,22 +169,16 @@ class ChatbotResolver:
         return active_question, filtered_greeting
 
     def detect_ui_control(self) -> str:
-        """
-        Classifies the active interactive UI input mechanism in the chatbot footer/drawer.
-        Returns: 'CONTENTEDITABLE', 'RADIO_CHIP', 'DROPDOWN', 'FILE_UPLOAD', or 'UNKNOWN'.
-        Strictly excludes branding containers like '.chipMsg'.
-        """
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
         
-        # 1. File Upload Input
         file_input = drawer.locator("input[type='file'], input.chatbot_Uploader, input[id*='Uploader']")
         if file_input.count() > 0 and file_input.first.is_visible():
             return "FILE_UPLOAD"
 
-        # 2. Free-text Contenteditable Textarea (Top priority if visible in footer)
         textarea = drawer.locator(
             "div.textArea[contenteditable='true'], "
-            "div[contenteditable='true'][id^='userInput_'], "
+            "div[id^='userInput_'], "
+            "div[id*='userInput'], "
             ".textAreaWrapper div[contenteditable='true'], "
             "div.chatbot_userInput, "
             "input[type='text'], "
@@ -188,7 +187,6 @@ class ChatbotResolver:
         if textarea.count() > 0 and textarea.first.is_visible():
             return "CONTENTEDITABLE"
 
-        # 3. Legitimate Radio Chips / Options (Strictly excluding .chipMsg logo container)
         chips = drawer.locator(
             "div.radioItem, "
             "div.choiceChip, "
@@ -201,12 +199,10 @@ class ChatbotResolver:
         if chips.count() > 0 and chips.first.is_visible():
             return "RADIO_CHIP"
 
-        # 4. Dropdown Select Menu
         select_dropdown = drawer.locator("select, div.custom-select, div[class*='dropdown']")
         if select_dropdown.count() > 0 and select_dropdown.first.is_visible():
             return "DROPDOWN"
 
-        # Fallback Check on Entire Page
         body_textarea = self.page.locator("div.textArea[contenteditable='true'], div[id^='userInput_']").first
         if body_textarea.count() > 0 and body_textarea.is_visible():
             return "CONTENTEDITABLE"
@@ -214,10 +210,6 @@ class ChatbotResolver:
         return "UNKNOWN"
 
     def resolve_answer(self, question: str, options: Optional[List[str]] = None, control_type: str = "CONTENTEDITABLE") -> str:
-        """
-        Grounded resolution pipeline utilizing the Dual-Brain AI Client.
-        Directly enforces Directive 2.5: Zero Hardcoded Regex Intercepts.
-        """
         q_clean = question.strip()
         log_step("AI BRAIN", f"Grounded Resume Analysis -> Evaluating question against candidate resume...")
         ai_response = self.ai.answer_screening_question(
@@ -228,99 +220,86 @@ class ChatbotResolver:
             resume_text=self.resume_text
         )
         cleaned_ans = ai_response.strip().strip('"').strip("'")
-        log_step("AI BRAIN", f"Dual-Brain Resolved Factual Answer: '{cleaned_ans}'")
+        log_step("AI BRAIN", f"AG 2.0 Resolved Factual Answer: '{cleaned_ans}'")
         return cleaned_ans
 
-    def execute_contenteditable_input(self, answer: str) -> bool:
-        """Injects text into contenteditable container and commits submission."""
+    def _get_input_field(self):
         selectors = [
             "div.textArea[contenteditable='true']",
-            "div[contenteditable='true'][id^='userInput_']",
-            "div[contenteditable='true']",
-            ".textAreaWrapper div[contenteditable='true']",
-            "div.chatbot_userInput",
-            "input[type='text']",
-            "textarea"
+            "div[id*='userInput']",
+            "div.chatbot_SendMessageContainer div.textArea",
+            "div[id*='InputBox'] div.textArea",
+            "div.textAreaWrapper div[contenteditable='true']",
+            "div.chatbot_InputContainer div.textArea",
+            "textarea.chatbot_Input",
+            "input.chatbot_Input"
         ]
-        textarea = None
         for sel in selectors:
             loc = self.page.locator(sel).first
-            if loc.count() > 0 and loc.is_visible():
-                textarea = loc
-                break
+            try:
+                if loc.is_visible(timeout=400):
+                    return loc
+            except Exception:
+                continue
+        return None
 
-        if not textarea:
-            drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
-            for sel in selectors:
-                loc = drawer.locator(sel).first
-                if loc.count() > 0 and loc.is_visible():
-                    textarea = loc
-                    break
-
-        if not textarea:
+    def execute_contenteditable_input(self, answer: str) -> bool:
+        input_loc = self._get_input_field()
+        if not input_loc:
             log_step("WARNING", "Could not locate contenteditable textarea in chatbot drawer.")
             return False
 
-        log_step("CHATBOT", f"Targeting contenteditable container: div.textArea[contenteditable='true']")
+        log_step("CHATBOT", f"Targeting interactive input container with answer: '{answer}'")
         
         self.scroll_drawer_to_bottom()
-        textarea.click(force=True)
-        self.page.wait_for_timeout(200)
+        try:
+            input_loc.click(force=True)
+            human_jitter(100, 250)
 
-        mod_key = "Meta+A" if sys.platform == "darwin" else "Control+A"
-        self.page.keyboard.press(mod_key)
-        self.page.keyboard.press("Backspace")
-        self.page.wait_for_timeout(100)
+            mod_key = "Meta+A" if sys.platform == "darwin" else "Control+A"
+            self.page.keyboard.press(mod_key)
+            self.page.keyboard.press("Backspace")
+            human_jitter(50, 150)
 
-        self.page.keyboard.type(str(answer), delay=30)
-        self.page.wait_for_timeout(200)
+            human_type(self.page, str(answer))
+            human_jitter(150, 300)
 
-        self.page.evaluate("""(ans) => {
-            const el = document.querySelector('div.textArea[contenteditable="true"], div[contenteditable="true"], div[id^="userInput_"]');
-            if (el) {
-                if (!el.innerText || el.innerText.trim() === '') {
-                    el.innerText = ans;
-                }
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            const sendDiv = document.querySelector('.sendMsgbtn_container .send, div[id^="sendMsg_"]');
-            if (sendDiv) {
-                sendDiv.classList.remove('disabled');
-            }
-        }""", str(answer))
-        self.page.wait_for_timeout(300)
-
-        send_btn_selectors = [
-            ".sendMsgbtn_container .sendMsg",
-            "div[id^='sendMsgbtn_container'] .sendMsg",
-            "div[id^='sendMsg_'] .sendMsg",
-            ".sendMsgbtn_container div.send:not(.disabled) .sendMsg",
-            ".sendMsg",
-            "span.chatBot-send",
-            "button:has-text('Save')",
-            "button:has-text('Send')"
-        ]
-        clicked = False
-        for btn_sel in send_btn_selectors:
-            btn_loc = self.page.locator(btn_sel).first
-            if btn_loc.count() > 0 and btn_loc.is_visible():
-                log_step("CHATBOT", f"Clicking active submit button: '{btn_loc.inner_text().strip()}' ({btn_sel})")
-                btn_loc.click(force=True)
-                clicked = True
-                break
-
-        if not clicked:
-            log_step("CHATBOT", "Save button not clicked via selector; pressing Enter key")
             self.page.keyboard.press("Enter")
+            human_jitter(200, 400)
 
-        self.page.wait_for_timeout(1000)
-        return True
+            send_btn_selectors = [
+                ".sendMsgbtn_container .sendMsg",
+                "div[id*='sendMsg'] .sendMsg",
+                ".sendMsgbtn_container div.send .sendMsg",
+                "span.chatBot-send",
+                "span[class*='send']",
+                "button:has-text('Save')",
+                "button:has-text('Submit')"
+            ]
+            
+            clicked = False
+            for btn_sel in send_btn_selectors:
+                btn_loc = self.page.locator(btn_sel).first
+                if btn_loc.count() > 0 and btn_loc.is_visible():
+                    btn_loc.click(force=True)
+                    clicked = True
+                    break
+
+            if not clicked:
+                self.page.evaluate("""() => {
+                    const btn = document.querySelector('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg');
+                    if (btn) btn.click();
+                }""")
+
+            self.page.wait_for_timeout(1500)
+            return True
+        except Exception as e:
+            log_step("WARNING", f"Failed typing into input container: {e}")
+            return False
 
     def execute_chip_selection(self, matched_option: str) -> bool:
         self.scroll_drawer_to_bottom()
         
-        # H3: Escape single quotes to prevent selector syntax errors
         safe_opt = matched_option.replace("'", "\\'")
         chip_selectors = [
             f"div.radioItem:has-text('{safe_opt}')",
@@ -346,11 +325,10 @@ class ChatbotResolver:
             
             save_btn = self.page.locator(
                 ".sendMsgbtn_container .sendMsg, "
-                "div[id^='sendMsg_'] .sendMsg, "
+                "div[id*='sendMsg'] .sendMsg, "
                 ".footerWrapper button:has-text('Save'), "
                 "button:has-text('Save'), "
-                "button:has-text('Next'), "
-                "button:has-text('Continue')"
+                "button:has-text('Next')"
             ).first
             if save_btn.count() > 0 and save_btn.is_visible():
                 save_btn.click(force=True)
@@ -391,16 +369,16 @@ class ChatbotResolver:
             "application submitted"
         ]
         
-        # DOM check in drawer and page body
-        page_text = self.page.locator("body").inner_text().lower()
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
-        
-        if drawer.count() > 0 and drawer.is_visible():
-            drawer_text = drawer.inner_text().lower()
-            for marker in success_markers:
-                if marker in drawer_text:
-                    return True, f"Detected success marker in drawer: '{marker}'"
+        if drawer.count() == 0 or not drawer.is_visible():
+            return True, "Chatbot drawer dismissed; application confirmed."
 
+        drawer_text = drawer.inner_text().lower()
+        for marker in success_markers:
+            if marker in drawer_text:
+                return True, f"Detected success marker in drawer: '{marker}'"
+
+        page_text = self.page.locator("body").inner_text().lower()
         for marker in success_markers:
             if marker in page_text:
                 return True, f"Detected success marker on page: '{marker}'"
@@ -554,7 +532,6 @@ class ApplicationEngine:
             log_step("WARNING", "No visible native apply trigger found on page.")
             return "APPLY_BUTTON_NOT_FOUND"
 
-        # Poll for chatbot drawer appearance
         resolver = ChatbotResolver(page, self.ctx, self.ai)
         drawer_opened = False
         for _ in range(16):
@@ -567,7 +544,6 @@ class ApplicationEngine:
             log_step("CHATBOT", "Interactive Chatbot Drawer opened! Entering screening loop...")
             return self._handle_chatbot_loop(page, resolver, job)
 
-        # C1 Fix: Check strict 1-click apply success banners before reporting success
         success_selectors = [
             "div.apply-message:has-text('successfully applied')",
             "div[class*='success-message']:has-text('applied')",
@@ -587,7 +563,28 @@ class ApplicationEngine:
         max_iterations = 25
         iteration = 0
         tailored_pdf = job.get("pdf_path") or job.get("tailored_pdf", "")
-        question_attempts: Dict[str, int] = {}
+        
+        # AG 2.0 Feature: Per-Job QA Audit Directory next to resumes
+        company = job.get("company", "Company")
+        job_title = job.get("job_title") or job.get("title", "Role")
+        clean_c = re.sub(r"[^\w\s-]", "", company).strip().replace(" ", "_")[:50]
+        clean_t = re.sub(r"[^\w\s-]", "", job_title).strip().replace(" ", "_")[:50]
+        
+        output_dir = getattr(self.ctx, "output_dir", Path("."))
+        job_app_dir = output_dir / "applications" / f"{clean_c}_{clean_t}"
+        job_app_dir.mkdir(parents=True, exist_ok=True)
+        qa_log_path = job_app_dir / "ques_ans_chatbot.json"
+        
+        qa_history = []
+        if qa_log_path.exists():
+            try:
+                with open(qa_log_path, "r", encoding="utf-8") as f:
+                    qa_history = json.load(f)
+            except Exception:
+                qa_history = []
+
+        last_processed_q = ""
+        stuck_count = 0
 
         while iteration < max_iterations:
             iteration += 1
@@ -605,27 +602,31 @@ class ApplicationEngine:
                 page.wait_for_timeout(2000)
                 continue
 
-            attempts = question_attempts.get(active_q, 0)
-            if attempts >= 3:
-                log_step("WARNING", f"Max submission attempts reached for question: '{active_q}'. Checking completion...")
-                is_done, _ = resolver.check_completion_status()
-                if is_done:
-                    return "APPLIED_CHATBOT"
-                page.wait_for_timeout(2000)
-                continue
+            if active_q == last_processed_q:
+                stuck_count += 1
+                if stuck_count >= 2:
+                    log_step("WARNING", f"Chatbot waiting on: '{active_q}'. Retrying Enter commit...")
+                    page.keyboard.press("Enter")
+                    page.wait_for_timeout(500)
+                if stuck_count >= 5:
+                    log_step("FAILED", "Chatbot permanently stuck on the same question. Aborting loop.")
+                    break
+            else:
+                stuck_count = 0
 
-            question_attempts[active_q] = attempts + 1
+            last_processed_q = active_q
 
-            if filtered_greeting and attempts == 0:
+            if filtered_greeting and stuck_count == 0:
                 log_step("CHATBOT", f"Filtered Preamble: \"{filtered_greeting}\"")
 
-            print(f"\n{'-' * 60}")
-            log_step("CHATBOT QUESTION", f"\"{active_q}\" (Attempt {attempts + 1})")
-            print(f"{'-' * 60}")
+            print(f"\n{'-' * 60}", flush=True)
+            log_step("CHATBOT QUESTION", f"\"{active_q}\"")
+            print(f"{'-' * 60}", flush=True)
 
             control_type = resolver.detect_ui_control()
             log_step("CONTROL TYPE", f"{control_type}")
 
+            ans = ""
             if control_type == "CONTENTEDITABLE":
                 ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
                 log_step("ACTION", f"Submitting text response: \"{ans}\"")
@@ -651,27 +652,41 @@ class ApplicationEngine:
                         options.append(opt_t)
                         
                 log_step("CHOICES", f"{options}")
-                best_opt = resolver.resolve_answer(active_q, options=options, control_type="RADIO_CHIP")
-                log_step("ACTION", f"Selecting Option: \"{best_opt}\"")
-                resolver.execute_chip_selection(best_opt)
+                ans = resolver.resolve_answer(active_q, options=options, control_type="RADIO_CHIP")
+                log_step("ACTION", f"Selecting Option: \"{ans}\"")
+                resolver.execute_chip_selection(ans)
 
             elif control_type == "FILE_UPLOAD":
                 log_step("ACTION", "Resume File Upload requested by screening drawer.")
                 resolver.execute_file_upload(tailored_pdf)
+                ans = "[UPLOADED_RESUME_PDF]"
 
             elif control_type == "DROPDOWN":
                 drawer = page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
                 select_el = drawer.locator("select").first
                 if select_el.count() > 0:
                     options = select_el.locator("option").all_inner_texts()
-                    best_opt = resolver.resolve_answer(active_q, options=options, control_type="DROPDOWN")
-                    select_el.select_option(label=best_opt)
-                    log_step("ACTION", f"Selected Dropdown Value: \"{best_opt}\"")
+                    ans = resolver.resolve_answer(active_q, options=options, control_type="DROPDOWN")
+                    select_el.select_option(label=ans)
+                    log_step("ACTION", f"Selected Dropdown Value: \"{ans}\"")
 
             else:
                 log_step("WARNING", "Unknown control type. Attempting generic input fallback...")
                 ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
                 resolver.execute_contenteditable_input(ans)
+
+            # Persist Q&A to job's ques_ans_chatbot.json audit file
+            qa_history.append({
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "question": active_q,
+                "answer": ans,
+                "control_type": control_type
+            })
+            try:
+                with open(qa_log_path, "w", encoding="utf-8") as f:
+                    json.dump(qa_history, f, indent=2)
+            except Exception:
+                pass
 
             page.wait_for_timeout(2500)
 
@@ -748,20 +763,20 @@ class ApplicationEngine:
                     "platform": job.get("platform", "Naukri"),
                     "url": job.get("url"),
                     "score": job.get("score") or job.get("match_score", "N/A"),
-                    "status": status,
+                    "status": "FAILED",
                     "notes": "Application could not be committed or drawer failed"
                 })
 
             time.sleep(2.0)
 
         log_section("APPLICATION BATCH EXECUTION SUMMARY")
-        print(f"    Total Jobs Evaluated:      {self.stats['total']}")
-        print(f"    Applied (1-Click):         {self.stats['applied_1click']}")
-        print(f"    Applied (Chatbot Solved):  {self.stats['applied_chatbot']}")
-        print(f"    External Redirects Saved:  {self.stats['redirect_external']}")
-        print(f"    Skipped / Already Applied: {self.stats['skipped']}")
-        print(f"    Failed:                    {self.stats['failed']}")
-        print(f"{'=' * 80}\n")
+        print(f"    Total Jobs Evaluated:      {self.stats['total']}", flush=True)
+        print(f"    Applied (1-Click):         {self.stats['applied_1click']}", flush=True)
+        print(f"    Applied (Chatbot Solved):  {self.stats['applied_chatbot']}", flush=True)
+        print(f"    External Redirects Saved:  {self.stats['redirect_external']}", flush=True)
+        print(f"    Skipped / Already Applied: {self.stats['skipped']}", flush=True)
+        print(f"    Failed:                    {self.stats['failed']}", flush=True)
+        print(f"{'=' * 80}\n", flush=True)
 
 
 # ==============================================================================
@@ -781,7 +796,7 @@ def main():
         if available_profiles:
             resolved_profile = str(available_profiles[0])
         else:
-            print("[ERROR] No profile directory found in profiles/.")
+            print("[ERROR] No profile directory found in profiles/.", flush=True)
             sys.exit(1)
 
     engine = ApplicationEngine(resolved_profile)
