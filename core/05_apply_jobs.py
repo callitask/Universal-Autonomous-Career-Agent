@@ -170,11 +170,8 @@ class ChatbotResolver:
 
     def detect_ui_control(self) -> str:
         """
-        Detects active UI control with strict priority:
-        1. FILE_UPLOAD
-        2. RADIO_CHIP / OPTION ITEMS (Evaluated before contenteditable to prevent false text routing)
-        3. DROPDOWN (select / custom dropdown)
-        4. CONTENTEDITABLE (free text / textarea)
+        Detects active UI control using aggressive native JS evaluation to pierce
+        React virtual DOM wrappers and detect raw structural intents.
         """
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
 
@@ -183,24 +180,27 @@ class ChatbotResolver:
         if file_input.count() > 0 and file_input.first.is_visible():
             return "FILE_UPLOAD"
 
-        # 2. Check for Choice Chips, Radio Buttons, or Option Lists (BEFORE contenteditable)
-        chips = drawer.locator(
-            "div.radioItem, "
-            "div.choiceChip, "
-            "div.clickableChip, "
-            "div.optionItem, "
-            "div[class*='radioItem'], "
-            "label[class*='radio'], "
-            "ul.ChoiceList li, "
-            "div[class*='chipItem'], "
-            "div.customRadio"
-        )
-        if chips.count() > 0 and chips.first.is_visible():
-            return "RADIO_CHIP"
-
-        # Check for radio buttons in body if not in drawer
-        page_chips = self.page.locator(".chatbot_DrawerContentWrapper div.radioItem, .chatbot_DrawerContentWrapper div.choiceChip, div.radioItem, div.choiceChip")
-        if page_chips.count() > 0 and page_chips.first.is_visible():
+        # 2. Aggressive JS Check for Radio Buttons, Lists, or Choice Chips
+        is_radio = self.page.evaluate("""() => {
+            const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
+            
+            // Check for raw radio or checkbox inputs
+            if (drawer.querySelector('input[type="radio"], input[type="checkbox"]')) return true;
+            
+            // Check for standard lists acting as options
+            const lists = drawer.querySelectorAll('ul');
+            for (let ul of lists) {
+                if (!ul.className.includes('Message') && !ul.className.includes('chat') && ul.querySelectorAll('li').length > 0) {
+                    return true;
+                }
+            }
+            
+            // Check for generic chip structures
+            const chips = drawer.querySelectorAll('div[class*="radio"], div[class*="chip"], label[class*="radio"], div.optionItem');
+            return chips.length > 0;
+        }""")
+        
+        if is_radio:
             return "RADIO_CHIP"
 
         # 3. Check for Dropdowns
@@ -226,6 +226,50 @@ class ChatbotResolver:
             return "CONTENTEDITABLE"
 
         return "UNKNOWN"
+
+    def get_radio_options(self) -> List[str]:
+        """
+        Executes a deep DOM extraction to locate and return the labels associated 
+        with any visible radio buttons, lists, or choice chips.
+        """
+        options = self.page.evaluate("""() => {
+            const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
+            const opts = new Set();
+            
+            // Strategy A: Input Radios & Associated Labels
+            const radios = drawer.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+            radios.forEach(r => {
+                if (r.nextElementSibling && r.nextElementSibling.innerText) {
+                    opts.add(r.nextElementSibling.innerText.trim());
+                } else if (r.parentElement && r.parentElement.innerText) {
+                    opts.add(r.parentElement.innerText.trim());
+                } else if (r.id) {
+                    const label = drawer.querySelector(`label[for="${r.id}"]`);
+                    if (label) opts.add(label.innerText.trim());
+                }
+            });
+            
+            // Strategy B: List Items
+            const lists = drawer.querySelectorAll('ul');
+            lists.forEach(ul => {
+                if (ul.className.includes('Message') || ul.className.includes('chat')) return;
+                const items = ul.querySelectorAll('li');
+                items.forEach(li => {
+                    const txt = li.innerText.trim();
+                    if (txt && txt.length < 150) opts.add(txt);
+                });
+            });
+            
+            // Strategy C: Div Chips
+            const chips = drawer.querySelectorAll('div[class*="radio"], div[class*="chip"], label[class*="radio"], div.optionItem');
+            chips.forEach(c => {
+                const txt = c.innerText.trim();
+                if (txt && txt.length < 150 && !txt.includes('\\n')) opts.add(txt);
+            });
+            
+            return Array.from(opts).filter(Boolean);
+        }""")
+        return options
 
     def resolve_answer(self, question: str, options: Optional[List[str]] = None, control_type: str = "CONTENTEDITABLE") -> str:
         q_clean = question.strip()
@@ -264,12 +308,6 @@ class ChatbotResolver:
     def execute_contenteditable_input(self, answer: str) -> bool:
         """
         H5 Protocol: React ContentEditable injection standard.
-        - Focuses via force click
-        - Selects and clears existing text
-        - Injects text via keyboard insert_text
-        - Executes document.execCommand fallback
-        - Dispatches synthetic events (input, change, keydown, keyup)
-        - Removes .disabled class and disabled attributes from send button before clicking
         """
         input_loc = self._get_input_field()
         if not input_loc:
@@ -350,64 +388,54 @@ class ChatbotResolver:
 
     def execute_chip_selection(self, matched_option: str) -> bool:
         """
-        H3 Protocol: Escapes single quotes and tries multi-selector pattern
-        to reliably locate and click the target choice chip or radio item.
+        Direct JS Node execution protocol. Bypasses Playwright pseudo-classes by iterating
+        visible nodes and strictly mapping exact text to prevent interception faults.
         """
         self.scroll_drawer_to_bottom()
         
-        safe_opt = matched_option.replace("'", "\\'")
-        chip_selectors = [
-            f"div.radioItem:has-text('{safe_opt}')",
-            f"div.choiceChip:has-text('{safe_opt}')",
-            f"div.clickableChip:has-text('{safe_opt}')",
-            f"div.optionItem:has-text('{safe_opt}')",
-            f"div[class*='radioItem']:has-text('{safe_opt}')",
-            f"label:has-text('{safe_opt}')",
-            f"ul.ChoiceList li:has-text('{safe_opt}')",
-            f"li:has-text('{safe_opt}')",
-            f"span:has-text('{safe_opt}')"
-        ]
-
-        chip = None
-        for sel in chip_selectors:
-            loc = self.page.locator(sel).first
-            if loc.count() > 0 and loc.is_visible():
-                chip = loc
-                break
-
-        # Fallback to DOM iteration if direct text selector fails
-        if not chip:
-            drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
-            all_chips = drawer.locator("div.radioItem, div.choiceChip, div.clickableChip, div.optionItem, label, ul.ChoiceList li")
-            opt_clean = matched_option.lower().strip()
-            for idx in range(all_chips.count()):
-                candidate_chip = all_chips.nth(idx)
-                if candidate_chip.is_visible():
-                    c_text = candidate_chip.inner_text().lower().strip()
-                    if c_text == opt_clean or re.search(rf'\b{re.escape(opt_clean)}\b', c_text):
-                        chip = candidate_chip
-                        break
-
-        if chip:
-            log_step("CHATBOT", f"Clicking choice chip: '{matched_option}'")
-            chip.click(force=True)
-            self.page.wait_for_timeout(600)
+        clicked = self.page.evaluate("""(targetText) => {
+            const cleanTarget = targetText.toLowerCase().trim();
+            const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
+            const elements = drawer.querySelectorAll('li, label, span, div, button, input');
             
-            # Click Save/Next/Submit button if required
-            save_btn = self.page.locator(
-                ".sendMsgbtn_container .sendMsg, "
-                "div[id*='sendMsg'] .sendMsg, "
-                ".footerWrapper button:has-text('Save'), "
-                "button:has-text('Save'), "
-                "button:has-text('Next'), "
-                "button:has-text('Submit')"
-            ).first
-            if save_btn.count() > 0 and save_btn.is_visible():
-                save_btn.click(force=True)
-                self.page.wait_for_timeout(800)
+            for (let el of elements) {
+                if (el.children.length > 2) continue; // Skip layout wrappers
+                let text = (el.innerText || el.value || '').toLowerCase().trim();
+                
+                if (text === cleanTarget || text.includes(cleanTarget)) {
+                    // Try to find a radio input inside or adjacent
+                    let radio = el.querySelector('input[type="radio"]') || 
+                                document.querySelector(`input[id="${el.getAttribute('for')}"]`);
+                    if (radio) {
+                        radio.click();
+                        return true;
+                    }
+                    el.click();
+                    return true;
+                }
+            }
+            return false;
+        }""", matched_option)
+
+        if clicked:
+            self.page.wait_for_timeout(600)
+            # Find and click save/next button
+            save_clicked = self.page.evaluate("""() => {
+                const btns = document.querySelectorAll('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .footerWrapper button, button');
+                for (let btn of btns) {
+                    let t = (btn.innerText || '').toLowerCase();
+                    if (t.includes('save') || t.includes('next') || t.includes('submit')) {
+                        btn.click();
+                        return true;
+                    }
+                }
+                return false;
+            }""")
+            
+            self.page.wait_for_timeout(800)
             return True
 
-        log_step("WARNING", f"Could not find selectable chip element for option: '{matched_option}'")
+        log_step("WARNING", f"Could not execute DOM click on element for option: '{matched_option}'")
         return False
 
     def execute_file_upload(self, tailored_pdf_path: Optional[str] = None) -> bool:
@@ -444,7 +472,13 @@ class ChatbotResolver:
             "your application has reached",
             "successfully applied",
             "application submitted",
-            "you have applied"
+            "you have applied",
+            "application sent",
+            "responses recorded",
+            "profile shared",
+            "thank you",
+            "reached the recruiter",
+            "applied on"
         ]
         
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
@@ -707,30 +741,15 @@ class ApplicationEngine:
 
             ans = ""
             if control_type == "RADIO_CHIP":
-                drawer = page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
-                chip_locs = drawer.locator(
-                    "div.radioItem, "
-                    "div.choiceChip, "
-                    "div.clickableChip, "
-                    "div.optionItem, "
-                    "div[class*='radioItem'], "
-                    "label[class*='radio'], "
-                    "ul.ChoiceList li, "
-                    "div[class*='chipItem']"
-                )
-                
-                options = []
-                for idx in range(chip_locs.count()):
-                    opt_t = chip_locs.nth(idx).inner_text().strip()
-                    if opt_t and opt_t not in options:
-                        options.append(opt_t)
-                
+                options = resolver.get_radio_options()
                 log_step("CHOICES", f"{options}")
+                
                 ans = resolver.resolve_answer(active_q, options=options, control_type="RADIO_CHIP")
                 log_step("ACTION", f"Selecting Option: \"{ans}\"")
+                
                 selection_ok = resolver.execute_chip_selection(ans)
                 if not selection_ok:
-                    log_step("WARNING", "Choice chip click failed. Attempting contenteditable fallback...")
+                    log_step("WARNING", "Native JS click failed. Attempting contenteditable fallback...")
                     resolver.execute_contenteditable_input(ans)
 
             elif control_type == "CONTENTEDITABLE":
