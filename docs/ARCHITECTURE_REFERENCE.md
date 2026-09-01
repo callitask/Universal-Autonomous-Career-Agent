@@ -49,32 +49,34 @@ continuous_career_agent.py (daemon loop)
 - `applications_tracker.csv` — Application → Deduplication
 - `saved_external_jobs.json` — External redirect storage
 - `candidate_config.json` — Self-learning truth cache (read/write by all scripts)
+- `pending_question.json` — Async File-Based IPC handshake between the Application Engine and AG 2.0 (replaces terminal stdin blocking)
+- `ques_ans_chatbot.json` — Per-job Q&A audit log stored alongside tailored resumes
 
 ---
 
 ## 3. MODULE-BY-MODULE REFERENCE
 
-### 3.1 `ai_client.py` — Central AI Reasoning Engine (426 lines)
+### 3.1 `ai_client.py` — Central AI Reasoning Engine
 
 **Classes:**
 - `MatchResult(tuple)` — Hybrid result supporting tuple unpacking, attribute access, and dict-style lookups
-- `AIClient` — Gemini Flash + Antigravity 2.0 terminal dual-brain
+- `AIClient` — Gemini Flash + Antigravity 2.0 File-Based IPC dual-brain
 
 **Key Methods:**
 | Method | Purpose | Fallback Chain |
 |:---|:---|:---|
-| `generate_text(prompt, system_instruction, default_fallback)` | General text generation | Gemini → default string → terminal stdin |
-| `evaluate_job_match(job_title, job_description, ...)` | Scores job suitability 0-100 | Gemini JSON → heuristic word overlap → MatchResult(60) |
-| `answer_screening_question(question, options, ...)` | Resolves chatbot questions | Exact cache → Gemini analysis → terminal stdin |
-| `_best_option_match(target, options)` | Maps freeform answer to UI choices | Exact → word-boundary → numeric → boolean → None |
-| `_persist_learned_truth(question, answer)` | Caches answers to config | Atomic via ProfileContext.save_config() |
-| `score_and_reorder_bullets(bullets, jd)` | Reorders resume bullets by JD relevance | Word-set intersection scoring |
-| `_fallback_antigravity_interactive(prompt, ...)` | Terminal stdin/stdout hook | Single-line or END_OF_ANSWER multiline |
+| `generate_text(...)` | General text generation | Gemini API → File IPC (`pending_question.json`) |
+| `evaluate_job_match(...)` | Scores job suitability 0-100 | Gemini JSON → heuristic word overlap → MatchResult(50-95) |
+| `answer_screening_question(...)` | Resolves chatbot questions | Exact cache → Gemini API → File IPC polling |
+| `_best_option_match(...)` | Maps freeform answer to UI choices | Exact → word-boundary → numeric → boolean → None |
+| `_persist_learned_truth(...)` | Caches answers to config | Atomic via ProfileContext.save_config() |
+| `_fallback_antigravity_ipc(...)` | AG 2.0 Handshake Hook | Writes `pending_question.json` and polls infinitely until AG 2.0 fills the `"answer"` key. |
 
 **Critical Design Decisions:**
-- `_best_option_match` returns `None` (not `options[0]`) when no match found
-- Exact-match only for learned truth lookup (no substring/regex)
-- Quote stripping on AI responses: `replace('"', '').replace("'", "")` — note this corrupts apostrophe words like `Bachelor's`
+- **Zero Terminal Blocking:** Removed `sys.stdin.readline()`. The background daemon will never freeze waiting for terminal input.
+- **AG 2.0 IPC Polling:** The script polls `pending_question.json` 10 times a second. Once an answer is detected, it proceeds instantly and deletes the file.
+- **Strict Exact-Match Caching Only:** When checking `auto_learned_truths`, use strict `key.strip().lower() == question.strip().lower()`.
+- **Character Limits:** Automatically trims free-text IPC fallback answers to 250 characters to prevent form-field overflow.
 
 ---
 
@@ -115,11 +117,11 @@ https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_AL=true&sta
 **Two Main Classes:**
 
 #### `ChatbotResolver` — DOM Chatbot Reverse-Engineering
-- **Question Extraction:** Iterates `li.botItem .botMsg` elements in reverse, filtering greetings that contain candidate name + welcome phrases
-- **Control Detection Priority:** `FILE_UPLOAD` → `CONTENTEDITABLE` → `RADIO_CHIP` → `DROPDOWN` → body fallback → `UNKNOWN`
-- **Contenteditable Input Protocol:** Click → Ctrl+A → Backspace → keyboard.type(delay=30) → JS event dispatch → Send button click
-- **Chip Selection:** Escapes single quotes, tries multiple selector patterns, clicks matching chip + Save/Next button
-- **Completion Detection:** Scans for success text markers in drawer AND page body. Does NOT treat drawer disappearance as completion.
+- **Question Extraction:** Iterates `li.botItem .botMsg` elements in reverse, filtering greetings containing candidate name.
+- **Control Detection Priority:** `FILE_UPLOAD` → `CONTENTEDITABLE` → `RADIO_CHIP` → `DROPDOWN` → body fallback.
+- **Contenteditable React Protocol:** Click → Ctrl+A → Backspace → `page.keyboard.insert_text(answer)` (to trigger React onChange hooks) → native `document.execCommand('insertText')` → manual `dispatchEvent` (Input/Change/Keydown) → forcefully remove `disabled` class from Send button.
+- **Chip Selection:** Escapes single quotes, tries multiple selector patterns, clicks matching chip + Save/Next button.
+- **Per-Job Audit Logging:** Every question asked, the control type detected, and the resolved answer are appended to `profiles/<profile>/output/applications/<Company>_<Role>/ques_ans_chatbot.json`.
 
 #### `ApplicationEngine` — Batch Orchestrator
 - **Status Flow:**

@@ -176,6 +176,15 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 ### H3: Escape Quotes in Selectors
 **Rule:** Before injecting `matched_option` into `:has-text()` selectors, always escape single quotes with `\\'`.
 
+### H4: Subprocess Telemetry Phantom Freeze
+**Rule:** When executing inside a background subprocess chain (`continuous_career_agent.py` -> `05_apply_jobs.py`), Windows block-buffers the output. All `print()` statements MUST use `flush=True` or the terminal will appear frozen.
+
+### H5: React ContentEditable State Lock
+**Rule:** Playwright's `page.keyboard.type` does not reliably trigger React 16+ internal state updates on custom `contenteditable` divs, leaving the "Save" button `disabled`. You MUST use `page.keyboard.insert_text()`, followed by JS `document.execCommand('insertText')`, manual event dispatching (`input`, `change`, `keydown`), and manually removing the `.disabled` class from the submit button.
+
+### H6: stdin Subprocess Blocking
+**Rule:** Never use `sys.stdin.readline()` or `input()` inside the pipeline. Because the scripts run as nested daemon subprocesses, terminal prompts will permanently hang the execution loop. Use File-Based IPC polling (`pending_question.json`) instead.
+
 ---
 
 ## APPENDIX A: DIRECTORY STRUCTURE CONTRACT
