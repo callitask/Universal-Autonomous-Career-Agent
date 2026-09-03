@@ -181,34 +181,50 @@ class ChatbotResolver:
         """
         Detects active UI control using aggressive native JS evaluation to pierce
         React virtual DOM wrappers and detect raw structural intents.
+        Recognizes:
+        - File uploaders (input[type='file'])
+        - Date inputs (input[type='date'], input.datePicker)
+        - Yes/No toggle pills, custom radio wrappers (label.ssrc__label, div.customRadio, div.radioItem), multi-select chips
+        - Standard <select> and custom dropdowns
+        - Contenteditable inputs and textareas
         Strictly ignores .chipMsg (Naukri Bot Logo) to prevent false radio detection.
         """
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
 
+        # 1. File Upload
         file_input = drawer.locator("input[type='file'], input.chatbot_Uploader, input[id*='Uploader']")
         if file_input.count() > 0 and file_input.first.is_visible():
             return "FILE_UPLOAD"
 
+        # 2. Date Input
+        date_input = drawer.locator("input[type='date'], input.datePicker, input[class*='datePicker'], input[class*='date-picker']")
+        if date_input.count() > 0 and date_input.first.is_visible():
+            return "DATE_INPUT"
+
+        # 3. Radio / Choice Chips / Toggle Pills / Custom Radio Wrappers
         is_radio = self.page.evaluate("""() => {
             const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
             if (drawer.querySelector('input[type="radio"], input[type="checkbox"]')) return true;
             
             // Target valid choice chips while STRICTLY IGNORING the bot logo (.chipMsg)
-            const chips = Array.from(drawer.querySelectorAll('.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"], label.ssrc__label'));
+            const chips = Array.from(drawer.querySelectorAll(
+                '.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"], ' +
+                'label.ssrc__label, div.customRadio, div.radioItem, div.togglePill, button.toggle, ' +
+                'div[class*="toggle"], div.yesNoToggle, label[class*="radio"], ul.ChoiceList li'
+            )).filter(el => !el.closest('.chipMsg') && !el.classList.contains('chipMsg') && el.offsetParent !== null);
             
-            // Only return true if we found actual options (not bot avatar logos)
-            if (chips.length > 0) return true;
-            
-            return false;
+            return chips.length > 0;
         }""")
         
         if is_radio:
             return "RADIO_CHIP"
 
-        select_dropdown = drawer.locator("select, div.custom-select, div[class*='dropdown']")
+        # 4. Dropdowns and Standard <select>
+        select_dropdown = drawer.locator("select, div.custom-select, div[class*='dropdown'], div[class*='select-dropdown']")
         if select_dropdown.count() > 0 and select_dropdown.first.is_visible():
             return "DROPDOWN"
 
+        # 5. Contenteditable Text Inputs
         textarea = drawer.locator(
             "div.textArea[contenteditable='true'], "
             "div[id^='userInput_'], "
@@ -230,8 +246,8 @@ class ChatbotResolver:
     def get_radio_options(self) -> List[str]:
         """
         Executes a deep DOM extraction to locate and return the labels associated 
-        with any visible radio buttons, lists, or choice chips. Strictly avoids extracting 
-        chatbot conversational text.
+        with any visible radio buttons, lists, toggle pills, or choice chips. 
+        Strictly avoids extracting chatbot conversational text and ignores .chipMsg.
         """
         options = self.page.evaluate("""() => {
             const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
@@ -241,6 +257,7 @@ class ChatbotResolver:
             const radios = drawer.querySelectorAll('input[type="radio"], input[type="checkbox"]');
             if (radios.length > 0) {
                 radios.forEach(r => {
+                    if (r.closest('.chipMsg')) return;
                     if (r.id) {
                         const label = drawer.querySelector(`label[for="${r.id}"]`);
                         if (label && label.innerText) {
@@ -258,14 +275,19 @@ class ChatbotResolver:
                 });
             }
             
-            // Strategy B: Choice Chips (Legacy Naukri Structure)
-            if (opts.size === 0) {
-                const chips = drawer.querySelectorAll('.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"]');
-                chips.forEach(c => {
-                    const txt = c.innerText.trim();
-                    if (txt && txt.length < 150 && !txt.includes('\\n')) opts.add(txt);
-                });
-            }
+            // Strategy B: Choice Chips, Toggle Pills, and Custom Radio Wrappers
+            const chips = drawer.querySelectorAll(
+                '.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"], ' +
+                'label.ssrc__label, div.customRadio, div.togglePill, button.toggle, div.yesNoToggle, ' +
+                'label[class*="radio"], ul.ChoiceList li'
+            );
+            chips.forEach(c => {
+                if (c.closest('.chipMsg') || c.classList.contains('chipMsg')) return;
+                const txt = c.innerText.trim();
+                if (txt && txt.length < 150 && !txt.includes('\\n')) {
+                    opts.add(txt);
+                }
+            });
             
             return Array.from(opts).filter(Boolean);
         }""")
@@ -391,6 +413,7 @@ class ChatbotResolver:
 
     def execute_chip_selection(self, matched_option: str) -> bool:
         self.scroll_drawer_to_bottom()
+        clean_target = str(matched_option).strip()
         
         clicked = self.page.evaluate("""(targetText) => {
             const cleanTarget = targetText.toLowerCase().trim();
@@ -399,8 +422,9 @@ class ChatbotResolver:
             // Priority 1: Label matching a specific input ID
             const labels = drawer.querySelectorAll('label');
             for (let lbl of labels) {
+                if (lbl.closest('.chipMsg') || lbl.classList.contains('chipMsg')) continue;
                 if (lbl.innerText.toLowerCase().trim() === cleanTarget) {
-                    lbl.click(); // Click the label natively
+                    lbl.click();
                     const radioId = lbl.getAttribute('for');
                     if (radioId) {
                         const radioInput = document.getElementById(radioId);
@@ -414,8 +438,9 @@ class ChatbotResolver:
             }
             
             // Priority 2: Generic elements matching text
-            const elements = drawer.querySelectorAll('span, div, button');
+            const elements = drawer.querySelectorAll('span, div, button, label, a');
             for (let el of elements) {
+                if (el.closest('.chipMsg') || el.classList.contains('chipMsg')) continue;
                 if (el.children.length > 2) continue; // Skip layout wrappers
                 let text = (el.innerText || '').toLowerCase().trim();
                 
@@ -425,7 +450,23 @@ class ChatbotResolver:
                 }
             }
             return false;
-        }""", matched_option)
+        }""", clean_target)
+
+        # H3 Guardrail Fallback: Escape single quotes in Playwright :has-text() selector
+        if not clicked:
+            try:
+                escaped_text = clean_target.replace("'", "\\'")
+                drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
+                chip_loc = drawer.locator(
+                    f"button:has-text('{escaped_text}'), label:has-text('{escaped_text}'), "
+                    f"div.clickableChip:has-text('{escaped_text}'), div.choiceChip:has-text('{escaped_text}'), "
+                    f"div.radioItem:has-text('{escaped_text}'), span:has-text('{escaped_text}')"
+                ).first
+                if chip_loc.count() > 0 and chip_loc.is_visible():
+                    chip_loc.click(force=True)
+                    clicked = True
+            except Exception:
+                pass
 
         if clicked:
             self.page.wait_for_timeout(600)
@@ -740,13 +781,26 @@ class ApplicationEngine:
 
             if active_q == last_processed_q:
                 stuck_count += 1
+                log_step("WARNING", f"Chatbot question repeated ({stuck_count}/3): '{active_q}'")
                 if stuck_count >= 2:
-                    log_step("WARNING", f"Chatbot waiting on: '{active_q}'. Retrying Enter commit...")
+                    log_step("WARNING", "Chatbot waiting on repeated question. Retrying Enter commit...")
                     page.keyboard.press("Enter")
                     page.wait_for_timeout(500)
-                if stuck_count >= 5:
-                    log_step("FAILED", "Chatbot permanently stuck on the same question. Aborting loop.")
-                    break
+                if stuck_count >= 3:
+                    log_step("FAILED", f"Chatbot permanently stuck on same question 3 times: '{active_q}'. Aborting loop.")
+                    qa_history.append({
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "question": active_q,
+                        "answer": "[ABORTED_STUCK_3X]",
+                        "control_type": "STUCK",
+                        "status": "REQUIRES_MANUAL_INTERVENTION"
+                    })
+                    try:
+                        with open(qa_log_path, "w", encoding="utf-8") as f:
+                            json.dump(qa_history, f, indent=2)
+                    except Exception:
+                        pass
+                    return "FAILED"
             else:
                 stuck_count = 0
 
@@ -802,10 +856,70 @@ class ApplicationEngine:
                 else:
                     ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
                     resolver.execute_contenteditable_input(ans)
-            elif control_type not in ["RADIO_CHIP", "CONTENTEDITABLE", "FILE_UPLOAD", "DROPDOWN"]:
-                log_step("WARNING", "Unknown control type. Attempting generic input fallback...")
-                ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
-                resolver.execute_contenteditable_input(ans)
+
+            elif control_type == "DATE_INPUT":
+                drawer = page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
+                date_el = drawer.locator("input[type='date'], input.datePicker, input[class*='datePicker'], input[class*='date-picker']").first
+                ans = resolver.resolve_answer(active_q, control_type="DATE_INPUT")
+                log_step("ACTION", f"Submitting date value: '{ans}'")
+                if date_el.count() > 0 and date_el.is_visible():
+                    try:
+                        date_el.fill(ans)
+                        date_el.press("Enter")
+                    except Exception:
+                        resolver.execute_contenteditable_input(ans)
+                else:
+                    resolver.execute_contenteditable_input(ans)
+
+            elif control_type not in ["RADIO_CHIP", "CONTENTEDITABLE", "FILE_UPLOAD", "DROPDOWN", "DATE_INPUT"]:
+                # Bug 4 Fix: Verify if a contenteditable input is actually visible before attempting typing
+                input_field = resolver._get_input_field()
+                if input_field and input_field.is_visible():
+                    log_step("ACTION", "Contenteditable input field verified visible. Falling back to text input.")
+                    ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
+                    resolver.execute_contenteditable_input(ans)
+                else:
+                    # Do NOT force text typing into detached DOM nodes!
+                    log_step("WARNING", "No visible input field found for UNKNOWN control. Scanning for interactive elements...")
+                    visible_interactive = page.evaluate("""() => {
+                        const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
+                        const elements = drawer.querySelectorAll('button, label, [class*="chip"], [class*="radio"], [class*="toggle"], div.choiceChip, div.clickableChip');
+                        const items = [];
+                        for (let el of elements) {
+                            if (el.offsetParent !== null && !el.closest('.chipMsg') && !el.classList.contains('chipMsg')) {
+                                const t = (el.innerText || '').trim();
+                                if (t && t.length < 100 && !items.includes(t)) {
+                                    items.push(t);
+                                }
+                            }
+                        }
+                        return items;
+                    }""")
+
+                    if visible_interactive:
+                        log_step("CHATBOT", f"Discovered interactive options in drawer: {visible_interactive}")
+                        ans = resolver.resolve_answer(active_q, options=visible_interactive, control_type="RADIO_CHIP")
+                        selected = resolver.execute_chip_selection(ans)
+                        if not selected:
+                            log_step("WARNING", f"Could not click discovered option '{ans}'. Routing to pending_question.json IPC...")
+                            ans = resolver.ai._fallback_antigravity_ipc(
+                                prompt=f"Chatbot question '{active_q}' in drawer with unrecognized control. Visible interactive options: {visible_interactive}. Provide the exact action or answer.",
+                                question=active_q,
+                                options=visible_interactive,
+                                control_type="UNKNOWN"
+                            )
+                            if ans in visible_interactive:
+                                resolver.execute_chip_selection(ans)
+                    else:
+                        log_step("WARNING", "No interactive elements discovered. Routing to AG 2.0 File-Based IPC...")
+                        ans = resolver.ai._fallback_antigravity_ipc(
+                            prompt=f"Chatbot question '{active_q}' in drawer with no visible input field or chips. Provide the text or action required.",
+                            question=active_q,
+                            options=None,
+                            control_type="UNKNOWN"
+                        )
+                        if resolver._get_input_field():
+                            resolver.execute_contenteditable_input(ans)
 
             qa_history.append({
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
