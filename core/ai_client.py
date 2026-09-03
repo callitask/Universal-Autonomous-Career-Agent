@@ -689,4 +689,194 @@ INSTRUCTIONS:
                         return ans
                 except Exception:
                     # File is being written to by AG, pass to next poll tick
-                    pass
+                    pass
+
+    def arbitrate_card_fit(
+        self,
+        title: str,
+        card_skills: list = None,
+        exp_text: str = "",
+        candidate_profile: dict = None
+    ) -> tuple[bool, str]:
+        """
+        Tier 2B Cognitive Card Arbitration:
+        Evaluates whether an unfamiliar, abbreviated, or creative job role seen on the
+        search results page conceptually aligns with the candidate's domain, skills,
+        and experience tier (e.g. recognizing that 'RTR Specialist' is Record-to-Report
+        accounting, or 'Process Developer - FA' is Finance & Accounts).
+        
+        Returns (is_relevant: bool, reasoning: str).
+        """
+        profile = candidate_profile or (self.profile_context.config if self.profile_context else {})
+        cand = profile.get("candidate", {})
+        cand_exp = float(cand.get("total_experience_years", 0) or 0)
+        skills_dict = profile.get("taxonomy_skills", {})
+        all_skills = [s.lower() for s in skills_dict.keys()]
+        for v in skills_dict.values():
+            if isinstance(v, list):
+                all_skills.extend([s.lower() for s in v if isinstance(s, str)])
+            elif isinstance(v, dict):
+                all_skills.extend([s.lower() for s in v.keys() if isinstance(s, str)])
+
+        target_jobs = profile.get("target_jobs", {})
+        negative_keywords = [k.lower().strip() for k in (target_jobs.get("negative_keywords") or []) if k and k.strip()]
+        
+        title_lower = title.lower().strip()
+        card_skills_lower = [s.lower().strip() for s in (card_skills or [])]
+
+        # 1. Hard check: Negative keywords are absolute (C6 Guardrail)
+        for neg in negative_keywords:
+            if re.search(rf'\b{re.escape(neg)}\b', title_lower):
+                return False, f"Negative keyword '{neg}' in card title (C6 Guardrail)."
+
+        # 2. Check card skills against candidate skills
+        matching_card_skills = []
+        for cs in card_skills_lower:
+            for cand_s in all_skills:
+                if cs == cand_s or (len(cs) >= 4 and len(cand_s) >= 4 and (cs in cand_s or cand_s in cs)):
+                    matching_card_skills.append(cs)
+                    break
+
+        if matching_card_skills:
+            return True, f"Card skills match candidate taxonomy: {', '.join(matching_card_skills[:3])}"
+
+        # 3. Domain abbreviations and technical role mapping
+        domain_acronyms = {
+            "rtr": "Record to Report (General Ledger / Reporting)",
+            "p2p": "Procure to Pay (Accounts Payable)",
+            "o2c": "Order to Cash (Accounts Receivable)",
+            "gl": "General Ledger",
+            "ap": "Accounts Payable",
+            "ar": "Accounts Receivable",
+            "brs": "Bank Reconciliation Statement",
+            "mis": "Management Information Systems",
+            "f&a": "Finance & Accounts",
+            "fa": "Finance & Accounts",
+            "fp&a": "Financial Planning & Analysis",
+            "kyc": "Know Your Customer Operations",
+            "aml": "Anti Money Laundering Compliance",
+            "us gaap": "US GAAP Accounting",
+            "ifrs": "IFRS Accounting Standards"
+        }
+        
+        words = re.findall(r'[a-zA-Z0-9&]+', title_lower)
+        for w in words:
+            if w in domain_acronyms:
+                return True, f"Domain acronym '{w.upper()}' ({domain_acronyms[w]}) matches candidate domain."
+
+        # 4. Use operational Gemini LLM if available for cognitive triage
+        if self.gemini_client:
+            prompt = f"""You are a senior recruitment qualification agent.
+Candidate Experience: {cand_exp} years in Finance, Accounting, Reconciliations, Corporate Actions.
+Candidate Core Skills: {', '.join(all_skills[:15])}
+
+Job Card Title: "{title}"
+Job Card Skills: {', '.join(card_skills_lower) if card_skills_lower else 'Not provided'}
+Job Experience Band: "{exp_text}"
+
+Evaluate: Is this job role conceptually relevant to the candidate's professional domain?
+A role is relevant if:
+- It involves accounting, finance, audit, taxation, reconciliations, corporate actions, middle office, or ledger operations.
+- It is NOT sales, IT software development, digital marketing, human resources, or executive leadership (Director/VP).
+
+Respond with ONLY a JSON object:
+{{"is_relevant": true/false, "reasoning": "one sentence explanation"}}"""
+            try:
+                raw_text = self.generate_text(prompt, default_fallback="")
+                match = re.search(r'\{[^{}]*"is_relevant"[^{}]*\}', raw_text, re.DOTALL)
+                if match:
+                    res_json = json.loads(match.group(0))
+                    return bool(res_json.get("is_relevant", False)), str(res_json.get("reasoning", "LLM evaluation"))
+            except Exception:
+                pass
+
+        # 5. Local semantic heuristics fallback
+        target_keywords = [k.lower().strip() for k in (target_jobs.get("keywords") or []) if k and k.strip()]
+        recommended_titles = [t.lower().strip() for t in (target_jobs.get("recommended_titles") or []) if t and t.strip()]
+        all_targets = target_keywords + recommended_titles
+
+        for target in all_targets:
+            target_tokens = [t for t in re.split(r'[\s/,-]+', target) if len(t) >= 4]
+            for tt in target_tokens:
+                for w in words:
+                    if len(w) >= 4 and (w.startswith(tt[:5]) or tt.startswith(w[:5])):
+                        return True, f"Stem match between title token '{w}' and target token '{tt}'."
+
+        return False, f"Title '{title}' does not match candidate domain, skills, or target keywords."
+
+    def analyze_and_expand_designations(
+        self,
+        resume_text: str,
+        candidate_exp: float,
+        current_keywords: list,
+        market_seen_titles: list = None
+    ) -> list[str]:
+        """
+        Tier 4 Autonomous Starvation Recovery:
+        Inspects the candidate's resume, actual years of experience (e.g. 9.5 years),
+        and the list of titles observed on the job portal during a discovery cycle.
+        Infers 5-8 high-yield, seniority-aligned designations that reflect the candidate's
+        true seniority tier (e.g. Senior Accountant, Assistant Manager, Specialist) rather
+        than entry-level titles.
+        """
+        market_titles_sample = list(market_seen_titles or [])[:25]
+        
+        # 1. Attempt LLM generation via Gemini if available
+        if self.gemini_client:
+            prompt = f"""You are an expert career strategist and executive headhunter.
+A candidate with {candidate_exp} years of total experience is searching for jobs, but the current search queries yielded 0 results or were too narrow.
+
+Candidate Resume Excerpt:
+{resume_text[:2000] if resume_text else 'Finance & Accounting Professional with ' + str(candidate_exp) + ' years experience'}
+
+Current Search Keywords: {current_keywords}
+Titles Recently Seen on Job Board (Sample):
+{market_titles_sample}
+
+Generate a list of 6 to 10 high-yield, senior-level Job Titles / Designations that strictly match:
+1. The candidate's {candidate_exp} years seniority tier (e.g., Senior, Lead, Assistant Manager, Manager, Specialist level - NOT junior/assistant/intern).
+2. The candidate's primary domain (Finance, Accounting, Reconciliations, Corporate Actions, Audit).
+3. Realistic portal search titles used on Naukri/LinkedIn in India.
+
+Respond with ONLY a JSON array of title strings:
+["Title 1", "Title 2", ...]"""
+            try:
+                raw_text = self.generate_text(prompt, default_fallback="")
+                match = re.search(r'\[\s*".*?"\s*\]', raw_text, re.DOTALL)
+                if match:
+                    titles = json.loads(match.group(0))
+                    cleaned = [str(t).strip() for t in titles if isinstance(t, str) and len(t.strip()) > 3]
+                    if len(cleaned) >= 3:
+                        return cleaned
+            except Exception as e:
+                print(f"[AI CLIENT] Notice during designation expansion: {e}", flush=True)
+
+        # 2. Heuristic rule-based seniority expansion fallback
+        manager_level = "Assistant Manager" if candidate_exp >= 7.0 else "Executive"
+        lead_level = "Lead" if candidate_exp >= 8.0 else "Specialist"
+
+        fallback_expanded = []
+        if candidate_exp >= 7.0:
+            fallback_expanded = [
+                "Senior Accountant",
+                f"{manager_level} - Accounts",
+                f"{manager_level} Finance",
+                "Accounts Manager",
+                f"{lead_level} Reconciliation Specialist",
+                "Corporate Actions Specialist",
+                "Senior Financial Analyst",
+                "Finance Controller",
+                "Senior Accounts Executive"
+            ]
+        else:
+            fallback_expanded = [
+                "Senior Accountant",
+                "Senior Accounts Executive",
+                "Financial Analyst",
+                "Reconciliation Executive",
+                "Audit Associate"
+            ]
+
+        cur_set = set(str(k).lower().strip() for k in current_keywords)
+        result = [t for t in fallback_expanded if t.lower().strip() not in cur_set]
+        return result

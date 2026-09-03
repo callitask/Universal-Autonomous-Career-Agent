@@ -42,7 +42,7 @@ from core.ai_client import AIClient
 
 BATCH_SIZE = 1
 MAX_PAGES_PER_SEARCH = 3
-MATCH_THRESHOLD = 40
+MATCH_THRESHOLD = 60
 
 
 def get_already_processed_urls(profile_dir: Path) -> set:
@@ -86,16 +86,29 @@ def get_already_processed_urls(profile_dir: Path) -> set:
     return processed
 
 
-def is_title_allowed(title: str, target_keywords: list, negative_keywords: list) -> bool:
+def is_title_allowed(
+    title: str,
+    target_keywords: list,
+    negative_keywords: list,
+    card_skills: list = None,
+    exp_text: str = "",
+    ai_client = None,
+    config: dict = None,
+    ctx = None
+) -> bool:
     """
-    C6 Fix: Strictly rejects titles containing negative keywords unconditionally.
-    Positive Alignment: Requires the title to match at least one target keyword logically.
+    Tier 2 Multi-Pass Gating & Cognitive Arbitration:
+    - 1. C6 Fix: Strictly rejects titles containing negative keywords unconditionally.
+    - 2. Deterministic Positive Match: Matches titles using prefix/stem-aware matching,
+         domain tokens, or card skill tags from the search page.
+    - 3. Tier 2B Cognitive Triage: If unfamiliar or abbreviated, consults the AI Brain
+         (ai_client.arbitrate_card_fit). If approved, learns the title into config and passes!
     """
     title_lower = title.lower().strip()
 
     # 1. Absolute Negative Rejection (C6 Guardrail)
     for neg in negative_keywords:
-        neg_clean = neg.strip().lower()
+        neg_clean = str(neg).strip().lower() if neg else ""
         if neg_clean and re.search(rf'\b{re.escape(neg_clean)}\b', title_lower):
             return False
 
@@ -103,20 +116,97 @@ def is_title_allowed(title: str, target_keywords: list, negative_keywords: list)
     if not target_keywords:
         return True
 
-    title_tokens = set([t for t in re.split(r'[\s/,-]+', title_lower) if len(t) > 2])
-    
+    # 2.1 Direct exact phrase match (case-insensitive)
     for target in target_keywords:
-        target_clean = target.strip().lower()
-        if not target_clean: 
+        target_clean = str(target).strip().lower() if target else ""
+        if not target_clean:
             continue
-        
-        # Direct substring/phrase match
-        if target_clean in title_lower:
+        if re.search(rf'\b{re.escape(target_clean)}\b', title_lower) or target_clean in title_lower:
             return True
-            
-        # Token overlap match (e.g. "software engineer" vs "engineer, software")
-        target_tokens = set([t for t in re.split(r'[\s/,-]+', target_clean) if len(t) > 2])
-        if target_tokens and target_tokens.issubset(title_tokens):
+
+    title_tokens = [t for t in re.split(r'[\s/,-]+', title_lower) if len(t) > 2]
+    if not title_tokens:
+        return False
+
+    # Helper function: tests if a target token matches any title token via exact match or stem/prefix
+    def token_matches(target_tok: str, tok_list: list) -> bool:
+        for tok in tok_list:
+            if tok == target_tok:
+                return True
+            # Stem/prefix matching for words with length >= 4 (e.g. account/accounts, finance/financial, audit/auditor)
+            if len(tok) >= 4 and len(target_tok) >= 4 and (tok.startswith(target_tok[:5]) or target_tok.startswith(tok[:5])):
+                return True
+        return False
+
+    stopwords = {
+        "and", "for", "the", "with", "lead", "senior", "junior", "manager",
+        "executive", "officer", "associate", "specialist", "staff", "principal",
+        "head", "director", "vp", "intern", "trainee", "expert", "consultant",
+        "general", "global", "regional", "assistant", "deputy", "group", "team"
+    }
+
+    # 2.2 Target Phrase Stem/Prefix Overlap
+    # If all significant tokens of any target keyword match title tokens (via exact or stem match)
+    for target in target_keywords:
+        target_clean = str(target).strip().lower() if target else ""
+        if not target_clean:
+            continue
+
+        target_tokens = [t for t in re.split(r'[\s/,-]+', target_clean) if len(t) > 2 and t not in stopwords]
+        if not target_tokens:
+            target_tokens = [t for t in re.split(r'[\s/,-]+', target_clean) if len(t) > 2]
+
+        if target_tokens and all(token_matches(tt, title_tokens) for tt in target_tokens):
+            return True
+
+    # 2.3 Primary Domain Keyword Direct Match
+    # Dynamically extract domain tokens (length >= 4, non-stopwords) from candidate target keywords
+    dynamic_domain_tokens = set()
+    for target in target_keywords:
+        target_clean = str(target).strip().lower() if target else ""
+        for t in re.split(r'[\s/,-]+', target_clean):
+            if len(t) >= 4 and t not in stopwords:
+                dynamic_domain_tokens.add(t)
+
+    # Allow direct domain token matches if a primary domain word is present in the title
+    for tt in title_tokens:
+        if tt in dynamic_domain_tokens:
+            return True
+        for dt in dynamic_domain_tokens:
+            if len(tt) >= 4 and len(dt) >= 4 and (tt.startswith(dt[:5]) or dt.startswith(tt[:5])):
+                return True
+
+    # 2.4 Card Skills Overlap (if search card displayed skill tags)
+    if card_skills:
+        for cs in card_skills:
+            cs_clean = cs.lower().strip()
+            if cs_clean in dynamic_domain_tokens:
+                return True
+            for dt in dynamic_domain_tokens:
+                if len(cs_clean) >= 4 and len(dt) >= 4 and (cs_clean.startswith(dt[:5]) or dt.startswith(cs_clean[:5])):
+                    return True
+
+    # 3. Tier 2B: Cognitive Brain Arbitration (Fallback for unfamiliar / creative titles)
+    if ai_client and hasattr(ai_client, "arbitrate_card_fit"):
+        fits, reason = ai_client.arbitrate_card_fit(
+            title=title,
+            card_skills=card_skills,
+            exp_text=exp_text,
+            candidate_profile=config
+        )
+        if fits:
+            print(f"     [COGNITIVE BRAIN APPROVED]: '{title}' ({reason})", flush=True)
+            # Autonomously learn and persist this new title into candidate_config.json
+            if ctx and hasattr(ctx, "config") and hasattr(ctx, "save_config"):
+                try:
+                    recommended = ctx.config.setdefault("target_jobs", {}).setdefault("recommended_titles", [])
+                    clean_title_cand = re.sub(r'[\s/,-]+', ' ', title).strip()
+                    if clean_title_cand and clean_title_cand not in recommended:
+                        recommended.append(clean_title_cand)
+                        ctx.save_config()
+                        print(f"     [BRAIN LEARNED NEW DESIGNATION]: Persisted '{clean_title_cand}' to recommended_titles.", flush=True)
+                except Exception:
+                    pass
             return True
 
     return False
@@ -185,9 +275,12 @@ def run_batched_discovery(profile_path: str):
     target = config.get("target_jobs", {})
     cdp_url = cand.get("cdp_url", "http://127.0.0.1:9222")
     
-    keywords = target.get("keywords", [])
-    recommended = target.get("recommended_titles", [])
-    all_positive_targets = keywords + recommended
+    keywords = [k for k in (target.get("keywords") or []) if k and str(k).strip()]
+    recommended = [t for t in (target.get("recommended_titles") or []) if t and str(t).strip()]
+    current_title = cand.get("current_title", "").strip() if cand.get("current_title") else ""
+    all_positive_targets = list(keywords) + list(recommended)
+    if current_title and current_title not in all_positive_targets:
+        all_positive_targets.append(current_title)
     
     negative_keywords = target.get("negative_keywords", [])
     locations = target.get("locations", [])
@@ -205,6 +298,7 @@ def run_batched_discovery(profile_path: str):
     applied_count = 0
     current_batch = []
     current_platform_exec = ""
+    session_seen_titles = set()
     
     with sync_playwright() as p:
         try:
@@ -282,14 +376,22 @@ def run_batched_discovery(profile_path: str):
                                 if platform == "linkedin":
                                     title_el = card.locator(".job-card-list__title, .artdeco-entity-lockup__title").first
                                     comp_el = card.locator(".job-card-container__company-name").first
+                                    exp_el = card.locator(".job-card-container__metadata-item").first
+                                    skill_tags = []
                                 else:
                                     title_el = card.locator("a.title, a.job-title").first
                                     comp_el = card.locator("a.comp-name, a.companyName").first
+                                    exp_el = card.locator("span.expwdth, li.experience, span[class*='exp'], span.ni-job-tuple-icon-experience").first
+                                    skill_els = card.locator("ul.tags-gt li, ul.dot-gt li, .job-tags a, span[class*='tag']").all()
+                                    skill_tags = [sk.inner_text().strip() for sk in skill_els if sk.inner_text().strip()]
                                     
                                 if not title_el.count(): continue
                                 title = title_el.inner_text().strip()
                                 company = comp_el.inner_text().strip() if comp_el.count() else "Hiring Company"
                                 url = title_el.get_attribute("href")
+                                exp_text = exp_el.inner_text().strip() if exp_el.count() else ""
+                                
+                                session_seen_titles.add(title)
                                 
                                 if platform == "linkedin" and "/view/" in url:
                                     url = url.split("?")[0]
@@ -297,7 +399,13 @@ def run_batched_discovery(profile_path: str):
                                     url = "https://www.naukri.com" + url
                                     
                                 if url:
-                                    jobs_to_scan.append({"title": title, "company": company, "url": url})
+                                    jobs_to_scan.append({
+                                        "title": title,
+                                        "company": company,
+                                        "url": url,
+                                        "card_skills": skill_tags,
+                                        "exp_text": exp_text
+                                    })
                             except Exception:
                                 continue
                                 
@@ -307,11 +415,22 @@ def run_batched_discovery(profile_path: str):
                             url = job["url"]
                             title = job["title"]
                             company = job["company"]
+                            card_skills = job.get("card_skills", [])
+                            exp_text = job.get("exp_text", "")
                             
                             if url.lower() in processed_ledger or title.lower() in processed_ledger:
                                 continue
                                 
-                            if not is_title_allowed(title, all_positive_targets, negative_keywords):
+                            if not is_title_allowed(
+                                title,
+                                all_positive_targets,
+                                negative_keywords,
+                                card_skills=card_skills,
+                                exp_text=exp_text,
+                                ai_client=ai,
+                                config=config,
+                                ctx=ctx
+                            ):
                                 print(f"  -> Rejecting Irrelevant Job: {title} @ {company} [DOMAIN GATED]", flush=True)
                                 processed_ledger.add(url.lower())
                                 continue
@@ -434,6 +553,35 @@ def run_batched_discovery(profile_path: str):
         applied_count += len(current_batch)
         current_batch.clear()
         
+    # Tier 4: Autonomous Starvation Recovery & Seniority Auto-Expansion
+    if applied_count == 0 and session_seen_titles:
+        print(f"\n=======================================================", flush=True)
+        print(f" [STARVATION DETECTED] 0 applications qualified across discovery sweep.", flush=True)
+        print(f" Triggering Autonomous Brain Starvation Analysis & Seniority Expansion...", flush=True)
+        print(f"=======================================================\n", flush=True)
+        try:
+            expanded_titles = ai.analyze_and_expand_designations(
+                resume_text=resume_text,
+                candidate_exp=float(exp_years or 0),
+                current_keywords=keywords,
+                market_seen_titles=list(session_seen_titles)
+            )
+            if expanded_titles:
+                current_recommended = ctx.config.setdefault("target_jobs", {}).setdefault("recommended_titles", [])
+                added = []
+                for et in expanded_titles:
+                    if et not in current_recommended and et not in keywords:
+                        current_recommended.append(et)
+                        added.append(et)
+                if added:
+                    ctx.save_config()
+                    print(f" [STARVATION AUTO-HEALED] Discovered {len(added)} senior designations matching candidate profile:", flush=True)
+                    for t in added:
+                        print(f"   + {t}", flush=True)
+                    print(f" Config updated atomically. Next discovery cycle will search with expanded target keywords.\n", flush=True)
+        except Exception as starvation_err:
+            logger.warning(f"Notice during starvation analysis: {starvation_err}")
+
     try:
         if discovery_page and not discovery_page.is_closed():
             discovery_page.close()

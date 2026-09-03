@@ -69,6 +69,8 @@ continuous_career_agent.py (daemon loop)
 |:---|:---|:---|
 | `generate_text(...)` | General LLM text generation (profile summary, bullets) | Operational Gemini client → `pending_question.json` File-Based IPC |
 | `evaluate_job_match(...)` | Two-Stage Cognitive Qualification Engine (0-100) | Stage 1 Gatekeeper (C6 negative, domain stem, exp band) → Stage 2 Precision (Gemini JSON / IPC 40-65 / Heuristics with min 2 skills, $\ge 60\%$ threshold) |
+| `arbitrate_card_fit(...)` | Tier 2B Cognitive Card Arbitration (SRP) | Evaluates unfamiliar roles, domain abbreviations (RTR, P2P, BRS), and card skills $\rightarrow$ Gemini / Heuristics |
+| `analyze_and_expand_designations(...)` | Tier 4 Autonomous Starvation Recovery | Analyzes `resume.md` + 9.5y experience + seen market titles $\rightarrow$ Auto-enriches `candidate_config.json` |
 | `answer_screening_question(...)` | Resolves chatbot questions | Exact cache (`auto_learned_truths`) → Gemini API → File IPC polling |
 | `_best_option_match(...)` | Maps freeform answer to UI choices | Exact → word-boundary (`\b`) → numeric → boolean → `None` (H1/H2 compliant) |
 | `_persist_learned_truth(...)` | Caches verified answers to config | Atomic via `ProfileContext.save_config()` (`.tmp` + `os.replace`) |
@@ -76,6 +78,8 @@ continuous_career_agent.py (daemon loop)
 
 **Critical Design Decisions:**
 - **Two-Stage Cognitive Qualification Engine:** Stage 1 Deterministic Gatekeeper (C6 absolute negative keyword gating, domain root-stem token gating `dt[:5] == tt[:5]`, experience band filter auto-rejecting >3yr gap) eliminates false-positive applications to out-of-domain roles. Stage 2 Precision scoring enforces a strict 60% qualification bar and minimum 2 core skills requirement.
+- **Tier 2B Cognitive Card Arbitration:** Ensures no role matching candidate skills or experience is auto-rejected on the search page. Evaluates domain abbreviations and visible skill chips; auto-learns approved titles into `recommended_titles`.
+- **Tier 4 Autonomous Starvation Recovery:** If 0 jobs are found in a sweep, the Brain analyzes all seen market titles, compares with `resume.md` and candidate's 9.5 years experience, and expands `candidate_config.json` with high-yield senior designations.
 - **Zero Terminal Blocking:** Removed `sys.stdin.readline()`. The background daemon will never freeze waiting for terminal input.
 - **AG 2.0 File IPC Polling:** Non-blocking polling of `pending_question.json`. Once an answer is detected, it proceeds instantly and unlinks the file.
 - **Strict Exact-Match Caching Only:** When checking `auto_learned_truths`, uses strict `key.strip().lower() == question.strip().lower()`.
@@ -87,19 +91,26 @@ continuous_career_agent.py (daemon loop)
 
 **Execution Flow:**
 1. Connect to Chrome via CDP at `candidate.cdp_url`
-2. Load dedup ledger from CSV + external JSON
+2. Load dedup ledger from CSV + external JSON; initialize `session_seen_titles = set()`
 3. For each (platform × location × keyword × page):
    a. Navigate to search results page (SRP)
-   b. Extract up to 15 job cards per page, up to 3 pages
-   c. For each card: check dedup → title gate → navigate to detail page
-   d. Check for external apply button → gate and record to `saved_external_jobs.json` if present
-   e. Extract full JD text + skill tags
-   f. Two-Stage AI score evaluation → qualify only if `score >= 60`
-   g. Dynamically sanitize application folder: `profiles/<profile>/output/applications/<Company>_<Role>/`
-   h. Immediately write `Job_Description.md` and `job_details.json` to the application folder
-   i. Append enriched job entry (`jd_path`, `description`) to `search_manifest.json`
-   j. When batch reaches BATCH_SIZE=1: trigger tailoring → upload → apply pipeline
+   b. Extract up to 15 job cards per page, including `title`, `company`, `url`, `exp_text` (e.g. "5-10 Yrs"), and `card_skills` tags
+   c. Record all discovered titles in `session_seen_titles`
+   d. Multi-Pass Gating (`is_title_allowed`):
+      - C6 Negative Check (Absolute drop: `Sales`, `Intern`, `Director`)
+      - Direct Keyword / Stem Match (Immediate Pass)
+      - Card Skills Match (Immediate Pass if card tags match candidate taxonomy)
+      - Tier 2B Cognitive Brain Arbitration (`ai.arbitrate_card_fit`): Evaluates role, domain abbreviations (RTR, P2P, BRS), and candidate skills; auto-saves approved designations to `candidate_config.json`
+   e. Deep scan detail page: check for external apply $\rightarrow$ gate and record to `saved_external_jobs.json` if present
+   f. Extract full JD text + required skill tags
+   g. Two-Stage AI score evaluation $\rightarrow$ qualify only if `score >= 60`
+   h. Dynamically sanitize application folder: `profiles/<profile>/output/applications/<Company>_<Role>/`
+   i. Immediately write `Job_Description.md` and `job_details.json` to the application folder
+   j. Append enriched job entry (`jd_path`, `description`) to `search_manifest.json`
+   k. When batch reaches BATCH_SIZE=1: trigger tailoring → upload → apply pipeline
 4. Resume discovery sweep
+5. **Tier 4 Autonomous Starvation Auto-Healing:**
+   If `applied_count == 0` after the full sweep, triggers `ai.analyze_and_expand_designations()` using `session_seen_titles` and candidate's 9.5y experience, atomically updating `candidate_config.json` with senior market designations.
 
 **Non-Hijacking Tab Cleanup:**
 `cleanup_browser_tabs(context, tracked_pages, active_page)` tracks only Playwright pages created by discovery workers, safely closing non-active worker tabs while strictly protecting unrelated user browsing tabs.

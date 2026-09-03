@@ -100,6 +100,18 @@
  
 8. **`save_config()` Atomicity Contract:** Must use temporary file + `os.replace()`. Direct `open("w")` on `candidate_config.json` is forbidden.
 
+9. **`arbitrate_card_fit()` Public Method Contract (`AIClient`):**
+   ```python
+   def arbitrate_card_fit(self, title: str, card_skills: list = None, exp_text: str = "", candidate_profile: dict = None) -> tuple[bool, str]
+   ```
+   Tier 2B Cognitive Card Arbitration: Evaluates whether an unfamiliar, abbreviated, or creative job role on the search results page conceptually aligns with candidate domain, skills taxonomy, and seniority tier. Recognizes domain acronyms (`RTR`, `P2P`, `O2C`, `GL`, `AP`, `AR`, `BRS`, `MIS`, `F&A`, `FP&A`, `KYC`, `AML`, `US GAAP`, `IFRS`) and matches search card skill chips.
+
+10. **`analyze_and_expand_designations()` Public Method Contract (`AIClient`):**
+    ```python
+    def analyze_and_expand_designations(self, resume_text: str, candidate_exp: float, current_keywords: list, market_seen_titles: list = None) -> list[str]
+    ```
+    Tier 4 Starvation Auto-Healing: Inspects `resume.md` and candidate's total experience (e.g. 9.5 years) alongside live market titles seen during search starvation to infer and return 5–8 high-yield senior designations (e.g., *Senior Accountant*, *Assistant Manager Finance*, *Reconciliation Specialist*).
+
 ---
 
 ## DIRECTIVE 5: PLATFORM ISOLATION & DOM SAFETY
