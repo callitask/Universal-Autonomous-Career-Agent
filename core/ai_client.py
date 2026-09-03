@@ -18,6 +18,19 @@ import time
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 
+# Optional Gemini SDK support (supports both new google-genai and legacy google-generativeai)
+try:
+    from google import genai
+    HAS_GENAI_NEW = True
+except ImportError:
+    HAS_GENAI_NEW = False
+
+try:
+    import google.generativeai as legacy_genai
+    HAS_GENAI_LEGACY = True
+except ImportError:
+    HAS_GENAI_LEGACY = False
+
 
 class MatchResult(tuple):
     """
@@ -59,13 +72,78 @@ class MatchResult(tuple):
 
 class AIClient:
     """
-    Autonomous Reasoning Engine for Dynamic Screening Questionnaire Resolution
-    and Factual Candidate Job Scoring.
+    Autonomous Reasoning Engine for Dynamic Screening Questionnaire Resolution,
+    Factual Candidate Job Scoring, and General Text Generation Tasks.
     Zero-hardcoding: resolves everything from ProfileContext at runtime.
-    Relies entirely on AG 2.0 File-Based IPC. No API Key required.
+    Relies on AG 2.0 File-Based IPC as primary brain; uses Gemini API if available.
+    Zero terminal stdin blocking.
     """
     def __init__(self, profile_context=None):
         self.profile_context = profile_context
+        if not self.profile_context:
+            try:
+                from core.utils.profile_context import ProfileContext
+                self.profile_context = ProfileContext()
+            except Exception:
+                self.profile_context = None
+
+        # Resolve Gemini API client if API key is present in environment or candidate config
+        self.gemini_client = None
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not api_key and self.profile_context and hasattr(self.profile_context, "config"):
+            api_key = self.profile_context.config.get("candidate", {}).get("gemini_api_key", "").strip()
+
+        if api_key:
+            if HAS_GENAI_NEW:
+                try:
+                    self.gemini_client = genai.Client(api_key=api_key)
+                except Exception as e:
+                    print(f"[AI CLIENT] Notice: Could not initialize google-genai client: {e}", flush=True)
+            elif HAS_GENAI_LEGACY:
+                try:
+                    legacy_genai.configure(api_key=api_key)
+                    self.gemini_client = legacy_genai.GenerativeModel("gemini-1.5-flash")
+                except Exception as e:
+                    print(f"[AI CLIENT] Notice: Could not initialize legacy genai client: {e}", flush=True)
+
+    def generate_text(self, prompt: str, default_fallback: str = "", **kwargs) -> str:
+        """
+        Generates text using Gemini if initialized and operational; if unavailable
+        or rate-limited, falls back to the File-Based IPC handshake (_fallback_antigravity_ipc)
+        or default_fallback without crashing.
+        Never uses terminal stdin (input/readline) to prevent daemon blocking (H6 Guardrail).
+        """
+        # 1. Attempt generation via operational Gemini API client if available
+        if self.gemini_client:
+            try:
+                if hasattr(self.gemini_client, "models"):
+                    model_name = kwargs.get("model", "gemini-2.5-flash")
+                    response = self.gemini_client.models.generate_content(
+                        model=model_name,
+                        contents=prompt
+                    )
+                    if response and response.text:
+                        return response.text.strip()
+                elif hasattr(self.gemini_client, "generate_content"):
+                    response = self.gemini_client.generate_content(prompt)
+                    if response and response.text:
+                        return response.text.strip()
+            except Exception as e:
+                print(f"[AI CLIENT] Gemini API unavailable or rate-limited ({e}). Falling back to AG 2.0 File IPC.", flush=True)
+
+        # 2. File-Based IPC Handshake for Antigravity 2.0 / AI Assistant
+        ipc_res = self._fallback_antigravity_ipc(
+            prompt=prompt,
+            question=kwargs.get("question", prompt.split("\n")[0][:120].strip()),
+            options=kwargs.get("options", None),
+            control_type=kwargs.get("control_type", "TEXT"),
+            max_characters=kwargs.get("max_characters", None)
+        )
+
+        if ipc_res and ipc_res.strip():
+            return ipc_res.strip()
+
+        return default_fallback
 
     def evaluate_job_match(
         self,
@@ -297,7 +375,8 @@ INSTRUCTIONS:
             prompt=prompt,
             question=q_clean,
             options=options,
-            control_type=control_type
+            control_type=control_type,
+            max_characters=250
         )
 
         if options:
@@ -379,23 +458,32 @@ INSTRUCTIONS:
         prompt: str,
         question: str,
         options: Optional[List[str]] = None,
-        control_type: Optional[str] = None
+        control_type: Optional[str] = None,
+        max_characters: Optional[int] = None
     ) -> str:
         """
         File-Based IPC Handshake Protocol optimized strictly for AG 2.0.
         Never freezes on terminal stdin. Endlessly polls pending_question.json until AG fills the file.
+        Supports both questionnaire items and arbitrary text generation tasks (profile summaries, ATS bullets).
         """
         output_dir = getattr(self.profile_context, "output_dir", Path("."))
         output_dir.mkdir(parents=True, exist_ok=True)
         ipc_file = output_dir / "pending_question.json"
 
+        resolved_max_chars = max_characters
+        if resolved_max_chars is None and (options or control_type in ["CONTENTEDITABLE", "RADIO_CHIP", "DROPDOWN"]):
+            resolved_max_chars = 250
+
+        is_questionnaire = bool(options or control_type in ["CONTENTEDITABLE", "RADIO_CHIP", "DROPDOWN"])
+
         ipc_payload = {
             "status": "PENDING",
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "task_type": "QUESTIONNAIRE" if is_questionnaire else "TEXT_GENERATION",
             "question": question,
             "options": options,
-            "control_type": control_type or "CONTENTEDITABLE",
-            "max_characters": 250,
+            "control_type": control_type or ("CONTENTEDITABLE" if is_questionnaire else "TEXT"),
+            "max_characters": resolved_max_chars,
             "prompt": prompt.strip(),
             "answer": ""
         }
@@ -406,14 +494,17 @@ INSTRUCTIONS:
         except Exception as e:
             print(f"[ERROR] IPC Write Failed: {e}", flush=True)
 
+        task_label = "QUESTIONNAIRE RESOLUTION" if is_questionnaire else "TEXT GENERATION TASK"
         print("\n" + "=" * 70, flush=True)
-        print(f"[AG 2.0 IPC] WAITING FOR AG TO RESOLVE QUESTIONNAIRE", flush=True)
+        print(f"[AG 2.0 IPC] WAITING FOR AG TO RESOLVE {task_label}", flush=True)
         print("=" * 70, flush=True)
-        print(f"QUESTION:     {question}", flush=True)
-        print(f"CONTROL TYPE: {control_type or 'CONTENTEDITABLE'}", flush=True)
+        print(f"TASK / QUESTION: {question}", flush=True)
+        print(f"CONTROL TYPE:    {ipc_payload['control_type']}", flush=True)
         if options:
-            print(f"CHOICES:      {options}", flush=True)
-        print(f"IPC FILE:     {ipc_file.resolve()}", flush=True)
+            print(f"CHOICES:         {options}", flush=True)
+        if resolved_max_chars:
+            print(f"MAX CHARS:       {resolved_max_chars}", flush=True)
+        print(f"IPC FILE:        {ipc_file.resolve()}", flush=True)
         print("-" * 70, flush=True)
         print(">> AG Brain: Please write the answer to the 'answer' key in pending_question.json.", flush=True)
 
@@ -426,12 +517,15 @@ INSTRUCTIONS:
 
                     ans = str(data.get("answer", "")).strip()
                     if ans:
-                        print(f"\n[AG 2.0 IPC] Answer received from AG: '{ans}'", flush=True)
+                        preview = ans if len(ans) <= 80 else ans[:80] + "..."
+                        print(f"\n[AG 2.0 IPC] Answer received from AG: '{preview}'", flush=True)
                         try:
                             ipc_file.unlink()
                         except Exception:
                             pass
+                        if resolved_max_chars and len(ans) > resolved_max_chars:
+                            ans = ans[:resolved_max_chars].strip()
                         return ans
                 except Exception:
                     # File is being written to by AG, pass to next poll tick
-                    pass
+                    pass

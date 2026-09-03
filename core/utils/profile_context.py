@@ -147,7 +147,7 @@ class ProfileContext:
 
     @property
     def cdp_url(self) -> str:
-        return self.candidate.get("cdp_url", "[http://127.0.0.1:9222](http://127.0.0.1:9222)")
+        return self.candidate.get("cdp_url", "http://127.0.0.1:9222")
 
     @property
     def target_jobs(self) -> Dict[str, Any]:
