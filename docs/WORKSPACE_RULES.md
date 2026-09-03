@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: WORKSPACE DEVELOPMENT & CODING RULES
 
-> **Document Version:** 2.1 — Post-Audit Remediated  
-> **Last Updated:** 2026-08-31  
+> **Document Version:** 3.0 — Post-Phase 1-4 Remediation Complete  
+> **Last Updated:** 2026-09-03  
 > **Authority:** These rules are ABSOLUTE and OVERRIDE all model defaults. Violations cause runtime crashes, data corruption, phantom applications, or account bans.  
 > **Workspace Root:** `F:\JOB AI AGENT`
 
@@ -43,37 +43,62 @@
 ---
 
 ## DIRECTIVE 4: PIPELINE & METHOD SIGNATURE COMPATIBILITY
-
+ 
 1. **Cross-Script Invocation Parity:** Any utility method called across scripts must support all existing caller signatures. Never remove, rename, or reorder positional parameters.
-
-2. **`evaluate_job_match()` Contract:**
+ 
+2. **`evaluate_job_match()` Contract & Two-Stage Evaluation Engine:**
    ```python
-   def evaluate_job_match(self, job_title, job_description, 
-                          candidate_profile=None, resume_text=None, 
+   def evaluate_job_match(self, job_title: str, job_description: str, 
+                          candidate_profile: Optional[Dict[str, Any]] = None, 
+                          resume_text: Optional[str] = None, 
                           *args, **kwargs) -> MatchResult
    ```
+   **Two-Stage Cognitive Qualification Architecture:**
+   * **Stage 1: Deterministic Hard Filter (Gatekeeper)**
+     - *C6 Absolute Negative Gating:* Role rejected immediately (`score=0`) if any negative keyword matches in `job_title` or JD header.
+     - *Domain Title Alignment:* Role rejected (`score=0`) if zero phrase or root-stem token overlap (`dt[:5] == tt[:5]`) exists with target domains.
+     - *Experience Band Filter:* Role rejected (`score=0`) if JD requires experience exceeding candidate total experience by > 3 years.
+   * **Stage 2: Precision Semantic & Factual Scoring**
+     - *Dual-Brain LLM Route:* Structured JSON evaluation via operational Gemini client.
+     - *Ambiguous Score IPC Handshake:* Scores in 40–65 range optionally routed to `pending_question.json` File IPC for AG 2.0 evaluation.
+     - *Deterministic Factual Fallback:* Title/Domain (0–35), Core Skills (0–45, strictly requiring $\ge 2$ distinct skill matches to award any points), Experience (0–20).
+     - *Strict 60% Qualification Bar:* Any role scoring below 60% is rejected, eliminating 40% false positives.
+   
+   **Return Type (`MatchResult`):**
    Must return a `MatchResult` object supporting:
    - Tuple unpacking: `score, reasoning, matching, missing = result`
-   - Attribute access: `result.score`
+   - Attribute access: `result.score`, `result.reasoning`
    - Dict-style lookup: `result['score']` and `result.get('score', 0)`
+ 
+3. **`generate_text()` Public Method Contract:**
+   ```python
+   def generate_text(self, prompt: str, default_fallback: str = "", **kwargs) -> str
+   ```
+   Mandatory public method on `AIClient` for profile summaries, ATS bullets, and arbitrary LLM text tasks. Uses operational Gemini API if configured; otherwise dispatches to `pending_question.json` File-Based IPC handshake without terminal stdin blocking.
 
-3. **`ProfileContext` Constructor Contract:**
+4. **Job Discovery Disk Persistence Contract (`04_job_discovery.py`):**
+   Upon identifying a qualified job (`score >= 60`):
+   - Dynamically sanitize folder name: `profiles/<profile>/output/applications/<Company>_<Role>/`
+   - Immediately write `Job_Description.md` (UTF-8 markdown) and `job_details.json` to the application folder *before* calling `process_batch()`.
+   - Append `jd_path` and `description` to the `job_entry` recorded in `search_manifest.json`.
+
+5. **`ProfileContext` Constructor Contract:**
    ```python
    def __init__(self, profile_path=None, base_path=None)
    ```
    Must expose properties: `.output_dir`, `.manifest_path`, `.tracker_path`, `.profile_dir`, `.cdp_url`, `.candidate_name`, `.first_name`, `.last_name`, `.config`, `.resume_text`, `.taxonomy_skills`, `.ats_answers`, `.auto_learned_truths`
-
-4. **`BrowserManager` Unified Interface:**
+ 
+6. **`BrowserManager` Unified Interface:**
    Must expose `.get_context()`, `.new_page()`, and `.close()`, reusing existing pages and bringing them to the foreground via `.bring_to_front()`.
-
-5. **`answer_screening_question()` Contract:**
+ 
+7. **`answer_screening_question()` Contract:**
    ```python
    def answer_screening_question(self, question, candidate_profile=None,
                                   options=None, control_type=None,
                                   resume_text=None, **kwargs) -> str
    ```
-
-6. **`save_config()` Atomicity Contract:** Must use temporary file + `os.replace()`. Direct `open("w")` on `candidate_config.json` is forbidden.
+ 
+8. **`save_config()` Atomicity Contract:** Must use temporary file + `os.replace()`. Direct `open("w")` on `candidate_config.json` is forbidden.
 
 ---
 
@@ -93,13 +118,25 @@
 
 5. **No Dangling Blank Tabs:** Scripts must never navigate to `about:blank` as a final state and terminate. The browser session must remain active, focused on the relevant application page.
 
-6. **Greedy Selector Prohibition:** Never use `div[class*='chip']` as a UI control selector — it matches Naukri's `.chipMsg` branding logo. Use explicit class names: `div.radioItem`, `div.choiceChip`, `div.clickableChip`, `div.optionItem`.
+6. **Expanded UI Control Detection & Greedy Selector Prohibition:**
+   `detect_ui_control()` must recognize:
+   - File uploaders (`input[type='file']`)
+   - Date inputs (`input[type='date']`, `input.datePicker`)
+   - Yes/No toggle pills (`div.togglePill`, `button.toggle`, `div[class*='toggle']`, `div.yesNoToggle`)
+   - Custom radio wrappers (`label.ssrc__label`, `div.customRadio`, `div.radioItem`, `label[class*='radio']`, `ul.ChoiceList li`)
+   - Multi-select chips (`div.clickableChip`, `div.choiceChip`)
+   - Standard `<select>` and custom dropdowns
+   - Contenteditable text areas
+   Never use greedy `div[class*='chip']` without filtering — it matches Naukri's `.chipMsg` branding logo. Strictly ignore `.chipMsg` to prevent false radio detection.
 
 7. **Single-Quote Safety in Selectors:** When injecting dynamic text into Playwright `:has-text()` selectors, always escape single quotes:
    ```python
    safe_opt = matched_option.replace("'", "\\'")
    f"div.radioItem:has-text('{safe_opt}')"
    ```
+
+8. **Browser Tab Hygiene & Non-Hijacking Execution:**
+   `cleanup_browser_tabs(context, tracked_pages, active_page)` must track only Playwright pages created by discovery workers, and never blindly loop through `context.pages` closing user browsing tabs.
 
 ---
 
@@ -113,7 +150,7 @@
    - Discovery states (keyword, location, page number, card counts)
    - Match scores and rejection reasons
    - Questionnaire prompts detected and AI responses
-   - UI control classifications (`CONTENTEDITABLE`, `RADIO_CHIP`, `FILE_UPLOAD`, `DROPDOWN`, `UNKNOWN`)
+   - UI control classifications (`CONTENTEDITABLE`, `RADIO_CHIP`, `FILE_UPLOAD`, `DROPDOWN`, `DATE_INPUT`, `UNKNOWN`)
    - Application submission verification results
 3. **Structured Log Prefixes:** Use `[CATEGORY]` formatting for all log lines (e.g., `[CHATBOT]`, `[AI BRAIN]`, `[NAVIGATE]`, `[SUCCESS]`, `[FAILED]`, `[WARNING]`).
 
@@ -140,7 +177,7 @@
    | `SKIPPED_ALREADY_APPLIED` | Platform showed "Already Applied" banner |
    | `APPLY_BUTTON_NOT_FOUND` | No native apply trigger found on page |
    | `FAILED` | Application could not be committed |
-   | `REQUIRES_MANUAL_INTERVENTION` | Unanswerable mandatory field encountered |
+   | `REQUIRES_MANUAL_INTERVENTION` | Unanswerable mandatory field or stuck loop encountered |
 
 4. **No Phantom Successes:** Never return `APPLIED_1CLICK` or `APPLIED_CHATBOT` without explicit DOM-based confirmation. If no success banner or marker is found, return `FAILED`.
 
@@ -165,7 +202,13 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 **Rule:** `save_config()` must write to a `.tmp` file first, then `os.replace()` to the target. Direct `open("w")` on `candidate_config.json` is forbidden.
 
 ### C6: Negative Keywords Are Absolute
-**Rule:** `is_title_allowed()` must reject titles containing ANY negative keyword unconditionally. The presence of a positive target keyword must NOT override a negative keyword match.
+**Rule:** `is_title_allowed()` and `evaluate_job_match()` Stage 1 must reject titles containing ANY negative keyword unconditionally. The presence of a positive target keyword must NOT override a negative keyword match.
+
+### C7: 3x Stuck Question Loop Breaker
+**Rule:** `_handle_chatbot_loop()` must track consecutive question repeats (`active_q == last_processed_q`). If any question repeats $\ge 3$ times without progress, do not burn the remaining iteration budget. Immediately abort the loop, log `REQUIRES_MANUAL_INTERVENTION`, write `[ABORTED_STUCK_3X]` into `ques_ans_chatbot.json`, and return `"FAILED"`.
+
+### C8: Bug 4 Unknown Control Fallback & Detached DOM Protection
+**Rule:** When `detect_ui_control()` returns `UNKNOWN`: verify if a `contenteditable` input is actually visible before attempting typing. If no visible input field exists, do NOT force text typing into detached DOM nodes. Extract all visible interactive labels/chips in the drawer and route through `pending_question.json` File-Based IPC so AG 2.0 can inspect the UI state and supply the appropriate action or value.
 
 ### H1: No Blind `options[0]` Fallback
 **Rule:** `_best_option_match()` must return `None` when no match is found. The caller must handle `None` by falling back to terminal intervention, not by silently picking the first option.

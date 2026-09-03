@@ -1,7 +1,8 @@
 # UNIVERSAL DEPLOYMENT GUIDE
 **System:** Anti-Gravity Autonomous Career Operations Engine  
 **Architecture:** Variable-Driven, Candidate-Agnostic, Multi-Profile  
-**Last Updated:** 2026-08-25
+**Document Version:** 3.0 — Post-Phase 1-4 Remediation Complete  
+**Last Updated:** 2026-09-03
 
 ---
 
@@ -15,7 +16,7 @@ chrome.exe --remote-debugging-port=9222 --user-data-dir="C:\ChromeProfiles\<Cand
 - **Log into LinkedIn and Naukri** manually in the launched Chrome window.
 
 ### Step 2: Prepare Candidate Resume
-Place the candidate's factual reverse-chronological resume in `templates/Master_Resume_Template.md`.
+Place the candidate's factual reverse-chronological resume in `profiles/<CandidateName>/resume.md`.
 
 **Strict Resume Rules:**
 - **Order:** Reverse-Chronological (Present -> Past)
@@ -23,7 +24,7 @@ Place the candidate's factual reverse-chronological resume in `templates/Master_
 - **Formatting:** Single-column, left-aligned, bullet-pointed quantifiable impact
 
 ### Step 3: Configure Candidate Truth Ledger
-Edit `config/candidate_config.json`:
+Edit `profiles/<CandidateName>/candidate_config.json`:
 
 ```json
 {
@@ -42,6 +43,7 @@ Edit `config/candidate_config.json`:
   },
   "target_jobs": {
     "keywords": ["<Keyword1>", "<Keyword2>"],
+    "negative_keywords": ["Sales", "Intern"],
     "locations": ["<City1>", "<City2>"],
     "platforms": ["Naukri", "LinkedIn"]
   },
@@ -66,20 +68,20 @@ Edit `config/candidate_config.json`:
 ### Step 4: Run the Autonomous Daemon
 ```bash
 cd core/
-python continuous_career_agent.py
+python continuous_career_agent.py --profile ../profiles/<CandidateName>
 ```
 
 **Pipeline per cycle:**
-1. `04_job_discovery.py` -> Deep scrapes LinkedIn & Naukri with random sampling
-2. `generate_factual_tailored.py` -> Compiles ATS-optimized PDFs per role
-3. `05_apply_jobs.py` -> Applies with form solving, chatbot interaction, and verification
-4. 30-minute deep-sleep -> Account preservation pacing
+1. `04_job_discovery.py` -> Scrapes LinkedIn & Naukri, qualifies roles against candidate resume using Two-Stage Cognitive Evaluation ($\ge 60\%$ bar), writes `Job_Description.md` and `job_details.json` to application directory.
+2. `generate_factual_tailored.py` -> Reads actual `Job_Description.md` file from disk, extracts technical tokens, and compiles ATS-optimized PDFs per role.
+3. `05_apply_jobs.py` -> Applies with form solving, chatbot interaction, 3x stuck loop protection, and verification.
+4. 30-minute deep-sleep -> Account preservation pacing.
 
 ---
 
 ## 2. ATS Keyword Prominence & Dynamic Skill Taxonomy
 
-The resume tailoring engine (`generate_factual_tailored.py`) analyzes each job description, extracts meaningful keywords, and scores all bullets in `Master_Resume_Template.md`. It then dynamically reorders the candidate's bullets to maximize ATS keyword match on a per-role basis, ensuring the most relevant experience is listed first for every application.
+The resume tailoring engine (`generate_factual_tailored.py`) analyzes the actual, full job description loaded directly from `Job_Description.md` on disk (never defaulting to generic title strings when JD exists). It extracts technical keywords (preserving `C++`, `.NET`, `K8s`, `SAP S/4HANA`, `Dynamics 365`, `SQL`, `Python3`, `C#`), scores all bullets in `resume.md` using pre-compiled word-boundary matching (`\b`), and dynamically reorders the candidate's bullets using a stable sort to maximize ATS keyword match on a per-role basis.
 
 **Matching Portal Dropdowns Without Enter Key:**
 Skills are mapped to exact Naukri suggestion taxonomy (`ul.Sdrop li`). The engine clicks the matching dropdown option directly rather than typing + Enter, preventing phantom skill entries.
@@ -90,7 +92,7 @@ Skills are mapped to exact Naukri suggestion taxonomy (`ul.Sdrop li`). The engin
 
 | Tier | Description | Implementation |
 |:---|:---|:---|
-| **Tier 1 (Planned)** | Job sourced from manifest and validated for candidate fit | `search_manifest.json` |
+| **Tier 1 (Planned)** | Job sourced from manifest and qualified by Two-Stage Cognitive Evaluation Engine ($\ge 60\%$ score, C6 gatekeeper, domain stem alignment, min 2 skills) | `search_manifest.json` |
 | **Tier 2 (Submitted)** | Final "Submit" button clicked and confirmation detected | `05_apply_jobs.py` modal confirmation trap |
 | **Tier 3 (Verified)** | Physical DOM confirmation on platform history page | Naukri: `/myapply/historypage` DOM text scan; LinkedIn: `/jobs-tracker/?stage=applied` |
 

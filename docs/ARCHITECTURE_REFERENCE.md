@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: ARCHITECTURE REFERENCE
 
-> **Document Version:** 2.1  
-> **Last Updated:** 2026-08-31  
+> **Document Version:** 3.0 — Post-Phase 1-4 Remediation Complete  
+> **Last Updated:** 2026-09-03  
 > **Purpose:** Comprehensive technical reference for the complete pipeline — how every module works, data flows, inter-process communication, DOM interaction patterns, and the chatbot reverse-engineering protocol. Upload this alongside `WORKSPACE_RULES.md` to ground the AI's understanding of the system before any coding session.
 
 ---
@@ -45,12 +45,14 @@ continuous_career_agent.py (daemon loop)
 ```
 
 **IPC Contract:** Scripts communicate via filesystem artifacts:
-- `search_manifest.json` — Discovery → Tailoring → Application
-- `applications_tracker.csv` — Application → Deduplication
+- `search_manifest.json` — Discovery → Tailoring → Application (enriched with `jd_path` and `description`)
+- `applications_tracker.csv` — Application → Deduplication (canonical 9-column schema)
 - `saved_external_jobs.json` — External redirect storage
 - `candidate_config.json` — Self-learning truth cache (read/write by all scripts)
 - `pending_question.json` — Async File-Based IPC handshake between the Application Engine and AG 2.0 (replaces terminal stdin blocking)
 - `ques_ans_chatbot.json` — Per-job Q&A audit log stored alongside tailored resumes
+- `Job_Description.md` — Raw scraped JD markdown saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
+- `job_details.json` — Structured job metadata saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
 
 ---
 
@@ -59,28 +61,29 @@ continuous_career_agent.py (daemon loop)
 ### 3.1 `ai_client.py` — Central AI Reasoning Engine
 
 **Classes:**
-- `MatchResult(tuple)` — Hybrid result supporting tuple unpacking, attribute access, and dict-style lookups
-- `AIClient` — Gemini Flash + Antigravity 2.0 File-Based IPC dual-brain
+- `MatchResult(tuple)` — Hybrid result supporting tuple unpacking (`score, reasoning, matching, missing = result`), attribute access (`result.score`), and dict-style lookups (`result['score']`, `result.get('score', 0)`).
+- `AIClient` — Gemini Flash + Antigravity 2.0 File-Based IPC dual-brain.
 
 **Key Methods:**
 | Method | Purpose | Fallback Chain |
 |:---|:---|:---|
-| `generate_text(...)` | General text generation | Gemini API → File IPC (`pending_question.json`) |
-| `evaluate_job_match(...)` | Scores job suitability 0-100 | Gemini JSON → heuristic word overlap → MatchResult(50-95) |
-| `answer_screening_question(...)` | Resolves chatbot questions | Exact cache → Gemini API → File IPC polling |
-| `_best_option_match(...)` | Maps freeform answer to UI choices | Exact → word-boundary → numeric → boolean → None |
-| `_persist_learned_truth(...)` | Caches answers to config | Atomic via ProfileContext.save_config() |
-| `_fallback_antigravity_ipc(...)` | AG 2.0 Handshake Hook | Writes `pending_question.json` and polls infinitely until AG 2.0 fills the `"answer"` key. |
+| `generate_text(...)` | General LLM text generation (profile summary, bullets) | Operational Gemini client → `pending_question.json` File-Based IPC |
+| `evaluate_job_match(...)` | Two-Stage Cognitive Qualification Engine (0-100) | Stage 1 Gatekeeper (C6 negative, domain stem, exp band) → Stage 2 Precision (Gemini JSON / IPC 40-65 / Heuristics with min 2 skills, $\ge 60\%$ threshold) |
+| `answer_screening_question(...)` | Resolves chatbot questions | Exact cache (`auto_learned_truths`) → Gemini API → File IPC polling |
+| `_best_option_match(...)` | Maps freeform answer to UI choices | Exact → word-boundary (`\b`) → numeric → boolean → `None` (H1/H2 compliant) |
+| `_persist_learned_truth(...)` | Caches verified answers to config | Atomic via `ProfileContext.save_config()` (`.tmp` + `os.replace`) |
+| `_fallback_antigravity_ipc(...)` | AG 2.0 Handshake Hook | Writes `pending_question.json` and polls until AG 2.0 fills the `"answer"` key |
 
 **Critical Design Decisions:**
+- **Two-Stage Cognitive Qualification Engine:** Stage 1 Deterministic Gatekeeper (C6 absolute negative keyword gating, domain root-stem token gating `dt[:5] == tt[:5]`, experience band filter auto-rejecting >3yr gap) eliminates false-positive applications to out-of-domain roles. Stage 2 Precision scoring enforces a strict 60% qualification bar and minimum 2 core skills requirement.
 - **Zero Terminal Blocking:** Removed `sys.stdin.readline()`. The background daemon will never freeze waiting for terminal input.
-- **AG 2.0 IPC Polling:** The script polls `pending_question.json` 10 times a second. Once an answer is detected, it proceeds instantly and deletes the file.
-- **Strict Exact-Match Caching Only:** When checking `auto_learned_truths`, use strict `key.strip().lower() == question.strip().lower()`.
-- **Character Limits:** Automatically trims free-text IPC fallback answers to 250 characters to prevent form-field overflow.
+- **AG 2.0 File IPC Polling:** Non-blocking polling of `pending_question.json`. Once an answer is detected, it proceeds instantly and unlinks the file.
+- **Strict Exact-Match Caching Only:** When checking `auto_learned_truths`, uses strict `key.strip().lower() == question.strip().lower()`.
+- **Character Limits:** Automatically trims free-text IPC answers to 250 characters to prevent form-field overflow.
 
 ---
 
-### 3.2 `04_job_discovery.py` — Batched Discovery Engine (349 lines)
+### 3.2 `04_job_discovery.py` — Batched Discovery Engine
 
 **Execution Flow:**
 1. Connect to Chrome via CDP at `candidate.cdp_url`
@@ -89,11 +92,17 @@ continuous_career_agent.py (daemon loop)
    a. Navigate to search results page (SRP)
    b. Extract up to 15 job cards per page, up to 3 pages
    c. For each card: check dedup → title gate → navigate to detail page
-   d. Check for external apply button → reject if present
+   d. Check for external apply button → gate and record to `saved_external_jobs.json` if present
    e. Extract full JD text + skill tags
-   f. AI score evaluation → queue if score ≥ 40
-   g. When batch reaches BATCH_SIZE=1: trigger tailoring → upload → apply pipeline
+   f. Two-Stage AI score evaluation → qualify only if `score >= 60`
+   g. Dynamically sanitize application folder: `profiles/<profile>/output/applications/<Company>_<Role>/`
+   h. Immediately write `Job_Description.md` and `job_details.json` to the application folder
+   i. Append enriched job entry (`jd_path`, `description`) to `search_manifest.json`
+   j. When batch reaches BATCH_SIZE=1: trigger tailoring → upload → apply pipeline
 4. Resume discovery sweep
+
+**Non-Hijacking Tab Cleanup:**
+`cleanup_browser_tabs(context, tracked_pages, active_page)` tracks only Playwright pages created by discovery workers, safely closing non-active worker tabs while strictly protecting unrelated user browsing tabs.
 
 **Naukri URL Pattern:**
 ```
@@ -106,21 +115,23 @@ https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_AL=true&sta
 ```
 
 **Deduplication Sources:**
-- `applications_tracker.csv` → `"Job URL"` column via DictReader
+- `applications_tracker.csv` → `"Job URL"` column via `csv.DictReader`
 - `saved_external_jobs.json` → `url` and `title` fields
 - In-memory `processed_ledger` set (populated at startup, updated during run)
 
 ---
 
-### 3.3 `05_apply_jobs.py` — Application Engine (769 lines)
+### 3.3 `05_apply_jobs.py` — Application Engine
 
 **Two Main Classes:**
 
 #### `ChatbotResolver` — DOM Chatbot Reverse-Engineering
 - **Question Extraction:** Iterates `li.botItem .botMsg` elements in reverse, filtering greetings containing candidate name.
-- **Control Detection Priority:** `FILE_UPLOAD` → `CONTENTEDITABLE` → `RADIO_CHIP` → `DROPDOWN` → body fallback.
-- **Contenteditable React Protocol:** Click → Ctrl+A → Backspace → `page.keyboard.insert_text(answer)` (to trigger React onChange hooks) → native `document.execCommand('insertText')` → manual `dispatchEvent` (Input/Change/Keydown) → forcefully remove `disabled` class from Send button.
-- **Chip Selection:** Escapes single quotes, tries multiple selector patterns, clicks matching chip + Save/Next button.
+- **Control Detection Priority:** `FILE_UPLOAD` → `DATE_INPUT` → `RADIO_CHIP` (chips, toggle pills, custom radios, excluding `.chipMsg`) → `DROPDOWN` → `CONTENTEDITABLE` → `UNKNOWN`.
+- **Contenteditable React Protocol:** Click → Ctrl+A → Backspace → `page.keyboard.insert_text(answer)` → native `document.execCommand('insertText')` → manual `dispatchEvent` (Input/Change/Keydown/Keyup) → forcefully remove `.disabled` class and `disabled` attribute from Send/Submit button.
+- **Chip Selection:** Escapes single quotes via `replace("'", "\\'")` (H3 Guardrail), clicks matching chip/label natively and via Playwright locators, and triggers Save/Next button.
+- **Bug 4 Fix & Unknown Control Fallback:** Checks visibility of `contenteditable` input before attempting typing; if no visible input exists, extracts all visible interactive labels/chips and routes to `pending_question.json` IPC to prevent blind typing loops into detached DOM nodes.
+- **3x Stuck Question Loop Breaker:** If active question repeats $\ge 3$ times without progress, immediately aborts the loop, logs `REQUIRES_MANUAL_INTERVENTION`, and writes `[ABORTED_STUCK_3X]` into `ques_ans_chatbot.json`.
 - **Per-Job Audit Logging:** Every question asked, the control type detected, and the resolved answer are appended to `profiles/<profile>/output/applications/<Company>_<Role>/ques_ans_chatbot.json`.
 
 #### `ApplicationEngine` — Batch Orchestrator
@@ -136,21 +147,20 @@ https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_AL=true&sta
                                               ↓              ↓         ↓
                                       APPLIED_CHATBOT   APPLIED_1CLICK  FAILED
   ```
-- **Critical Safety:** The `FAILED` return is the default when no confirmation is found. `APPLIED_1CLICK` requires explicit success banner DOM match.
+- **Critical Safety:** The `FAILED` return is the default when no confirmation is found. `APPLIED_1CLICK` strictly requires explicit success banner DOM match or redirect URLs (`/myapply/saveApply`, `myapply/historypage`). `check_completion_status()` strictly requires text markers; missing drawer is never treated as completion.
 
 ---
 
-### 3.4 `generate_factual_tailored.py` — Resume Tailoring & PDF (318 lines)
+### 3.4 `generate_factual_tailored.py` — Resume Tailoring & PDF
 
 **Algorithm:**
 1. Parse `resume.md` into sections via markdown heading regex (`^#{1,4}\s+`)
-2. Extract JD keywords: tokenize with `[a-z][a-z\-]+`, filter stopwords, build bigrams, add taxonomy skills
-3. Score each bullet: count keyword occurrences via substring match
-4. Stable-sort bullets within each section by score (highest first)
-5. Reassemble markdown → convert to HTML via `markdown` library → wrap in ATS-compliant CSS template
-6. Render PDF via Playwright's `page.pdf()` using Chrome's print engine
-
-**Known Issue:** Keyword extraction regex `[a-z][a-z\-]+` strips tech names with numbers/symbols (`C++`, `.NET`, `K8s`). Scoring uses substring `kw in bullet_lower` which can false-positive (`"art" in "smart"`).
+2. Ingest real JD text from `manifest_jd_path` or application folder `Job_Description.md` (never defaults to `f"{title} at {company}"` when JD exists)
+3. Extract JD keywords: upgraded technical token regex `r'[a-z0-9]+(?:\+\+|#)?|[.][a-z0-9]+|[a-z0-9]+(?:[/\-.][a-z0-9]+)+'` preserving technical terms like `C++`, `.NET`, `K8s`, `SAP S/4HANA`, `Dynamics 365`, `SQL`, `Python3`, `C#`
+4. Score each bullet: pre-compiled word-boundary regex (`\b`) eliminates substring collisions (`"art"` vs `"smart"`)
+5. Stable-sort bullets within each section by `(-score, idx)` to preserve original order on ties
+6. Reassemble markdown → convert to HTML via `markdown` library → wrap in ATS-compliant CSS template
+7. Render PDF via Playwright's `page.pdf()` using Chrome's print engine
 
 ---
 
@@ -243,7 +253,9 @@ os.replace(tmp_path, config_path)  # Atomic on all OSes
     "location": "City",
     "url": "https://www.naukri.com/job-listings-...",
     "platform": "naukri",
-    "score": 85
+    "score": 85,
+    "jd_path": "profiles/<profile>/output/applications/<Company>_<Role>/Job_Description.md",
+    "description": "Full raw job description text scraped from detail page..."
   }
 ]
 ```
@@ -284,6 +296,7 @@ Date,Company,Role,Location,Platform,Status,FolderPath
 │   └── ...
 ├── div.textArea[contenteditable]   ← Free-text input
 ├── div.radioItem / div.choiceChip  ← Choice chips (NOT div[class*='chip'])
+├── input[type='date']              ← Date inputs
 ├── input[type='file']              ← Resume upload
 ├── select                          ← HTML dropdown
 └── .sendMsgbtn_container .sendMsg  ← Submit button
@@ -311,12 +324,13 @@ Date,Company,Role,Location,Platform,Status,FolderPath
 
 | Failure Scenario | Current Behavior | Expected Behavior |
 |:---|:---|:---|
-| Gemini API key missing | Falls back to terminal stdin | ✅ Correct |
-| Gemini API rate limited | Falls back to terminal stdin | ✅ Correct |
+| Gemini API key missing | Dispatches to `pending_question.json` File-Based IPC | ✅ Correct (H6 compliant) |
+| Gemini API rate limited | Dispatches to `pending_question.json` File-Based IPC | ✅ Correct (H6 compliant) |
 | CDP Chrome not running | Logs error, exits gracefully | ✅ Correct |
-| Naukri selector hash changed | Silently fails to extract JD/skills | ⚠️ Needs fallback selectors |
-| Chatbot drawer never opens | Returns FAILED | ✅ Correct (was bug C1, now fixed) |
-| Unknown form control type | Falls back to contenteditable | ⚠️ May fail on sliders/date pickers |
-| `candidate_config.json` corrupted | Returns `{}`, risks overwrite | ⚠️ Atomic save prevents future corruption but doesn't recover existing corruption |
-| PDF generation crashes | `check=True` aborts application | ✅ Correct (was bug H6, now fixed) |
-| All chatbot iterations exhausted | Checks completion, returns FAILED if not done | ✅ Correct |
+| Naukri selector hash changed | Uses robust un-hashed fallback selectors | ✅ Handled |
+| Chatbot drawer never opens | Returns FAILED | ✅ Correct (C1 compliant) |
+| Unknown form control type | Scans interactive chips or dispatches to File IPC | ✅ Correct (Bug 4 fix) |
+| Active question stuck 3x | Halts loop, logs REQUIRES_MANUAL_INTERVENTION | ✅ Correct (C7 breaker) |
+| `candidate_config.json` write | Atomic write via .tmp + os.replace | ✅ Correct (C4 compliant) |
+| PDF generation crashes | check=True aborts application | ✅ Correct (H6 compliant) |
+| All chatbot iterations exhausted | Checks completion, returns FAILED if not done | ✅ Correct (C3 compliant) |
