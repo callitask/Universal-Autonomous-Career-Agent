@@ -122,12 +122,20 @@ def is_title_allowed(title: str, target_keywords: list, negative_keywords: list)
     return False
 
 
-def cleanup_browser_tabs(context):
+def cleanup_browser_tabs(context, tracked_pages=None, active_page=None):
+    """
+    Safely cleans up only tabs opened by the discovery runner without closing unrelated user tabs.
+    Preserves user browsing tabs while cleaning up redundant discovery pages.
+    """
     try:
-        pages = context.pages
-        while len(pages) > 1:
-            pages[-1].close()
-            pages = context.pages
+        if tracked_pages is not None:
+            for p in list(tracked_pages):
+                if p != active_page and not p.is_closed():
+                    try:
+                        p.close()
+                        tracked_pages.discard(p)
+                    except Exception:
+                        pass
     except Exception:
         pass
 
@@ -202,8 +210,9 @@ def run_batched_discovery(profile_path: str):
         try:
             browser = p.chromium.connect_over_cdp(cdp_url)
             context = browser.contexts[0] if browser.contexts else browser.new_context()
-            cleanup_browser_tabs(context)
-            page = context.pages[0] if context.pages else context.new_page()
+            discovery_page = context.new_page()
+            tracked_pages = {discovery_page}
+            page = discovery_page
         except Exception as e:
             logger.error(f"CDP Connection Failed: {e}")
             return
@@ -220,8 +229,8 @@ def run_batched_discovery(profile_path: str):
                 
                 for kw in keywords:
                     for page_num in range(1, MAX_PAGES_PER_SEARCH + 1):
-                        cleanup_browser_tabs(context)
-                        page = context.pages[0]
+                        cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
+                        page = discovery_page
                         
                         if platform == "naukri":
                             query_kw = re.sub(r'[^a-z0-9]+', '-', kw.lower()).strip('-')
@@ -293,8 +302,8 @@ def run_batched_discovery(profile_path: str):
                                 continue
                                 
                         for job in jobs_to_scan:
-                            cleanup_browser_tabs(context)
-                            page = context.pages[0]
+                            cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
+                            page = discovery_page
                             url = job["url"]
                             title = job["title"]
                             company = job["company"]
@@ -362,9 +371,40 @@ def run_batched_discovery(profile_path: str):
                             
                             if score >= MATCH_THRESHOLD:
                                 print(f"     [MATCH QUEUED! Score: {score}%]", flush=True)
+
+                                # Sanitize folder names dynamically (Phase 2 Requirement)
+                                clean_c = re.sub(r"[^\w\s-]", "", company).strip().replace(" ", "_")[:50]
+                                clean_t = re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_")[:50]
+                                app_folder = profile_dir / "output" / "applications" / f"{clean_c}_{clean_t}"
+                                app_folder.mkdir(parents=True, exist_ok=True)
+
+                                # Immediately write real scraped description to disk
+                                jd_file_path = app_folder / "Job_Description.md"
+                                jd_file_path.write_text(full_desc, encoding="utf-8")
+
+                                # Write job metadata to job_details.json
+                                job_meta = {
+                                    "title": title,
+                                    "company": company,
+                                    "location": primary_loc,
+                                    "url": url,
+                                    "platform": platform,
+                                    "score": score,
+                                    "extracted_skills": extracted_skills,
+                                    "scraped_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                                }
+                                (app_folder / "job_details.json").write_text(json.dumps(job_meta, indent=2), encoding="utf-8")
+
+                                # Include jd_path and description in search_manifest.json entry
                                 job_entry = {
-                                    "title": title, "company": company, "location": primary_loc,
-                                    "url": url, "platform": platform, "score": score
+                                    "title": title,
+                                    "company": company,
+                                    "location": primary_loc,
+                                    "url": url,
+                                    "platform": platform,
+                                    "score": score,
+                                    "jd_path": str(jd_file_path.resolve()),
+                                    "description": full_desc
                                 }
                                 current_batch.append(job_entry)
                                 processed_ledger.add(url.lower())
@@ -394,6 +434,12 @@ def run_batched_discovery(profile_path: str):
         applied_count += len(current_batch)
         current_batch.clear()
         
+    try:
+        if discovery_page and not discovery_page.is_closed():
+            discovery_page.close()
+    except Exception:
+        pass
+
     print(f"\n=== BATCH DISCOVERY COMPLETE. Processed {applied_count} total applications. ===", flush=True)
 
 if __name__ == "__main__":

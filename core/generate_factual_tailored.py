@@ -182,33 +182,48 @@ class ResumeTailorEngine:
             "work", "working", "team", "company", "job", "position", "required",
             "preferred", "strong", "good", "excellent"
         }
-        words = re.findall(r'[a-z][a-z\-]+', jd_lower)
-        keywords = [w for w in words if w not in stop_words and len(w) > 2]
+        # Upgraded regex: preserves technical names with symbols and numbers (C++, .NET, K8s, SAP S/4HANA, 365, SQL, Python3, C#)
+        token_pattern = r'[a-z0-9]+(?:\+\+|#)?|[.][a-z0-9]+|[a-z0-9]+(?:[/\-.][a-z0-9]+)+'
+        words = re.findall(token_pattern, jd_lower)
+        keywords = [w for w in words if w not in stop_words and len(w) >= 2]
 
         for i in range(len(words) - 1):
-            if words[i] not in stop_words or words[i+1] not in stop_words:
-                keywords.append(f"{words[i]} {words[i+1]}")
+            w1, w2 = words[i], words[i+1]
+            if w1 not in stop_words or w2 not in stop_words:
+                keywords.append(f"{w1} {w2}")
 
         for category, skills in self.cfg.get("taxonomy_skills", {}).items():
             if isinstance(skills, list):
                 for skill in skills:
-                    # M2 Fix: Use word boundary to avoid false substring injection
-                    if re.search(rf'\b{re.escape(skill.lower())}\b', jd_lower):
-                        keywords.append(skill.lower())
+                    skill_clean = skill.strip().lower()
+                    # M2 Fix: Maintain word boundary (\b) to avoid false substring injection
+                    if skill_clean and re.search(rf'\b{re.escape(skill_clean)}\b', jd_lower):
+                        keywords.append(skill_clean)
 
         return list(set(keywords))
 
     def reorder_bullets_by_jd(self, sections, jd_text):
         jd_keywords = self.extract_jd_keywords(jd_text)
+        compiled_kws = []
+        for kw in jd_keywords:
+            kw_clean = kw.strip()
+            if kw_clean:
+                try:
+                    compiled_kws.append(re.compile(rf'\b{re.escape(kw_clean)}\b'))
+                except Exception:
+                    pass
+
         for section in sections:
             if len(section["bullets"]) > 1:
                 scored = []
-                for b in section["bullets"]:
+                for idx, b in enumerate(section["bullets"]):
                     b_lower = b.lower()
-                    score = sum(1 for kw in jd_keywords if kw in b_lower)
-                    scored.append((score, b))
-                scored.sort(key=lambda x: x[0], reverse=True)
-                section["bullets"] = [b for _, b in scored]
+                    # Tokenized word-boundary check prevents substring collisions (e.g. "art" in "smart")
+                    score = sum(1 for pat in compiled_kws if pat.search(b_lower))
+                    scored.append((score, idx, b))
+                # Stable sort descending by score, maintaining original index as tie-breaker
+                scored.sort(key=lambda x: (-x[0], x[1]))
+                section["bullets"] = [b for _, _, b in scored]
         return sections
 
     def reassemble_markdown(self, sections):
@@ -270,8 +285,18 @@ class ResumeTailorEngine:
                 folder = apps_dir / f"{clean_c}_{clean_t}"
                 folder.mkdir(parents=True, exist_ok=True)
 
+                # Read Job_Description.md from target application folder.
+                # Never fall back to f"{title} at {company}" when Job_Description.md exists.
                 jd_file = folder / "Job_Description.md"
-                jd_text = jd_file.read_text(encoding="utf-8") if jd_file.exists() else f"{title} at {company}"
+                manifest_jd_path = job.get("jd_path")
+                if manifest_jd_path and Path(manifest_jd_path).exists():
+                    jd_text = Path(manifest_jd_path).read_text(encoding="utf-8")
+                elif jd_file.exists():
+                    jd_text = jd_file.read_text(encoding="utf-8")
+                elif job.get("description"):
+                    jd_text = job["description"]
+                else:
+                    jd_text = f"{title} at {company}"
 
                 tailored_md = self.build_tailored_resume(jd_text)
                 if tailored_md is None:
