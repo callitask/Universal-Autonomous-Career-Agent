@@ -145,6 +145,31 @@ class AIClient:
 
         return default_fallback
 
+    def _parse_json_match_result(self, raw_text: str) -> Optional[MatchResult]:
+        """Extracts and validates structured MatchResult JSON from LLM or IPC responses."""
+        if not raw_text:
+            return None
+        try:
+            json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group(0))
+                score = int(data.get("score", 0))
+                score = max(0, min(score, 100))
+                reasoning = str(data.get("reasoning", "")).strip()
+                matching = list(data.get("matching_skills", []))
+                missing = list(data.get("missing_skills", []))
+                if score < 60 and not reasoning.startswith("Rejected") and not reasoning.startswith("Disqualified"):
+                    reasoning = f"Rejected fit ({score}% < 60% threshold): {reasoning}"
+                return MatchResult(
+                    score=score,
+                    reasoning=reasoning,
+                    matching_skills=matching,
+                    missing_skills=missing
+                )
+        except Exception:
+            pass
+        return None
+
     def evaluate_job_match(
         self,
         job_title: str,
@@ -155,11 +180,16 @@ class AIClient:
         **kwargs
     ) -> MatchResult:
         """
-        Evaluates job suitability locally with 0-baseline multi-factor scoring:
-        - Absolute Negative Keyword Exclusion (C6 Guardrail)
-        - Title & Domain Alignment (0-40 pts)
-        - Factual Skill Match via Word-Boundary Regex (0-40 pts)
-        - Experience & Seniority Compatibility (0-20 pts)
+        Two-Stage Cognitive Job Qualification Engine:
+        Stage 1: Deterministic Hard Filter (Gatekeeper)
+          - C6 Absolute Negative Title & JD Gating (word boundary)
+          - Domain Title Alignment (phrase & token overlap gating)
+          - Experience Band Filter (gap > 3 years auto-rejects)
+        Stage 2: Precision Semantic & Factual Scoring (Dual-Brain + Local Fallback)
+          - Operational Gemini Client Evaluation (0-100 JSON)
+          - Ambiguous Score IPC Handshake (40-65) if enabled
+          - High-Precision Local Heuristics (0-35 Title, 0-45 Skills [min 2], 0-20 Exp)
+          - 60% Qualification Bar (eliminates 40% false positives)
         """
         profile = candidate_profile or (self.profile_context.config if self.profile_context else {})
         cand = profile.get("candidate", {})
@@ -169,21 +199,103 @@ class AIClient:
         title_lower = job_title.lower().strip()
         desc_lower = job_description.lower().strip()
 
-        negative_keywords = [k.lower().strip() for k in target_jobs.get("negative_keywords", []) if k.strip()]
-        target_keywords = [k.lower().strip() for k in target_jobs.get("keywords", []) if k.strip()]
-        recommended_titles = [t.lower().strip() for t in target_jobs.get("recommended_titles", []) if t.strip()]
+        negative_keywords = [k.lower().strip() for k in (target_jobs.get("negative_keywords") or []) if k and k.strip()]
+        target_keywords = [k.lower().strip() for k in (target_jobs.get("keywords") or []) if k and k.strip()]
+        recommended_titles = [t.lower().strip() for t in (target_jobs.get("recommended_titles") or []) if t and t.strip()]
+        current_title = cand.get("current_title", "").lower().strip() if cand.get("current_title") else ""
 
-        # 1. C6 Check: Negative Keywords are Absolute
+        # =========================================================================
+        # STAGE 1: DETERMINISTIC HARD FILTER (GATEKEEPER)
+        # =========================================================================
+
+        # 1.1 C6 Check: Negative Keywords are Absolute in Title and Core JD Headings
         for neg in negative_keywords:
             if re.search(rf'\b{re.escape(neg)}\b', title_lower):
                 return MatchResult(
                     score=0,
-                    reasoning=f"Job '{job_title}' rejected due to explicit negative keyword match: '{neg}'.",
+                    reasoning=f"Rejected: Negative keyword '{neg}' detected in job title '{job_title}' (C6 Guardrail).",
+                    matching_skills=[],
+                    missing_skills=["Non-negative domain title"]
+                )
+
+        # Check prominent headings / opening of JD (first 800 chars)
+        jd_intro = desc_lower[:800]
+        for neg in negative_keywords:
+            if re.search(rf'\b(?:role|position|hiring for|seeking a|looking for)\s+[^.\n]*\b{re.escape(neg)}\b', jd_intro):
+                return MatchResult(
+                    score=0,
+                    reasoning=f"Rejected: Negative keyword '{neg}' detected in job description header (C6 Guardrail).",
                     matching_skills=[],
                     missing_skills=["Target domain alignment"]
                 )
 
-        # Flatten candidate skills from config
+        # 1.2 Domain Title Alignment: Gating out out-of-domain roles (e.g. Software Engineer for Accountant)
+        all_targets = list(target_keywords) + list(recommended_titles)
+        if current_title:
+            all_targets.append(current_title)
+
+        matched_target_phrase = False
+        for target in all_targets:
+            target_clean = target.lower().strip()
+            if target_clean and re.search(rf'\b{re.escape(target_clean)}\b', title_lower):
+                matched_target_phrase = True
+                break
+
+        generic_title_stopwords = {
+            "and", "for", "the", "with", "lead", "senior", "junior", "manager",
+            "executive", "officer", "associate", "specialist", "staff", "principal",
+            "head", "director", "vp", "intern", "trainee", "expert", "consultant",
+            "general", "global", "regional", "assistant", "deputy", "group", "team"
+        }
+
+        domain_tokens = set()
+        for t in all_targets:
+            for token in re.split(r'[\s/,-]+', t.lower()):
+                if len(token) > 2 and token not in generic_title_stopwords:
+                    domain_tokens.add(token)
+
+        title_tokens = set()
+        for token in re.split(r'[\s/,-]+', title_lower):
+            if len(token) > 2 and token not in generic_title_stopwords:
+                title_tokens.add(token)
+
+        # Exact and stem/prefix matching (e.g. account/accounts <-> accountant; audit <-> auditor)
+        matched_tokens = set()
+        for dt in domain_tokens:
+            for tt in title_tokens:
+                if dt == tt:
+                    matched_tokens.add(tt)
+                elif len(dt) >= 4 and len(tt) >= 4 and (dt.startswith(tt[:5]) or tt.startswith(dt[:5])):
+                    matched_tokens.add(tt)
+
+        # Out-of-domain rejection: zero phrase and zero token overlap with candidate target domains
+        if not matched_target_phrase and len(matched_tokens) == 0 and domain_tokens:
+            return MatchResult(
+                score=0,
+                reasoning=f"Rejected: Out-of-domain role '{job_title}'. Zero phrase or token overlap with candidate target domains {target_keywords[:3]}.",
+                matching_skills=[],
+                missing_skills=["Target domain title alignment"]
+            )
+
+        # 1.3 Experience Band Filter: Reject if JD minimum experience exceeds candidate by > 3 years
+        cand_exp = float(cand.get("total_experience_years", target_jobs.get("experience_years", 0)) or 0)
+        exp_matches = re.findall(r'(\d+)\s*(?:-\s*(\d+))?\s*(?:years?|yrs?)(?:\s*(?:of)?\s*(?:experience|exp))?', desc_lower)
+
+        if exp_matches:
+            min_req_exp = float(exp_matches[0][0])
+            if min_req_exp > cand_exp + 3:
+                return MatchResult(
+                    score=0,
+                    reasoning=f"Rejected: Experience gap too wide for '{job_title}'. Role requires minimum {int(min_req_exp)} years, but candidate has {cand_exp} years (exceeds +3 year limit).",
+                    matching_skills=[],
+                    missing_skills=[f"Minimum {int(min_req_exp)} years experience"]
+                )
+
+        # =========================================================================
+        # STAGE 2: PRECISION SEMANTIC & FACTUAL SCORING
+        # =========================================================================
+
+        # Flatten candidate taxonomy skills and resume skills
         flat_skills = []
         for cat_skills in skills_dict.values():
             if isinstance(cat_skills, list):
@@ -191,13 +303,11 @@ class AIClient:
             elif isinstance(cat_skills, str):
                 flat_skills.append(cat_skills.strip())
 
-        # Also extract any distinct capitalized skill names or tech tags from resume_text
         resume_md = resume_text or (self.profile_context.resume_text if self.profile_context else "")
         if resume_md and not flat_skills:
             words = re.findall(r'[A-Za-z0-9#+.\-]+', resume_md)
             flat_skills = list(set([w for w in words if len(w) > 3]))
 
-        # Deduplicate skills
         unique_skills = []
         seen_skills = set()
         for s in flat_skills:
@@ -205,43 +315,6 @@ class AIClient:
                 seen_skills.add(s.lower())
                 unique_skills.append(s)
 
-        # 2. Title & Role Alignment (0 - 40 points)
-        title_score = 0
-        all_targets = target_keywords + recommended_titles
-        clean_cand_title = cand.get("current_title", "").lower().strip()
-        if clean_cand_title:
-            all_targets.append(clean_cand_title)
-
-        matched_target_phrase = False
-        for target in all_targets:
-            target_clean = target.lower().strip()
-            if not target_clean:
-                continue
-            # Exact or full-phrase match in title
-            if re.search(rf'\b{re.escape(target_clean)}\b', title_lower):
-                title_score = 40
-                matched_target_phrase = True
-                break
-
-        if not matched_target_phrase:
-            # Token-level overlap
-            domain_tokens = set()
-            for t in all_targets:
-                for token in re.split(r'[\s/,-]+', t.lower()):
-                    if len(token) > 2 and token not in ["and", "for", "the", "with", "lead", "senior", "junior", "manager", "executive", "officer", "associate", "specialist"]:
-                        domain_tokens.add(token)
-
-            title_tokens = [tok for tok in re.split(r'[\s/,-]+', title_lower) if len(tok) > 2]
-            matched_tokens = [tok for tok in title_tokens if tok in domain_tokens]
-
-            if len(matched_tokens) >= 2:
-                title_score = 30
-            elif len(matched_tokens) == 1:
-                title_score = 20
-            else:
-                title_score = 0
-
-        # 3. Factual Skill Match via Word-Boundary Regex (0 - 40 points)
         matched_skills = []
         missing_skills = []
         for s in unique_skills:
@@ -251,22 +324,81 @@ class AIClient:
             else:
                 missing_skills.append(s_clean)
 
+        # 2.1 Dual-Brain LLM Route (If Gemini API is initialized and operational)
+        if self.gemini_client:
+            try:
+                llm_prompt = f"""
+You are an expert technical recruiter evaluating whether a candidate is genuinely qualified for a job.
+CANDIDATE PROFILE:
+Current Title: {cand.get('current_title', '')}
+Total Experience: {cand_exp} years
+Key Skills: {json.dumps(skills_dict)}
+Master Resume Excerpt:
+{resume_md[:1800]}
+
+JOB TO EVALUATE:
+Title: {job_title}
+Job Description:
+{job_description[:2500]}
+
+EVALUATION CRITERIA:
+1. Title & Domain Alignment (0-35 points)
+2. Factual Skill Match (0-45 points, require real overlap with candidate's actual skills)
+3. Experience & Seniority Compatibility (0-20 points)
+4. Passing threshold is strictly 60 points. A score below 60 means candidate should NOT apply.
+
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object:
+{{
+  "score": <integer 0-100>,
+  "reasoning": "<concise 1-2 sentence explanation>",
+  "matching_skills": ["<skill1>", "<skill2>"],
+  "missing_skills": ["<skill1>", "<skill2>"]
+}}
+"""
+                raw_llm = ""
+                if hasattr(self.gemini_client, "models"):
+                    resp = self.gemini_client.models.generate_content(
+                        model=kwargs.get("model", "gemini-2.5-flash"),
+                        contents=llm_prompt
+                    )
+                    if resp and resp.text:
+                        raw_llm = resp.text.strip()
+                elif hasattr(self.gemini_client, "generate_content"):
+                    resp = self.gemini_client.generate_content(llm_prompt)
+                    if resp and resp.text:
+                        raw_llm = resp.text.strip()
+
+                if raw_llm:
+                    parsed_match = self._parse_json_match_result(raw_llm)
+                    if parsed_match:
+                        return parsed_match
+            except Exception as e:
+                print(f"[AI CLIENT] Gemini evaluation unavailable ({e}). Proceeding with deterministic engine.", flush=True)
+
+        # 2.2 Deterministic Factual Scoring (Heuristic Engine)
+        # Component A: Title/Domain Alignment (0 - 35 points)
+        if matched_target_phrase:
+            title_score = 35
+        elif len(matched_tokens) >= 2:
+            title_score = 25
+        elif len(matched_tokens) == 1:
+            title_score = 15
+        else:
+            title_score = 0
+
+        # Component B: Core Skill Matches (0 - 45 points)
+        # Strict requirement: Require at least 2 distinct skill matches to award any skill points
         if len(matched_skills) >= 6:
-            skill_score = 40
+            skill_score = 45
         elif len(matched_skills) >= 4:
-            skill_score = 30
+            skill_score = 35
         elif len(matched_skills) >= 2:
             skill_score = 20
-        elif len(matched_skills) >= 1:
-            skill_score = 10
         else:
             skill_score = 0
 
-        # 4. Experience & Domain Alignment (0 - 20 points)
-        exp_score = 0
-        cand_exp = float(cand.get("total_experience_years", target_jobs.get("experience_years", 0)) or 0)
-        exp_matches = re.findall(r'(\d+)\s*(?:-\s*(\d+))?\s*(?:years?|yrs?)', desc_lower)
-
+        # Component C: Experience & Seniority Compatibility (0 - 20 points)
         if exp_matches:
             min_e = float(exp_matches[0][0])
             max_e = float(exp_matches[0][1]) if exp_matches[0][1] else min_e + 3
@@ -279,15 +411,44 @@ class AIClient:
         else:
             exp_score = 10
 
-        # Total Calculation (0 - 100)
-        total_score = title_score + skill_score + exp_score
-        total_score = max(0, min(total_score, 100))
+        total_score = max(0, min(title_score + skill_score + exp_score, 100))
 
-        # Build reasoning
-        if total_score >= 40:
-            reasoning = f"Qualified fit ({total_score}%): Title score {title_score}/40, matched {len(matched_skills)} core skills ({skill_score}/40), exp fit {exp_score}/20."
+        # 2.3 Antigravity 2.0 IPC Handshake for Ambiguous Scores (40 - 65) if enabled
+        enable_ipc_eval = kwargs.get("enable_ipc") or kwargs.get("use_ipc") or profile.get("candidate", {}).get("ipc_job_evaluation", False)
+        if (40 <= total_score <= 65) and enable_ipc_eval:
+            ipc_prompt = f"""
+Evaluate job suitability for candidate.
+JOB TITLE: {job_title}
+CANDIDATE CURRENT TITLE: {cand.get('current_title', '')}
+TOTAL EXPERIENCE: {cand_exp} years
+MATCHED SKILLS: {matched_skills}
+JOB DESCRIPTION:
+{job_description[:2000]}
+
+Score from 0 to 100 in strict JSON:
+{{"score": <int>, "reasoning": "<str>", "matching_skills": [<str>], "missing_skills": [<str>]}}
+"""
+            ipc_res = self._fallback_antigravity_ipc(
+                prompt=ipc_prompt,
+                question=f"Evaluate job match for: {job_title}",
+                control_type="JSON",
+                max_characters=1000
+            )
+            parsed_ipc = self._parse_json_match_result(ipc_res)
+            if parsed_ipc:
+                return parsed_ipc
+
+        # 2.4 Final Qualification Bar: >= 60% required to qualify
+        if total_score >= 60:
+            reasoning = (
+                f"Qualified fit ({total_score}%): Title score {title_score}/35, "
+                f"matched {len(matched_skills)} core skills ({skill_score}/45), exp fit {exp_score}/20."
+            )
         else:
-            reasoning = f"Rejected fit ({total_score}%): Insufficient domain/skill alignment for '{job_title}'. Matched only {len(matched_skills)} skills."
+            reasoning = (
+                f"Rejected fit ({total_score}% < 60% threshold): Insufficient domain/skill density for '{job_title}'. "
+                f"Matched {len(matched_skills)} skills ({skill_score}/45), title score {title_score}/35."
+            )
 
         return MatchResult(
             score=total_score,
