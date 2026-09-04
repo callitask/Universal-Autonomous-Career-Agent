@@ -139,7 +139,7 @@ https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_AL=true&f_T
 ```
 
 **Deduplication Sources:**
-- `processed_ledger.json` → Multi-session persistent deduplication ledger via `ctx.load_processed_ledger()` and `ctx.add_to_processed_ledger()`
+- `processed_ledger.json` → Multi-session persistent deduplication ledger via `ctx.load_processed_ledger()` and `ctx.add_to_processed_ledger()` storing structured metadata dicts (`status`, `company`, `title`, `score`, `timestamp`) with $O(1)$ set/dict lookup speed and case-insensitive/trimmed normalization.
 - `applications_tracker.csv` → `"Job URL"` column via `csv.DictReader`
 - `saved_external_jobs.json` → `url` and `title` fields
 

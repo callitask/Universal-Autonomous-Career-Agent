@@ -131,12 +131,12 @@
     ```
     Cycles through dynamically inferred designations in batches of 5–8 titles (Cycle 1 core, Cycle 2 seniority/lateral, Cycle 3 specialized/functional) and advances to the next cycle index across runs.
 
-13. **Multi-Session Persistent Deduplication Ledger Contract (`04_job_discovery.py`):**
+13. **Multi-Session Persistent Deduplication Ledger Contract (`core/utils/profile_context.py` & `core/04_job_discovery.py`):**
     ```python
-    ctx.load_processed_ledger() -> set
-    ctx.add_to_processed_ledger(item: str, status: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None)
+    ctx.load_processed_ledger() -> ProcessedLedger (subclasses dict with set API parity)
+    ctx.add_to_processed_ledger(item: str, status: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None, **kwargs)
     ```
-    Persists evaluated, rejected, external-applied, or qualified job URLs and composite keys (`clean_company::clean_title`) to `profiles/<profile>/output/processed_ledger.json`. Prevents re-scanning or token burning across agent restarts.
+    Persists evaluated, rejected, external-applied, or qualified job URLs and composite keys (`clean_company::clean_title`) to `profiles/<profile>/output/processed_ledger.json` alongside structured metadata (`status`, `company`, `title`, `score`, `timestamp`). Provides $O(1)$ deduplication lookup speed, case/whitespace normalization, and backward compatibility with legacy list schemas.
     **CRITICAL LEDGER RULE:** Solitary job titles must NEVER be added to `processed_ledger.json` (e.g., adding just `"Senior Accountant"`). Doing so blocks all applications to that title across the entire market. Only composite keys (`f"{clean_company}::{clean_title}"`) and job URLs are permitted in the ledger.
 
 14. **Discovery Recency Filter Contract (`04_job_discovery.py`):**

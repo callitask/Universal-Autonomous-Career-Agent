@@ -12,6 +12,7 @@ Includes atomic file locking (C4) to prevent configuration corruption.
 
 import os
 import sys
+import time
 import json
 import argparse
 import tempfile
@@ -19,6 +20,101 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Union
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+class ProcessedLedger(dict):
+    """
+    High-performance hybrid ledger mapping URL/composite key -> structured metadata.
+    Subclasses dict for O(1) key lookups, structured inspection, and JSON serialization,
+    while offering backward-compatible set APIs (.add, .union, .intersection, .difference).
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        if args and isinstance(args[0], dict):
+            for k, v in args[0].items():
+                if k:
+                    clean_k = str(k).lower().strip()
+                    super().__setitem__(clean_k, v if isinstance(v, dict) else {"status": str(v)})
+        elif args and isinstance(args[0], (list, set, tuple)):
+            for item in args[0]:
+                if item:
+                    self.add(str(item).lower().strip(), status="legacy")
+        if kwargs:
+            for k, v in kwargs.items():
+                if k:
+                    clean_k = str(k).lower().strip()
+                    super().__setitem__(clean_k, v if isinstance(v, dict) else {"status": str(v)})
+
+    def __contains__(self, item: Any) -> bool:
+        if not item:
+            return False
+        clean_k = str(item).lower().strip()
+        return super().__contains__(clean_k)
+
+    def __getitem__(self, item: Any) -> Any:
+        return super().__getitem__(str(item).lower().strip())
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        clean_k = str(key).lower().strip()
+        super().__setitem__(clean_k, value)
+
+    def get(self, item: Any, default: Any = None) -> Any:
+        return super().get(str(item).lower().strip(), default)
+
+    def add(
+        self,
+        item: str,
+        status: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> None:
+        if not item:
+            return
+        clean_key = str(item).lower().strip()
+        meta = dict(metadata) if metadata else {}
+        if kwargs:
+            meta.update(kwargs)
+        if status:
+            meta["status"] = status
+        meta.setdefault("timestamp", time.strftime("%Y-%m-%d %H:%M:%S"))
+        
+        if clean_key in self and isinstance(super().get(clean_key), dict):
+            existing = dict(super().get(clean_key))
+            existing.update({k: v for k, v in meta.items() if v is not None})
+            super().__setitem__(clean_key, existing)
+        else:
+            super().__setitem__(clean_key, meta)
+
+    def union(self, *others) -> "ProcessedLedger":
+        res = ProcessedLedger(self)
+        for other in others:
+            if isinstance(other, dict):
+                for k, v in other.items():
+                    res.add(k, metadata=v if isinstance(v, dict) else {"status": str(v)})
+            elif hasattr(other, "__iter__"):
+                for item in other:
+                    res.add(item)
+        return res
+
+    def intersection(self, other) -> set:
+        other_keys = other.keys() if isinstance(other, dict) else other
+        return set(self.keys()).intersection(other_keys)
+
+    def difference(self, other) -> set:
+        other_keys = other.keys() if isinstance(other, dict) else other
+        return set(self.keys()).difference(other_keys)
+
+    def __or__(self, other):
+        return self.union(other)
+
+    def __ior__(self, other):
+        if isinstance(other, dict):
+            for k, v in other.items():
+                self.add(k, metadata=v if isinstance(v, dict) else {"status": str(v)})
+        elif hasattr(other, "__iter__"):
+            for item in other:
+                self.add(item)
+        return self
 
 
 class ProfileContext:
@@ -145,27 +241,53 @@ class ProfileContext:
         except Exception as e:
             print(f"[ProfileContext] Error saving cognitive profile atomically: {e}")
 
-    def load_processed_ledger(self) -> set:
-        """Loads set of processed URLs/titles across multi-session executions."""
-        ledger = set()
+    def load_processed_ledger(self) -> ProcessedLedger:
+        """
+        Loads structured dictionary ledger of processed URLs/composite keys.
+        Backward-compatible with legacy list/dict formats on disk.
+        Returns ProcessedLedger supporting O(1) lookup speed and metadata retrieval.
+        """
+        ledger = ProcessedLedger()
         if self.ledger_path.exists():
             try:
                 with open(self.ledger_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, list):
-                        ledger.update([str(x).lower().strip() for x in data if x])
+                        for x in data:
+                            if x:
+                                ledger.add(str(x).lower().strip(), status="legacy")
                     elif isinstance(data, dict):
-                        ledger.update([str(k).lower().strip() for k in data.keys() if k])
+                        for k, v in data.items():
+                            if k:
+                                clean_k = str(k).lower().strip()
+                                meta = v if isinstance(v, dict) else {"status": str(v)}
+                                ledger[clean_k] = meta
             except Exception as e:
                 print(f"[ProfileContext] Notice: Failed to load ledger: {e}")
         return ledger
 
-    def save_processed_ledger(self, ledger: set) -> None:
-        """Atomically persists processed ledger set to disk."""
+    def save_processed_ledger(self, ledger: Any) -> None:
+        """
+        Atomically persists processed ledger dictionary to disk.
+        Supports ProcessedLedger, dict, or legacy set/list.
+        """
         try:
+            if isinstance(ledger, dict):
+                data_to_save = dict(ledger)
+            elif isinstance(ledger, (set, list, tuple)):
+                data_to_save = {
+                    str(x).lower().strip(): {
+                        "status": "legacy",
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    for x in ledger if x
+                }
+            else:
+                data_to_save = {}
+
             tmp_path = self.ledger_path.with_name(self.ledger_path.name + ".tmp")
             with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(sorted(list(ledger)), f, indent=2, ensure_ascii=False)
+                json.dump(data_to_save, f, indent=2, ensure_ascii=False)
             os.replace(tmp_path, self.ledger_path)
         except Exception as e:
             print(f"[ProfileContext] Error saving ledger atomically: {e}")
@@ -177,14 +299,25 @@ class ProfileContext:
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> None:
-        """Adds a single URL or title to the persistent ledger."""
+        """
+        Adds a single URL or composite key to the persistent ledger with structured metadata.
+        Stores status, company, title, score, timestamp alongside the key.
+        Maintains O(1) deduplication lookup speed.
+        """
         if not item:
             return
         item_clean = str(item).lower().strip()
         ledger = self.load_processed_ledger()
-        if item_clean not in ledger:
-            ledger.add(item_clean)
-            self.save_processed_ledger(ledger)
+        
+        meta = dict(metadata) if metadata else {}
+        if kwargs:
+            meta.update(kwargs)
+        if status:
+            meta["status"] = status
+        meta.setdefault("timestamp", time.strftime("%Y-%m-%d %H:%M:%S"))
+        
+        ledger.add(item_clean, status=meta.get("status"), metadata=meta)
+        self.save_processed_ledger(ledger)
 
     @property
     def candidate(self) -> Dict[str, Any]:

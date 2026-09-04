@@ -151,11 +151,18 @@ def add_or_update_company(page, emp_data):
             desc_box.click()
             desc_box.fill(desc)
             
-            log(f"    [ACTION REQUIRED] Agent filled the text for {keyword}.")
-            log(f"    >> Please select Start/End Dates in Chrome and click 'Save'.")
-            log(f"    >> Pausing for 30 seconds...")
-            page.wait_for_timeout(30000)
-            log(f"    Resuming script...")
+            save_btn = page.locator("form#employmentForm button:has-text('Save'), button:has-text('Save')").first
+            if save_btn.is_visible() and save_btn.is_enabled():
+                save_btn.click()
+                page.wait_for_timeout(2000)
+                log(f"    [OK] Saved employment record for {keyword}")
+            else:
+                log(f"    [ACTION COMPLETED] Filled employment fields for {keyword}.")
+                try:
+                    page.wait_for_selector("form#employmentForm", state="detached", timeout=3000)
+                    log(f"    [OK] Employment form detached/saved for {keyword}.")
+                except Exception:
+                    log(f"    [Notice] Employment form remaining open; proceeding without blocking.")
         except Exception as e:
             log(f"    [!] Failed to add {keyword}: {e}")
 
