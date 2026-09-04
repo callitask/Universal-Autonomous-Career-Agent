@@ -322,74 +322,81 @@ class ResumeTailorEngine:
         apps_dir = self.ctx.applications_dir
         resume_base = self.get_resume_filename()
 
-        with sync_playwright() as p:
-            try:
-                browser = p.chromium.connect_over_cdp(self.cdp_url)
-                context = browser.contexts[0] if browser.contexts else browser.new_context()
-                page = context.new_page()
-            except Exception as e:
-                print(f"  [!] Fatal Playwright connection error: {e}")
-                return
+        # Phase 1: Synthesize all tailored Markdown resumes & ATS scores without opening browser tabs
+        pending_renders = []
+        for job in jobs:
+            title = job.get("title", "Role")
+            company = job.get("company", "Target_Company")
+            clean_c = re.sub(r"[^\w\s-]", "", company).strip().replace(" ", "_")[:50]
+            clean_t = re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_")[:50]
+            folder = apps_dir / f"{clean_c}_{clean_t}"
+            folder.mkdir(parents=True, exist_ok=True)
 
-            for job in jobs:
-                title = job.get("title", "Role")
-                company = job.get("company", "Target_Company")
-                clean_c = re.sub(r"[^\w\s-]", "", company).strip().replace(" ", "_")[:50]
-                clean_t = re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_")[:50]
-                folder = apps_dir / f"{clean_c}_{clean_t}"
-                folder.mkdir(parents=True, exist_ok=True)
+            jd_file = folder / "Job_Description.md"
+            manifest_jd_path = job.get("jd_path")
+            if manifest_jd_path and Path(manifest_jd_path).exists():
+                jd_text = Path(manifest_jd_path).read_text(encoding="utf-8")
+            elif jd_file.exists():
+                jd_text = jd_file.read_text(encoding="utf-8")
+            elif job.get("description"):
+                jd_text = job["description"]
+            else:
+                jd_text = f"{title} at {company}"
 
-                jd_file = folder / "Job_Description.md"
-                manifest_jd_path = job.get("jd_path")
-                if manifest_jd_path and Path(manifest_jd_path).exists():
-                    jd_text = Path(manifest_jd_path).read_text(encoding="utf-8")
-                elif jd_file.exists():
-                    jd_text = jd_file.read_text(encoding="utf-8")
-                elif job.get("description"):
-                    jd_text = job["description"]
-                else:
-                    jd_text = f"{title} at {company}"
+            tailored_md, ats_score = self.build_tailored_resume(jd_text)
+            if tailored_md is None:
+                continue
 
-                tailored_md, ats_score = self.build_tailored_resume(jd_text)
-                if tailored_md is None:
-                    continue
+            (folder / f"{resume_base}.md").write_text(tailored_md, encoding="utf-8")
 
-                (folder / f"{resume_base}.md").write_text(tailored_md, encoding="utf-8")
-
-                # Record ATS match score in job metadata
-                job_meta_file = folder / "job_details.json"
-                if job_meta_file.exists():
-                    try:
-                        meta = json.loads(job_meta_file.read_text(encoding="utf-8"))
-                        meta["ats_compatibility_score"] = ats_score
-                        job_meta_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-                    except Exception:
-                        pass
-
-                pdf_path = folder / f"{resume_base}.pdf"
-                clean_md = tailored_md.lstrip('\ufeff\u200b\r\n ')
-                html_body = markdown.markdown(clean_md, extensions=['extra', 'tables', 'nl2br', 'sane_lists'])
-                full_html = HTML_WRAPPER.replace("{body}", html_body)
-                
+            # Record ATS match score in job metadata
+            job_meta_file = folder / "job_details.json"
+            if job_meta_file.exists():
                 try:
-                    page.set_content(full_html, wait_until="load")
-                    page.wait_for_timeout(200)
-                    page.pdf(
-                        path=str(pdf_path),
-                        format="A4",
-                        print_background=True,
-                        margin={"top": "8mm", "bottom": "8mm", "left": "10mm", "right": "10mm"}
-                    )
-                    print(f"  [OK] Compiled ATS Tailored PDF (ATS Score: {ats_score}%): {folder.name}", flush=True)
-                    job["tailored_pdf"] = str(pdf_path.resolve())
-                    job["ats_score"] = ats_score
-                except Exception as e:
-                    print(f"  [!] PDF render notice for {folder.name}: {e}", flush=True)
+                    meta = json.loads(job_meta_file.read_text(encoding="utf-8"))
+                    meta["ats_compatibility_score"] = ats_score
+                    job_meta_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
 
-            try:
-                page.close()
-            except Exception:
-                pass
+            pdf_path = folder / f"{resume_base}.pdf"
+            clean_md = tailored_md.lstrip('\ufeff\u200b\r\n ')
+            html_body = markdown.markdown(clean_md, extensions=['extra', 'tables', 'nl2br', 'sane_lists'])
+            full_html = HTML_WRAPPER.replace("{body}", html_body)
+            pending_renders.append((job, folder, pdf_path, full_html, ats_score))
+
+        # Phase 2: Render PDFs in Chrome CDP via a transient, cleanly closed tab
+        if pending_renders:
+            with sync_playwright() as p:
+                render_page = None
+                try:
+                    browser = p.chromium.connect_over_cdp(self.cdp_url)
+                    context = browser.contexts[0] if browser.contexts else browser.new_context()
+                    render_page = context.new_page()
+
+                    for job, folder, pdf_path, full_html, ats_score in pending_renders:
+                        try:
+                            render_page.set_content(full_html, wait_until="load")
+                            render_page.wait_for_timeout(200)
+                            render_page.pdf(
+                                path=str(pdf_path),
+                                format="A4",
+                                print_background=True,
+                                margin={"top": "8mm", "bottom": "8mm", "left": "10mm", "right": "10mm"}
+                            )
+                            print(f"  [OK] Compiled ATS Tailored PDF (ATS Score: {ats_score}%): {folder.name}", flush=True)
+                            job["tailored_pdf"] = str(pdf_path.resolve())
+                            job["ats_score"] = ats_score
+                        except Exception as e:
+                            print(f"  [!] PDF render notice for {folder.name}: {e}", flush=True)
+                except Exception as e:
+                    print(f"  [!] Fatal Playwright connection error during PDF rendering: {e}")
+                finally:
+                    if render_page is not None:
+                        try:
+                            render_page.close()
+                        except Exception:
+                            pass
 
         manifest_path.write_text(json.dumps(jobs, indent=2), encoding="utf-8")
         print("=== ALL TAILORED RESUMES RENDERED SUCCESSFULLY ===\n", flush=True)

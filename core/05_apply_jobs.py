@@ -1248,74 +1248,78 @@ class ApplicationEngine:
 
         log_step("QUEUE", f"Loaded {len(jobs_queue)} job postings from manifest.")
         
-        context = self.browser_mgr.get_context()
-        page = self.browser_mgr.new_page()
+        page = self.browser_mgr.new_transient_page()
         applied_count = 0
         
-        for job in jobs_queue:
-            if applied_count >= max_applications:
-                log_step("LIMIT", f"Reached target application batch limit of {max_applications}.")
-                break
-            
-            status = self.apply_single_job(page, job)
-            self.stats["total"] += 1
-            
-            company = job.get("company", "Unknown")
-            job_title = job.get("job_title") or job.get("title", "Unknown")
-            pdf_path = job.get("pdf_path") or job.get("tailored_pdf", "")
-            platform = job.get("platform", "Naukri")
-            
-            if status in ["APPLIED_1CLICK", "APPLIED_CHATBOT", "APPLIED_LINKEDIN_EASY_APPLY"]:
-                applied_count += 1
-                if status == "APPLIED_1CLICK":
-                    self.stats["applied_1click"] += 1
-                elif status == "APPLIED_LINKEDIN_EASY_APPLY":
-                    self.stats["applied_linkedin"] += 1
-                else:
-                    self.stats["applied_chatbot"] += 1
+        try:
+            for job in jobs_queue:
+                if applied_count >= max_applications:
+                    log_step("LIMIT", f"Reached target application batch limit of {max_applications}.")
+                    break
+                
+                status = self.apply_single_job(page, job)
+                self.stats["total"] += 1
+                
+                company = job.get("company", "Unknown")
+                job_title = job.get("job_title") or job.get("title", "Unknown")
+                pdf_path = job.get("pdf_path") or job.get("tailored_pdf", "")
+                platform = job.get("platform", "Naukri")
+                
+                if status in ["APPLIED_1CLICK", "APPLIED_CHATBOT", "APPLIED_LINKEDIN_EASY_APPLY"]:
+                    applied_count += 1
+                    if status == "APPLIED_1CLICK":
+                        self.stats["applied_1click"] += 1
+                    elif status == "APPLIED_LINKEDIN_EASY_APPLY":
+                        self.stats["applied_linkedin"] += 1
+                    else:
+                        self.stats["applied_chatbot"] += 1
 
-                self.record_tracker_entry({
-                    "company": company,
-                    "job_title": job_title,
-                    "platform": platform,
-                    "url": job.get("url"),
-                    "score": job.get("score") or job.get("match_score", "N/A"),
-                    "status": status,
-                    "pdf_path": pdf_path,
-                    "notes": f"Applied autonomously via {status}"
-                })
-            elif status == "REDIRECT_EXTERNAL":
-                self.stats["redirect_external"] += 1
-                self.record_tracker_entry({
-                    "company": company,
-                    "job_title": job_title,
-                    "platform": platform,
-                    "url": job.get("url"),
-                    "score": job.get("score") or job.get("match_score", "N/A"),
-                    "status": "REDIRECT_EXTERNAL",
-                    "pdf_path": pdf_path,
-                    "notes": "External employer site redirect saved to saved_external_jobs.json"
-                })
-            elif status == "SKIPPED_ALREADY_APPLIED":
-                self.stats["skipped"] += 1
-            else:
-                self.stats["failed"] += 1
-                failure_reason = "Application could not be committed or drawer failed"
-                if status == "FAILED_PLATFORM_REJECTED":
-                    failure_reason = "Platform rejected application banner (incomplete screening responses)"
-                elif status == "DRAWER_CLOSED":
-                    failure_reason = "Chatbot drawer closed prematurely"
-                self.record_tracker_entry({
-                    "company": company,
-                    "job_title": job_title,
-                    "platform": platform,
-                    "url": job.get("url"),
-                    "score": job.get("score") or job.get("match_score", "N/A"),
-                    "status": "FAILED",
-                    "notes": failure_reason
-                })
-            
-            time.sleep(2.0)
+                    self.record_tracker_entry({
+                        "company": company,
+                        "job_title": job_title,
+                        "platform": platform,
+                        "url": job.get("url"),
+                        "score": job.get("score") or job.get("match_score", "N/A"),
+                        "status": status,
+                        "pdf_path": pdf_path,
+                        "notes": f"Applied autonomously via {status}"
+                    })
+                elif status == "REDIRECT_EXTERNAL":
+                    self.stats["redirect_external"] += 1
+                    self.record_tracker_entry({
+                        "company": company,
+                        "job_title": job_title,
+                        "platform": platform,
+                        "url": job.get("url"),
+                        "score": job.get("score") or job.get("match_score", "N/A"),
+                        "status": "REDIRECT_EXTERNAL",
+                        "pdf_path": pdf_path,
+                        "notes": "External employer site redirect saved to saved_external_jobs.json"
+                    })
+                elif status == "SKIPPED_ALREADY_APPLIED":
+                    self.stats["skipped"] += 1
+                else:
+                    self.stats["failed"] += 1
+                    failure_reason = "Application could not be committed or drawer failed"
+                    if status == "FAILED_PLATFORM_REJECTED":
+                        failure_reason = "Platform rejected application banner (incomplete screening responses)"
+                    elif status == "DRAWER_CLOSED":
+                        failure_reason = "Chatbot drawer closed prematurely"
+                    self.record_tracker_entry({
+                        "company": company,
+                        "job_title": job_title,
+                        "platform": platform,
+                        "url": job.get("url"),
+                        "score": job.get("score") or job.get("match_score", "N/A"),
+                        "status": "FAILED",
+                        "notes": failure_reason
+                    })
+                
+                time.sleep(2.0)
+        finally:
+            self.browser_mgr.close_page(page)
+            self.browser_mgr.close_orphaned_blank_pages()
+            self.browser_mgr.close()
 
         log_section("APPLICATION BATCH EXECUTION SUMMARY")
         print(f"    Total Jobs Evaluated:      {self.stats['total']}", flush=True)

@@ -86,29 +86,33 @@ def run_fast_upload(profile_path: str):
             browser = p.chromium.connect_over_cdp(cdp_url)
             context = browser.contexts[0] if browser.contexts else browser.new_context()
 
-            # Reuse existing page and bring to front
-            page = context.pages[0] if context.pages else context.new_page()
-            page.bring_to_front()
+            # Dedicated transient upload page with guaranteed closure
+            upload_page = context.new_page()
+            try:
+                log("  [A] Navigating to Naukri Profile...")
+                upload_page.goto("https://www.naukri.com/mnjuser/profile", wait_until="domcontentloaded", timeout=30000)
+                upload_page.wait_for_timeout(2500)
 
-            log("  [A] Navigating to Naukri Profile...")
-            page.goto("https://www.naukri.com/mnjuser/profile", wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(2500)
+                # Check if login is required
+                if "login" in upload_page.url.lower():
+                    log("  [!] Notice: Naukri session requires login in Chrome.")
+                    return
 
-            # Check if login is required
-            if "login" in page.url.lower():
-                log("  [!] Notice: Naukri session requires login in Chrome.")
-                return
+                log(f"  [B] Uploading Tailored ATS Resume: {os.path.basename(resume_to_upload)}")
+                file_input = upload_page.locator("input#attachCV, input[type='file'][id*='attachCV'], input[type='file']").first
 
-            log(f"  [B] Uploading Tailored ATS Resume: {os.path.basename(resume_to_upload)}")
-            file_input = page.locator("input#attachCV, input[type='file'][id*='attachCV'], input[type='file']").first
-
-            # Correct Playwright element detection
-            if file_input.count() > 0:
-                file_input.set_input_files(resume_to_upload)
-                page.wait_for_timeout(4000)  # Await processing toast
-                log("  [OK] Successfully updated profile resume with targeted ATS PDF.")
-            else:
-                log("  [!] Could not locate file input element on profile page.")
+                # Correct Playwright element detection
+                if file_input.count() > 0:
+                    file_input.set_input_files(resume_to_upload)
+                    upload_page.wait_for_timeout(4000)  # Await processing toast
+                    log("  [OK] Successfully updated profile resume with targeted ATS PDF.")
+                else:
+                    log("  [!] Could not locate file input element on profile page.")
+            finally:
+                try:
+                    upload_page.close()
+                except Exception:
+                    pass
 
         except Exception as e:
             log(f"  [!] Fast upload notice: {e}")

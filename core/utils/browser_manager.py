@@ -57,11 +57,46 @@ class BrowserManager:
         context = self.get_context()
         if context.pages:
             page = context.pages[0]
-            page.bring_to_front()
-            return page
+            try:
+                if not page.is_closed():
+                    page.bring_to_front()
+                    return page
+            except Exception:
+                pass
         page = context.new_page()
         page.bring_to_front()
         return page
+
+    def new_transient_page(self) -> Page:
+        """Opens a dedicated transient page and brings it to front."""
+        context = self.get_context()
+        page = context.new_page()
+        page.bring_to_front()
+        return page
+
+    def close_page(self, page: Optional[Page]) -> None:
+        """Safely closes a page if it is open and connected."""
+        if page is not None:
+            try:
+                if not page.is_closed():
+                    page.close()
+            except Exception:
+                pass
+
+    def close_orphaned_blank_pages(self) -> None:
+        """Safely closes empty about:blank tabs without closing the user's primary window."""
+        try:
+            context = self.get_context()
+            pages = list(context.pages)
+            if len(pages) > 1:
+                for p in pages:
+                    try:
+                        if not p.is_closed() and p.url == "about:blank":
+                            p.close()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     def close(self):
         """Closes Playwright connection cleanly without terminating user's Chrome instance."""

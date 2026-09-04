@@ -238,6 +238,16 @@ def cleanup_browser_tabs(context, tracked_pages=None, active_page=None):
                         tracked_pages.discard(p)
                     except Exception:
                         pass
+        # Sweep any orphaned about:blank tabs left behind, preserving active tabs
+        pages = list(context.pages)
+        if len(pages) > 1:
+            for p in pages:
+                if p != active_page and not p.is_closed():
+                    try:
+                        if p.url == "about:blank":
+                            p.close()
+                    except Exception:
+                        pass
     except Exception:
         pass
 
@@ -439,6 +449,13 @@ def run_batched_discovery(profile_path: str):
                                 
                         for job in jobs_to_scan:
                             cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
+                            if discovery_page.is_closed():
+                                discovery_page = context.new_page()
+                                tracked_pages.add(discovery_page)
+                            try:
+                                discovery_page.bring_to_front()
+                            except Exception:
+                                pass
                             page = discovery_page
                             url = job["url"]
                             title = job["title"]
@@ -474,8 +491,7 @@ def run_batched_discovery(profile_path: str):
                             except Exception as parse_error:
                                 time.sleep(1)
                                 try:
-                                    page.goto("about:blank")
-                                    page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                                    page.goto(url, wait_until="domcontentloaded", timeout=25000)
                                 except Exception as e2:
                                     print(f"     [ERROR READING FULL DESCRIPTION] Details: {str(e2)}", flush=True)
                                     continue
@@ -574,6 +590,14 @@ def run_batched_discovery(profile_path: str):
                                     process_batch(current_batch, profile_dir, current_platform_exec)
                                     applied_count += len(current_batch)
                                     current_batch.clear()
+                                    if discovery_page.is_closed():
+                                        discovery_page = context.new_page()
+                                        tracked_pages.add(discovery_page)
+                                    try:
+                                        discovery_page.bring_to_front()
+                                    except Exception:
+                                        pass
+                                    cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
                             else:
                                 print(f"     [FAILED. Score: {score}%]", flush=True)
                                 processed_ledger.add(url.lower())
@@ -595,6 +619,14 @@ def run_batched_discovery(profile_path: str):
         process_batch(current_batch, profile_dir, current_platform_exec)
         applied_count += len(current_batch)
         current_batch.clear()
+        if discovery_page.is_closed():
+            discovery_page = context.new_page()
+            tracked_pages.add(discovery_page)
+        try:
+            discovery_page.bring_to_front()
+        except Exception:
+            pass
+        cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
         
     # Tier 4: Autonomous Starvation Recovery & Seniority Auto-Expansion
     if applied_count == 0 and session_seen_titles:
