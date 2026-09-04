@@ -3,10 +3,17 @@
 UNIVERSAL AUTONOMOUS CAREER AGENT - AI CLIENT & REASONING BRAIN
 File: core/ai_client.py
 ================================================================================
-Profile-agnostic AI engine operating with zero hardcoded candidate parameters.
-Features File-Based IPC (pending_question.json) for Antigravity 2.0 autonomous handshake.
-Completely removes terminal blocking (input/stdin).
-Zero-baseline evaluation engine to strictly prevent irrelevant job matching.
+Profile-agnostic cognitive engine operating with zero hardcoded candidate parameters.
+Features the Universal Zero-API Antigravity 2.0 Cognitive IPC Bridge (pending_question.json).
+Empowers Google Antigravity 2.0 as the primary reasoning model for:
+  1. Dynamic Candidate Profile & Taxonomy Synthesis (Zero-Hardcoding)
+  2. Precision Two-Stage Job Qualification & Semantic JD Scoring (>= 60% threshold)
+  3. Factual ATS Resume Content Tailoring & Competency Prioritization
+  4. Portal Screening Questionnaire Resolution & Continuous Self-Learning
+  5. Search Starvation Auto-Healing & Seniority Designation Expansion
+Completely eliminates terminal stdin/input blocking (Guardrail H6).
+Anchors experience parsing to prevent company-age false rejections.
+Eliminates cross-functional false positives on incompatible verticals.
 ================================================================================
 """
 
@@ -73,10 +80,11 @@ class MatchResult(tuple):
 class AIClient:
     """
     Autonomous Reasoning Engine for Dynamic Screening Questionnaire Resolution,
-    Factual Candidate Job Scoring, and General Text Generation Tasks.
-    Zero-hardcoding: resolves everything from ProfileContext at runtime.
-    Relies on AG 2.0 File-Based IPC as primary brain; uses Gemini API if available.
-    Zero terminal stdin blocking.
+    Factual Candidate Job Scoring, Dynamic Cognitive Profile Synthesis,
+    and Factual ATS Resume Content Optimization.
+    Zero-hardcoding: resolves all candidate parameters dynamically at runtime.
+    Operates with Google Antigravity 2.0 (File-Based IPC) as the primary brain,
+    supplemented by Gemini API when configured. Zero terminal stdin blocking.
     """
     def __init__(self, profile_context=None):
         self.profile_context = profile_context
@@ -113,6 +121,7 @@ class AIClient:
         Zero hardcoded assumptions: derives domain, technical skills, soft skills,
         incompatible verticals, acronyms, and multi-cycle designation queues
         dynamically from resume.md and candidate configuration at runtime.
+        Routes to Antigravity 2.0 File-Based IPC when Gemini API is unconfigured.
         """
         if not self.profile_context:
             return {}
@@ -131,38 +140,39 @@ class AIClient:
         recommended_titles = list(target_jobs.get("recommended_titles") or [])
         cand_title = cand.get("current_title", "")
 
-        # Try synthesis via Gemini LLM if available
-        if self.gemini_client:
-            prompt = f"""You are an elite executive talent strategist. Analyze this candidate's resume and configuration to synthesize a complete, profile-bound Cognitive Profile Model.
+        prompt = f"""You are an elite talent strategist and executive recruiter. Analyze this candidate's factual resume and configuration to synthesize a complete, profile-bound Cognitive Profile Model.
 CANDIDATE CONFIG:
 Current Title: {cand_title}
-Reported Experience: {cand_exp} years
+Total Experience: {cand_exp} years
 Configured Target Keywords: {target_keywords}
 
 RESUME:
-{resume_md[:3500]}
+{resume_md[:4000]}
 
 Return STRICTLY a JSON object with this exact schema:
 {{
-  "candidate_domain": "<e.g. Financial Services & Accounting Operations, Software Engineering, etc.>",
-  "primary_title": "<most representative senior title>",
+  "candidate_domain": "<e.g. Financial Services & Accounting Operations, Software Engineering, Supply Chain Management, Corporate Legal, etc.>",
+  "primary_title": "<most representative senior title matching experience>",
   "years_of_experience": {cand_exp},
-  "seniority_level": "<e.g. Senior / Lead / Assistant Manager>",
-  "core_domain_skills": ["<specific technical domain skills, tools, processes, certifications from resume>"],
-  "generic_soft_skills": ["<behavioral and communication skills that appear in general job descriptions>"],
+  "seniority_level": "<e.g. Fresher / Associate / Specialist / Assistant Manager / Senior Manager / Director / C-Level>",
+  "core_domain_skills": ["<20-30 specific technical domain skills, software tools, systems, frameworks, processes from resume>"],
+  "generic_soft_skills": ["<behavioral and communication skills like analytical, problem solving, teamwork, leadership>"],
   "domain_acronyms": {{
     "<acronym>": "<expansion and meaning>"
   }},
   "incompatible_verticals": {{
-    "<out_of_domain_vertical_name>": ["<marker1>", "<marker2>", "<marker3>"]
+    "<out_of_domain_vertical_name>": ["<specific_job_title_marker1>", "<specific_job_title_marker2>"]
   }},
   "search_cycles": [
     ["<5-8 primary core target designations for Cycle 1>"],
-    ["<5-8 seniority/lateral designations for Cycle 2>"],
-    ["<5-8 specialized/functional designations for Cycle 3>"]
+    ["<5-8 seniority or lateral designations for Cycle 2>"],
+    ["<5-8 specialized or functional designations for Cycle 3>"]
   ],
   "active_cycle_index": 0
 }}"""
+
+        # 1. Try synthesis via Gemini LLM if available
+        if self.gemini_client:
             try:
                 raw_text = self.generate_text(prompt, default_fallback="")
                 json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
@@ -174,139 +184,40 @@ Return STRICTLY a JSON object with this exact schema:
                         self.profile_context.save_cognitive_profile(model_data)
                         return model_data
             except Exception as e:
-                print(f"[AI CLIENT] Notice: Gemini cognitive profile synthesis failed ({e}). Using deterministic synthesis engine.", flush=True)
+                print(f"[AI CLIENT] Notice: Gemini cognitive profile synthesis failed ({e}).", flush=True)
 
-        # Deterministic Profile Synthesis Engine (Zero-Hardcoding Fallback)
-        INDUSTRY_TAXONOMY = {
-            "financial_services_accounting": {
-                "domain_name": "Finance, Accounting & Middle Office Operations",
-                "markers": [
-                    "accounting", "accountant", "reconciliation", "ledger", "corporate actions",
-                    "swift", "dividend", "audit", "tax", "taxation", "financial", "finance",
-                    "p2p", "rtr", "o2c", "brs", "mis", "asset servicing", "middle office",
-                    "entitlement", "overdraft", "banking", "treasury", "balance sheet"
-                ],
-                "acronyms": {
-                    "rtr": "Record to Report",
-                    "p2p": "Procure to Pay",
-                    "o2c": "Order to Cash",
-                    "gl": "General Ledger",
-                    "ap": "Accounts Payable",
-                    "ar": "Accounts Receivable",
-                    "brs": "Bank Reconciliation Statement",
-                    "mis": "Management Information Systems",
-                    "fa": "Finance & Accounts",
-                    "f&a": "Finance & Accounts",
-                    "fp&a": "Financial Planning & Analysis",
-                    "swift": "SWIFT Banking Messaging",
-                    "dtcc": "Depository Trust & Clearing Corporation"
-                }
-            },
-            "software_engineering_tech": {
-                "domain_name": "Software Engineering & Cloud Technology",
-                "markers": [
-                    "software", "developer", "frontend", "backend", "full stack", "react",
-                    "python", "node", "javascript", "typescript", "java", "golang", "devops",
-                    "docker", "kubernetes", "aws", "gcp", "azure", "api", "database", "sql"
-                ],
-                "acronyms": {
-                    "api": "Application Programming Interface",
-                    "aws": "Amazon Web Services",
-                    "gcp": "Google Cloud Platform",
-                    "ci/cd": "Continuous Integration / Continuous Deployment",
-                    "sql": "Structured Query Language"
-                }
-            },
-            "pharmaceutical_life_sciences": {
-                "domain_name": "Pharmaceuticals & Life Sciences",
-                "markers": [
-                    "pharma", "pharmaceutical", "bulk drugs", "biotech", "biotechnology",
-                    "drug development", "api manufacturing", "ich", "gmp", "mhra", "usfda",
-                    "regulatory affairs", "formulation", "pharmacology", "medicinal",
-                    "clinical research", "chemistry", "chemical", "dmf"
-                ],
-                "acronyms": {
-                    "gmp": "Good Manufacturing Practice",
-                    "usfda": "United States Food and Drug Administration",
-                    "ich": "International Council for Harmonisation",
-                    "dmf": "Drug Master File"
-                }
-            },
-            "healthcare_clinical": {
-                "domain_name": "Healthcare & Clinical Services",
-                "markers": [
-                    "hospital", "clinical", "patient care", "nursing", "nurse", "doctor",
-                    "physician", "mbbs", "radiology", "pathology", "surgeon", "pharmacist"
-                ],
-                "acronyms": {
-                    "mbbs": "Bachelor of Medicine, Bachelor of Surgery",
-                    "hipaa": "Health Insurance Portability and Accountability Act"
-                }
-            },
-            "civil_mechanical_engineering": {
-                "domain_name": "Civil, Mechanical & Plant Engineering",
-                "markers": [
-                    "civil engineer", "mechanical engineer", "electrical engineer", "site supervisor",
-                    "plant head", "production engineer", "maintenance engineer", "piping engineer",
-                    "structural engineer", "site engineer", "hvac engineer"
-                ],
-                "acronyms": {
-                    "hvac": "Heating, Ventilation, and Air Conditioning",
-                    "cad": "Computer-Aided Design"
-                }
-            },
-            "hr_recruitment": {
-                "domain_name": "Human Resources & Talent Acquisition",
-                "markers": [
-                    "talent acquisition", "recruitment consultant", "technical recruiter",
-                    "hr generalist", "hrbp", "human resources executive"
-                ],
-                "acronyms": {
-                    "hrbp": "Human Resources Business Partner",
-                    "ats": "Applicant Tracking System"
-                }
-            },
-            "sales_bpo_voice": {
-                "domain_name": "Sales & BPO Voice Operations",
-                "markers": [
-                    "bpo voice", "telesales", "telecaller", "inside sales", "outbound calling",
-                    "inbound voice", "field sales executive"
-                ],
-                "acronyms": {
-                    "bpo": "Business Process Outsourcing",
-                    "sla": "Service Level Agreement"
-                }
-            }
-        }
+        # 2. Antigravity 2.0 File-Based IPC Handshake (Zero-API Primary Engine)
+        ipc_res = self._fallback_antigravity_ipc(
+            prompt=prompt,
+            question="Synthesize Cognitive Profile Model from Resume",
+            control_type="JSON",
+            task_type="PROFILE_SYNTHESIS"
+        )
+        if ipc_res:
+            try:
+                json_match = re.search(r'\{.*\}', ipc_res, re.DOTALL)
+                if json_match:
+                    model_data = json.loads(json_match.group(0))
+                    if model_data.get("candidate_domain") and model_data.get("search_cycles"):
+                        model_data["active_cycle_index"] = 0
+                        model_data["last_synthesized"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                        self.profile_context.save_cognitive_profile(model_data)
+                        return model_data
+            except Exception as e:
+                print(f"[AI CLIENT] Notice: Parsing AG 2.0 synthesized profile JSON failed: {e}", flush=True)
 
-        # Score candidate text against all domains to find candidate's primary domain
-        combined_text = (resume_md + " " + " ".join(target_keywords) + " " + cand_title).lower()
-        domain_scores = {}
-        for ind_key, ind_data in INDUSTRY_TAXONOMY.items():
-            score = sum(1 for m in ind_data["markers"] if re.search(rf'\b{re.escape(m)}\b', combined_text))
-            domain_scores[ind_key] = score
-
-        primary_domain_key = max(domain_scores, key=domain_scores.get) if domain_scores else "financial_services_accounting"
-        primary_domain_info = INDUSTRY_TAXONOMY.get(primary_domain_key, INDUSTRY_TAXONOMY["financial_services_accounting"])
-        candidate_domain = primary_domain_info["domain_name"]
-        domain_acronyms = dict(primary_domain_info.get("acronyms", {}))
-
-        # Dynamic Incompatible Verticals: Every other industry category is out-of-domain!
-        incompatible_verticals = {}
-        for ind_key, ind_data in INDUSTRY_TAXONOMY.items():
-            if ind_key != primary_domain_key:
-                incompatible_verticals[ind_key] = list(ind_data["markers"])
-
-        # 2. Extract Skills and Separate into Core Technical vs. Generic Soft Skills
+        # 3. Resilient Dynamic NLP Heuristic Fallback (Zero Static Industry Dictionaries)
+        # Extracts skills, sections, and titles dynamically from resume.md
         GENERIC_SOFT_SKILLS = [
             "analytical", "problem solving", "conceptual", "communication", "written", "verbal",
             "teamwork", "leadership", "management", "documentation", "presentation",
-            "process improvement", "automation", "software", "reporting", "planning",
+            "process improvement", "automation", "reporting", "planning",
             "strategy", "strategic planning", "due diligence", "recruitment", "risk mitigation",
             "internal controls", "accuracy", "detail", "reasoning", "prioritization",
             "negotiation", "organizational", "interpersonal", "coordination"
         ]
 
+        # Extract all skills from taxonomy_skills config
         skills_dict = config.get("taxonomy_skills", {})
         extracted_skills = []
         for cat_skills in skills_dict.values():
@@ -315,18 +226,21 @@ Return STRICTLY a JSON object with this exact schema:
             elif isinstance(cat_skills, str):
                 extracted_skills.append(cat_skills.strip())
 
-        comp_match = re.search(r'## CORE COMPETENCIES(.*?)(?=##|\Z)', resume_md, re.DOTALL)
+        # Extract competency lines from resume markdown
+        comp_match = re.search(r'##\s*(?:CORE\s+COMPETENCIES|SKILLS|TECHNICAL\s+SKILLS)(.*?)(?=##|\Z)', resume_md, re.DOTALL | re.IGNORECASE)
         if comp_match:
-            comp_lines = comp_match.group(1).split("\n")
-            for line in comp_lines:
+            for line in comp_match.group(1).split("\n"):
                 if "|" in line:
-                    parts = line.split("|")
-                    if len(parts) >= 3:
-                        skills_str = parts[2]
-                        for s in re.split(r'[,;()]+', skills_str):
+                    for part in line.split("|"):
+                        for s in re.split(r'[,;()]+', part):
                             clean_s = s.strip()
-                            if len(clean_s) > 2 and not clean_s.startswith("*"):
+                            if len(clean_s) > 2 and not clean_s.startswith("*") and not clean_s.startswith("-"):
                                 extracted_skills.append(clean_s)
+                elif line.strip().startswith("-") or line.strip().startswith("*"):
+                    for s in re.split(r'[,;]+', line.lstrip("-* ")):
+                        clean_s = s.strip()
+                        if len(clean_s) > 2:
+                            extracted_skills.append(clean_s)
 
         core_domain_skills = []
         generic_soft_skills = list(GENERIC_SOFT_SKILLS)
@@ -343,28 +257,39 @@ Return STRICTLY a JSON object with this exact schema:
                 seen_core.add(s_lower)
                 core_domain_skills.append(s_clean)
 
-        seniority_level = "Entry / Associate"
-        if cand_exp >= 8.0:
-            seniority_level = "Senior / Lead / Assistant Manager"
+        # Derive domain dynamically from target keywords or resume headline
+        inferred_domain = "Professional Operations"
+        if target_keywords:
+            inferred_domain = f"{target_keywords[0]} Domain"
+        elif cand_title:
+            inferred_domain = f"{cand_title} Field"
+
+        # Seniority tier assignment
+        if cand_exp >= 12.0:
+            seniority_level = "Director / Practice Lead / Senior Executive"
+            senior_prefix = "Director"
+        elif cand_exp >= 8.0:
+            seniority_level = "Lead / Assistant Manager / Senior Manager"
+            senior_prefix = "Assistant Manager"
         elif cand_exp >= 5.0:
             seniority_level = "Mid-Senior / Specialist"
+            senior_prefix = "Senior"
         elif cand_exp >= 2.0:
             seniority_level = "Associate / Executive"
+            senior_prefix = ""
+        else:
+            seniority_level = "Fresher / Entry Level"
+            senior_prefix = "Junior"
 
-        base_targets = list(target_keywords) if target_keywords else [cand_title]
-        cycle1 = []
-        for t in base_targets[:8]:
-            if t and t.strip() and t.strip() not in cycle1:
-                cycle1.append(t.strip())
+        base_targets = list(target_keywords) if target_keywords else [cand_title or "Professional"]
+        cycle1 = [t.strip() for t in base_targets[:8] if t and t.strip()]
 
-        lead_prefix = "Assistant Manager" if cand_exp >= 7.0 else "Senior"
-        senior_prefix = "Senior" if cand_exp >= 4.0 else ""
         cycle2_candidates = []
         for kw in cycle1:
-            clean_kw = kw.replace("Senior", "").replace("Assistant Manager", "").strip()
+            clean_kw = re.sub(r'\b(Senior|Lead|Assistant Manager|Junior)\b', '', kw, flags=re.IGNORECASE).strip("- ")
             if clean_kw:
-                c2_a = f"{lead_prefix} - {clean_kw}".strip("- ")
-                c2_b = f"{senior_prefix} {clean_kw}".strip()
+                c2_a = f"{senior_prefix} - {clean_kw}".strip("- ") if senior_prefix else clean_kw
+                c2_b = f"Senior {clean_kw}".strip()
                 if c2_a not in cycle1 and c2_a not in cycle2_candidates:
                     cycle2_candidates.append(c2_a)
                 if c2_b not in cycle1 and c2_b not in cycle2_candidates:
@@ -387,14 +312,14 @@ Return STRICTLY a JSON object with this exact schema:
             search_cycles = [[cand_title or "Specialist"]]
 
         cognitive_profile = {
-            "candidate_domain": candidate_domain,
+            "candidate_domain": inferred_domain,
             "primary_title": cand_title or (cycle1[0] if cycle1 else "Specialist"),
             "years_of_experience": cand_exp,
             "seniority_level": seniority_level,
-            "core_domain_skills": core_domain_skills[:25],
+            "core_domain_skills": core_domain_skills[:30],
             "generic_soft_skills": generic_soft_skills,
-            "domain_acronyms": domain_acronyms,
-            "incompatible_verticals": incompatible_verticals,
+            "domain_acronyms": {},
+            "incompatible_verticals": {},
             "search_cycles": search_cycles,
             "active_cycle_index": 0,
             "last_synthesized": time.strftime("%Y-%m-%d %H:%M:%S")
@@ -473,19 +398,56 @@ Return STRICTLY a JSON object with this exact schema:
             except Exception as e:
                 print(f"[AI CLIENT] Gemini API unavailable or rate-limited ({e}). Falling back to AG 2.0 File IPC.", flush=True)
 
-        # 2. File-Based IPC Handshake for Antigravity 2.0 / AI Assistant
+        # 2. File-Based IPC Handshake for Antigravity 2.0
         ipc_res = self._fallback_antigravity_ipc(
             prompt=prompt,
             question=kwargs.get("question", prompt.split("\n")[0][:120].strip()),
             options=kwargs.get("options", None),
             control_type=kwargs.get("control_type", "TEXT"),
-            max_characters=kwargs.get("max_characters", None)
+            max_characters=kwargs.get("max_characters", None),
+            task_type=kwargs.get("task_type", "TEXT_GENERATION")
         )
 
         if ipc_res and ipc_res.strip():
             return ipc_res.strip()
 
         return default_fallback
+
+    def tailor_resume_content(self, jd_text: str, master_resume_text: str) -> Dict[str, Any]:
+        """
+        Synthesizes a targeted professional summary and prioritized core competencies
+        specifically tailored to the target Job Description while strictly preserving
+        100% factual accuracy from the candidate's master resume (Zero Hallucinations).
+        """
+        prompt = f"""You are an elite executive resume strategist.
+Analyze the target Job Description and the candidate's Master Resume.
+TARGET JOB DESCRIPTION:
+{jd_text[:3000]}
+
+CANDIDATE MASTER RESUME:
+{master_resume_text[:3500]}
+
+INSTRUCTIONS:
+1. Synthesize an ATS-optimized Professional Summary (3-4 sentences) that directly highlights the candidate's real, factual background in relation to this specific job's core responsibilities and tech stack.
+2. Extract the top 12-16 most relevant Core Competencies / Technical Skills from the candidate's resume, ordered with the skills most demanded by this JD first.
+3. CRITICAL: PRESERVE ABSOLUTE FACTUAL TRUTH. DO NOT INVENT, FABRICATE, OR EXAGGERATE ANY DEGREE, COMPANY, TOOL, OR METRIC.
+
+Return STRICTLY a JSON object:
+{{
+  "tailored_summary": "<polished 3-4 sentence factual summary>",
+  "prioritized_skills": ["<skill1>", "<skill2>", "<skill3>"]
+}}"""
+
+        # Try Gemini or AG 2.0 IPC
+        raw = self.generate_text(prompt=prompt, task_type="RESUME_TAILORING")
+        if raw:
+            try:
+                json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+                if json_match:
+                    return json.loads(json_match.group(0))
+            except Exception:
+                pass
+        return {}
 
     def _parse_json_match_result(self, raw_text: str) -> Optional[MatchResult]:
         """Extracts and validates structured MatchResult JSON from LLM or IPC responses."""
@@ -526,12 +488,12 @@ Return STRICTLY a JSON object with this exact schema:
         Stage 1: Deterministic Hard Filter (Gatekeeper)
           - C6 Absolute Negative Title & JD Gating (word boundary)
           - Domain Title Alignment (phrase & token overlap gating)
-          - Experience Band Filter (gap > 3 years auto-rejects)
+          - Anchored Experience Band Filter (checks requirement context, ignores company age >20 yrs)
+          - Incompatible Industry Gate with Domain Override (prevents cross-tooling false rejections)
         Stage 2: Precision Semantic & Factual Scoring (Dual-Brain + Local Fallback)
           - Operational Gemini Client Evaluation (0-100 JSON)
-          - Ambiguous Score IPC Handshake (40-65) if enabled
-          - High-Precision Local Heuristics (0-35 Title, 0-45 Skills [min 2], 0-20 Exp)
-          - 60% Qualification Bar (eliminates 40% false positives)
+          - Antigravity 2.0 File-Based IPC Semantic Scoring (Zero-API primary engine)
+          - Calibrated Factual Fallback (0-35 Title, 0-45 Skills [min 2], 0-20 Exp, >=60% threshold)
         """
         profile = candidate_profile or (self.profile_context.config if self.profile_context else {})
         cand = profile.get("candidate", {})
@@ -571,7 +533,7 @@ Return STRICTLY a JSON object with this exact schema:
                     missing_skills=["Target domain alignment"]
                 )
 
-        # 1.2 Domain Title Alignment: Gating out out-of-domain roles (e.g. Software Engineer for Accountant)
+        # 1.2 Domain Title Alignment: Gating out completely out-of-domain roles
         all_targets = list(target_keywords) + list(recommended_titles)
         if current_title:
             all_targets.append(current_title)
@@ -621,22 +583,37 @@ Return STRICTLY a JSON object with this exact schema:
                 missing_skills=["Target domain title alignment"]
             )
 
-        # 1.3 Experience Band Filter: Reject if JD minimum experience exceeds candidate by > 3 years
+        # 1.3 Anchored Experience Band Filter (Defect 2 Fix)
+        # Prevents matching company age statements (e.g., "in business for 25 years")
         cand_exp = float(cand.get("total_experience_years", target_jobs.get("experience_years", 0)) or 0)
-        exp_matches = re.findall(r'(\d+)\s*(?:-\s*(\d+))?\s*(?:years?|yrs?)(?:\s*(?:of)?\s*(?:experience|exp))?', desc_lower)
+        
+        # Priority A: Check explicit requirements sections
+        req_section_match = re.search(r'(?:requirements|specifications|qualifications|eligibility|profile|who you are)(.*?)(?=(?:responsibilities|perks|benefits|about us|company overview|\Z))', desc_lower, re.DOTALL)
+        req_text = req_section_match.group(1) if req_section_match else desc_lower
+
+        # Context-anchored experience regex (requires experience keywords in proximity)
+        anchored_exp_pattern = r'(?:minimum|min\.?|at least|overall|relevant|total|requires?|with)?\s*(\d+)(?:\s*[-–to]+\s*(\d+))?\s*(?:years?|yrs?)(?:\s*(?:of)?\s*(?:experience|exp|relevant experience|industry experience))'
+        exp_matches = re.findall(anchored_exp_pattern, req_text)
+
+        if not exp_matches:
+            # Fallback: search anywhere in JD, but strictly require the word "experience" or "exp" immediately following
+            exp_matches = re.findall(r'\b(\d+)(?:\s*[-–to]+\s*(\d+))?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience|exp)\b', desc_lower)
 
         if exp_matches:
-            min_req_exp = float(exp_matches[0][0])
-            if min_req_exp > cand_exp + 3:
-                return MatchResult(
-                    score=0,
-                    reasoning=f"Rejected: Experience gap too wide for '{job_title}'. Role requires minimum {int(min_req_exp)} years, but candidate has {cand_exp} years (exceeds +3 year limit).",
-                    matching_skills=[],
-                    missing_skills=[f"Minimum {int(min_req_exp)} years experience"]
-                )
+            # Filter out obvious company age statements (> 20 years unless candidate has > 20 years)
+            valid_exp_matches = [m for m in exp_matches if float(m[0]) <= max(20.0, cand_exp + 5.0)]
+            if valid_exp_matches:
+                min_req_exp = float(valid_exp_matches[0][0])
+                if min_req_exp > cand_exp + 3:
+                    return MatchResult(
+                        score=0,
+                        reasoning=f"Rejected: Experience gap too wide for '{job_title}'. Role requires minimum {int(min_req_exp)} years, but candidate has {cand_exp} years (exceeds +3 year limit).",
+                        matching_skills=[],
+                        missing_skills=[f"Minimum {int(min_req_exp)} years experience"]
+                    )
 
-        # 1.4 Incompatible Industry & Domain Hard Gate
-        # Gating out completely different verticals dynamically derived from candidate's cognitive profile
+        # 1.4 Incompatible Industry Gate with Domain Override (Defect 3 Fix)
+        # Bypasses vertical exclusion if candidate domain function is present in job title
         cog_prof = self.profile_context.load_cognitive_profile() if self.profile_context else None
         if not cog_prof and self.profile_context:
             cog_prof = self.synthesize_cognitive_profile()
@@ -655,37 +632,23 @@ Return STRICTLY a JSON object with this exact schema:
             for cdw in cand_domain_words
         )
 
+        # If title has candidate domain, NEVER reject due to cross-functional tooling in JD!
         if not title_has_cand_domain:
             for vertical_name, v_markers in incompatible_verticals.items():
-                is_candidate_vertical = any(
-                    any(vm in kw.lower() for vm in v_markers[:3])
-                    for kw in target_keywords
-                )
-                if not is_candidate_vertical:
-                    title_marker = next((vm for vm in v_markers if re.search(rf'\b{re.escape(vm)}\b', title_lower)), None)
-                    if title_marker:
-                        return MatchResult(
-                            score=0,
-                            reasoning=f"Rejected: Out-of-domain vertical '{vertical_name}' ('{title_marker}') detected in job title with no candidate domain ({cand_domain}) function.",
-                            matching_skills=[],
-                            missing_skills=[f"Target domain alignment (Not {vertical_name})"]
-                        )
-                    
-                    jd_specs_text = desc_lower[:1800]
-                    jd_matches = [vm for vm in v_markers if re.search(rf'\b{re.escape(vm)}\b', jd_specs_text)]
-                    if len(jd_matches) >= 2:
-                        return MatchResult(
-                            score=0,
-                            reasoning=f"Rejected: Job belongs to incompatible industry/department '{vertical_name}' ({', '.join(jd_matches[:3])}) with no {cand_domain} function in title.",
-                            matching_skills=[],
-                            missing_skills=[f"Target domain alignment (Not {vertical_name})"]
-                        )
+                title_marker = next((vm for vm in v_markers if re.search(rf'\b{re.escape(vm)}\b', title_lower)), None)
+                if title_marker:
+                    return MatchResult(
+                        score=0,
+                        reasoning=f"Rejected: Out-of-domain vertical '{vertical_name}' ('{title_marker}') detected in job title with no candidate domain ({cand_domain}) function.",
+                        matching_skills=[],
+                        missing_skills=[f"Target domain alignment (Not {vertical_name})"]
+                    )
 
         # =========================================================================
         # STAGE 2: PRECISION SEMANTIC & FACTUAL SCORING
         # =========================================================================
 
-        # Flatten candidate taxonomy skills and resume skills
+        # Flatten candidate skills
         flat_skills = []
         for cat_skills in skills_dict.values():
             if isinstance(cat_skills, list):
@@ -714,11 +677,10 @@ Return STRICTLY a JSON object with this exact schema:
             else:
                 missing_skills.append(s_clean)
 
-        # 2.1 Dual-Brain LLM Route (If Gemini API is initialized and operational)
+        # 2.1 Dual-Brain LLM Route (If Gemini API client is operational)
         if self.gemini_client:
             try:
-                llm_prompt = f"""
-You are an expert technical recruiter evaluating whether a candidate is genuinely qualified for a job.
+                llm_prompt = f"""You are an elite talent recruiter evaluating whether a candidate genuinely qualifies for this job.
 CANDIDATE PROFILE:
 Current Title: {cand.get('current_title', '')}
 Total Experience: {cand_exp} years
@@ -733,7 +695,7 @@ Job Description:
 
 EVALUATION CRITERIA:
 1. Title & Domain Alignment (0-35 points)
-2. Factual Skill Match (0-45 points, require real overlap with candidate's actual skills)
+2. Factual Skill Match (0-45 points, strictly requiring real overlap with candidate actual skills)
 3. Experience & Seniority Compatibility (0-20 points)
 4. Passing threshold is strictly 60 points. A score below 60 means candidate should NOT apply.
 
@@ -744,8 +706,7 @@ Respond ONLY with a valid JSON object:
   "reasoning": "<concise 1-2 sentence explanation>",
   "matching_skills": ["<skill1>", "<skill2>"],
   "missing_skills": ["<skill1>", "<skill2>"]
-}}
-"""
+}}"""
                 raw_llm = ""
                 if hasattr(self.gemini_client, "models"):
                     resp = self.gemini_client.models.generate_content(
@@ -764,9 +725,39 @@ Respond ONLY with a valid JSON object:
                     if parsed_match:
                         return parsed_match
             except Exception as e:
-                print(f"[AI CLIENT] Gemini evaluation unavailable ({e}). Proceeding with deterministic engine.", flush=True)
+                print(f"[AI CLIENT] Gemini evaluation notice ({e}). Checking AG 2.0 IPC.", flush=True)
 
-        # 2.2 Deterministic Factual Scoring (Heuristic Engine)
+        # 2.2 Zero-API Antigravity 2.0 Cognitive IPC Route
+        # If enabled or in zero-API mode, let AG 2.0 evaluate with human-level reasoning
+        enable_ipc_eval = kwargs.get("enable_ipc", True)
+        if enable_ipc_eval and not self.gemini_client:
+            ipc_eval_prompt = f"""Evaluate candidate qualification for this job posting.
+CANDIDATE:
+Title: {cand.get('current_title', '')}
+Experience: {cand_exp} years
+Domain Skills: {matched_skills[:10]}
+Resume Excerpt:
+{resume_md[:1500]}
+
+JOB:
+Title: {job_title}
+Description:
+{job_description[:2000]}
+
+Score from 0 to 100 in strict JSON:
+{{"score": <int 0-100>, "reasoning": "<1-2 sentence rationale>", "matching_skills": [<skills>], "missing_skills": [<skills>]}}"""
+
+            ipc_res = self._fallback_antigravity_ipc(
+                prompt=ipc_eval_prompt,
+                question=f"Evaluate Job Fit: {job_title}",
+                control_type="JSON",
+                task_type="JOB_EVALUATION"
+            )
+            parsed_ipc = self._parse_json_match_result(ipc_res)
+            if parsed_ipc:
+                return parsed_ipc
+
+        # 2.3 Calibrated Deterministic Factual Scoring (Local Fallback)
         # Component A: Title/Domain Alignment (0 - 35 points)
         if matched_target_phrase:
             title_score = 35
@@ -778,20 +769,10 @@ Respond ONLY with a valid JSON object:
             title_score = 0
 
         # Component B: Core Skill Matches (0 - 45 points)
-        # Filter out generic soft skills so they do not artificially inflate the domain score
         profile_soft_skills = set(s.lower().strip() for s in (cog_prof.get("generic_soft_skills", []) if cog_prof else []))
-        if not profile_soft_skills:
-            profile_soft_skills = {
-                "analytical", "problem solving", "conceptual", "communication", "written", "verbal",
-                "teamwork", "leadership", "management", "documentation", "presentation",
-                "process improvement", "automation", "software", "reporting", "planning",
-                "strategy", "strategic planning", "due diligence", "recruitment", "risk mitigation",
-                "internal controls", "accuracy", "detail", "reasoning", "prioritization",
-                "negotiation", "organizational"
-            }
         matched_core_skills = [s for s in matched_skills if s.lower().strip() not in profile_soft_skills]
-        
-        # Strict requirement: Require at least 2 distinct CORE domain skill matches to award any skill points
+
+        # Require at least 2 distinct core domain skills to award points
         if len(matched_core_skills) >= 6:
             skill_score = 45
         elif len(matched_core_skills) >= 4:
@@ -816,41 +797,15 @@ Respond ONLY with a valid JSON object:
 
         total_score = max(0, min(title_score + skill_score + exp_score, 100))
 
-        # 2.3 Antigravity 2.0 IPC Handshake for Ambiguous Scores (40 - 65) if enabled
-        enable_ipc_eval = kwargs.get("enable_ipc") or kwargs.get("use_ipc") or profile.get("candidate", {}).get("ipc_job_evaluation", False)
-        if (40 <= total_score <= 65) and enable_ipc_eval:
-            ipc_prompt = f"""
-Evaluate job suitability for candidate.
-JOB TITLE: {job_title}
-CANDIDATE CURRENT TITLE: {cand.get('current_title', '')}
-TOTAL EXPERIENCE: {cand_exp} years
-MATCHED SKILLS: {matched_skills}
-JOB DESCRIPTION:
-{job_description[:2000]}
-
-Score from 0 to 100 in strict JSON:
-{{"score": <int>, "reasoning": "<str>", "matching_skills": [<str>], "missing_skills": [<str>]}}
-"""
-            ipc_res = self._fallback_antigravity_ipc(
-                prompt=ipc_prompt,
-                question=f"Evaluate job match for: {job_title}",
-                control_type="JSON",
-                max_characters=1000
-            )
-            parsed_ipc = self._parse_json_match_result(ipc_res)
-            if parsed_ipc:
-                return parsed_ipc
-
-        # 2.4 Final Qualification Bar: >= 60% required to qualify
         if total_score >= 60:
             reasoning = (
                 f"Qualified fit ({total_score}%): Title score {title_score}/35, "
-                f"matched {len(matched_skills)} core skills ({skill_score}/45), exp fit {exp_score}/20."
+                f"matched {len(matched_core_skills)} core skills ({skill_score}/45), exp fit {exp_score}/20."
             )
         else:
             reasoning = (
                 f"Rejected fit ({total_score}% < 60% threshold): Insufficient domain/skill density for '{job_title}'. "
-                f"Matched {len(matched_skills)} skills ({skill_score}/45), title score {title_score}/35."
+                f"Matched {len(matched_core_skills)} core skills ({skill_score}/45), title score {title_score}/35."
             )
 
         return MatchResult(
@@ -870,7 +825,7 @@ Score from 0 to 100 in strict JSON:
         **kwargs
     ) -> str:
         """
-        Resolves screening questions by:
+        Resolves recruiter screening questions by:
         1. Checking strict exact-match cached answers (auto_learned_truths & ats_answers).
         2. Routing unlearned questions to the AG 2.0 File-Based IPC protocol.
         3. Persisting verified answers atomically back to candidate_config.json.
@@ -907,8 +862,7 @@ Score from 0 to 100 in strict JSON:
         if not resume_md and self.profile_context and hasattr(self.profile_context, "resume_text"):
             resume_md = self.profile_context.resume_text
 
-        prompt = f"""
-You are answering an official recruiter screening questionnaire on behalf of the candidate.
+        prompt = f"""You are answering an official recruiter screening questionnaire on behalf of the candidate.
 CANDIDATE PROFILE DATA (FACTUAL SOURCE OF TRUTH):
 {json.dumps(cand, indent=2)}
 
@@ -925,22 +879,23 @@ AVAILABLE CHOICES (IF APPLICABLE):
 {json.dumps(options, indent=2) if options else 'None (Provide direct concise factual text or numeric value. Maximum 250 characters.)'}
 
 INSTRUCTIONS:
-1. Examine the candidate's resume and profile data carefully for the specific skill, tool, process, or domain requested.
+1. Examine the candidate resume and profile data carefully for the specific skill, tool, process, or domain requested.
 2. If choices/options are provided, your answer MUST match one of the available choices EXACTLY verbatim.
 3. If the question asks for years of experience in a specific skill or process:
    - Calculate how many years the candidate actually practiced that specific skill based on their employment history.
    - If the candidate DOES NOT have experience in that specific skill/process in their resume, answer '0'.
    - DO NOT default to their total career experience unless the question explicitly asks for overall/total experience.
 4. Provide a strictly truthful, factual answer based ONLY on the provided candidate context. Keep answers under 250 characters. Do not invent or guess.
-5. Output STRICTLY the final answer string with zero conversational preamble.
-"""
+5. Output STRICTLY the final answer string with zero conversational preamble."""
+
         # Dispatch to File IPC for AG 2.0 to resolve
         answer = self._fallback_antigravity_ipc(
             prompt=prompt,
             question=q_clean,
             options=options,
             control_type=control_type,
-            max_characters=250
+            max_characters=250,
+            task_type="QUESTIONNAIRE"
         )
 
         if options:
@@ -997,13 +952,10 @@ INSTRUCTIONS:
                 if re.search(r'\bno\b', opt.lower()):
                     return opt
 
-        # Return None if no safe match exists (H1 Guardrail Compliance)
         return None
 
     def _persist_learned_truth(self, question: str, answer: str):
-        """
-        Caches novel verified Q&A entries atomically to candidate_config.json.
-        """
+        """Caches novel verified Q&A entries atomically to candidate_config.json."""
         if self.profile_context and answer:
             try:
                 if "auto_learned_truths" not in self.profile_context.config:
@@ -1023,12 +975,15 @@ INSTRUCTIONS:
         question: str,
         options: Optional[List[str]] = None,
         control_type: Optional[str] = None,
-        max_characters: Optional[int] = None
+        max_characters: Optional[int] = None,
+        task_type: str = "QUESTIONNAIRE",
+        payload_extra: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        File-Based IPC Handshake Protocol optimized strictly for AG 2.0.
-        Never freezes on terminal stdin. Endlessly polls pending_question.json until AG fills the file.
-        Supports both questionnaire items and arbitrary text generation tasks (profile summaries, ATS bullets).
+        Universal File-Based IPC Handshake Protocol optimized strictly for Antigravity 2.0.
+        Never freezes on terminal stdin (Guardrail H6). Endlessly polls pending_question.json
+        until Antigravity 2.0 fills the answer key.
+        Supports QUESTIONNAIRE, JOB_EVALUATION, PROFILE_SYNTHESIS, and RESUME_TAILORING tasks.
         """
         output_dir = getattr(self.profile_context, "output_dir", Path("."))
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1038,19 +993,20 @@ INSTRUCTIONS:
         if resolved_max_chars is None and (options or control_type in ["CONTENTEDITABLE", "RADIO_CHIP", "DROPDOWN"]):
             resolved_max_chars = 250
 
-        is_questionnaire = bool(options or control_type in ["CONTENTEDITABLE", "RADIO_CHIP", "DROPDOWN"])
-
         ipc_payload = {
             "status": "PENDING",
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "task_type": "QUESTIONNAIRE" if is_questionnaire else "TEXT_GENERATION",
+            "task_type": task_type,
             "question": question,
             "options": options,
-            "control_type": control_type or ("CONTENTEDITABLE" if is_questionnaire else "TEXT"),
+            "control_type": control_type or ("CONTENTEDITABLE" if task_type == "QUESTIONNAIRE" else "TEXT"),
             "max_characters": resolved_max_chars,
             "prompt": prompt.strip(),
             "answer": ""
         }
+
+        if payload_extra and isinstance(payload_extra, dict):
+            ipc_payload.update(payload_extra)
 
         try:
             with open(ipc_file, "w", encoding="utf-8") as f:
@@ -1058,16 +1014,12 @@ INSTRUCTIONS:
         except Exception as e:
             print(f"[ERROR] IPC Write Failed: {e}", flush=True)
 
-        task_label = "QUESTIONNAIRE RESOLUTION" if is_questionnaire else "TEXT GENERATION TASK"
         print("\n" + "=" * 70, flush=True)
-        print(f"[AG 2.0 IPC] WAITING FOR AG TO RESOLVE {task_label}", flush=True)
+        print(f"[AG 2.0 COGNITIVE IPC] AWAITING AG 2.0 RESOLUTION: {task_type}", flush=True)
         print("=" * 70, flush=True)
         print(f"TASK / QUESTION: {question}", flush=True)
-        print(f"CONTROL TYPE:    {ipc_payload['control_type']}", flush=True)
         if options:
             print(f"CHOICES:         {options}", flush=True)
-        if resolved_max_chars:
-            print(f"MAX CHARS:       {resolved_max_chars}", flush=True)
         print(f"IPC FILE:        {ipc_file.resolve()}", flush=True)
         print("-" * 70, flush=True)
         print(">> AG Brain: Please write the answer to the 'answer' key in pending_question.json.", flush=True)
@@ -1105,9 +1057,7 @@ INSTRUCTIONS:
         Tier 2B Cognitive Card Arbitration:
         Evaluates whether an unfamiliar, abbreviated, or creative job role seen on the
         search results page conceptually aligns with the candidate's domain, skills,
-        and experience tier (e.g. recognizing that 'RTR Specialist' is Record-to-Report
-        accounting, or 'Process Developer - FA' is Finance & Accounts).
-        
+        and experience tier.
         Returns (is_relevant: bool, reasoning: str).
         """
         profile = candidate_profile or (self.profile_context.config if self.profile_context else {})
@@ -1123,7 +1073,7 @@ INSTRUCTIONS:
 
         target_jobs = profile.get("target_jobs", {})
         negative_keywords = [k.lower().strip() for k in (target_jobs.get("negative_keywords") or []) if k and k.strip()]
-        
+
         title_lower = title.lower().strip()
         card_skills_lower = [s.lower().strip() for s in (card_skills or [])]
 
@@ -1151,40 +1101,27 @@ INSTRUCTIONS:
         domain_acronyms = cog_prof.get("domain_acronyms", {}) if cog_prof else {}
         cand_domain = cog_prof.get("candidate_domain", "Candidate Domain") if cog_prof else "Candidate Domain"
         incompatible_verticals = cog_prof.get("incompatible_verticals", {}) if cog_prof else {}
-        
+
         words = re.findall(r'[a-zA-Z0-9&]+', title_lower)
         for w in words:
             if w in domain_acronyms:
                 return True, f"Domain acronym '{w.upper()}' ({domain_acronyms[w]}) matches candidate domain."
 
-        # 4. Use operational Gemini LLM if available for cognitive triage
-        if self.gemini_client:
-            prompt = f"""You are a senior recruitment qualification agent.
-Candidate Experience: {cand_exp} years in {cand_domain}.
-Candidate Core Skills: {', '.join(all_skills[:15])}
+        # 4. Check for obvious incompatible verticals in title
+        for vert_name, vert_markers in incompatible_verticals.items():
+            for bad_kw in vert_markers[:6]:
+                if re.search(rf'\b{re.escape(bad_kw)}\b', title_lower):
+                    cand_domain_tokens = [w for w in re.split(r'[\s/,-]+', cand_domain.lower()) if len(w) > 3]
+                    has_domain = any(re.search(rf'\b{re.escape(d)}\b', title_lower) for d in cand_domain_tokens)
+                    if not has_domain:
+                        return False, f"Card title belongs to incompatible vertical '{vert_name}' without {cand_domain} function."
 
-Job Card Title: "{title}"
-Job Card Skills: {', '.join(card_skills_lower) if card_skills_lower else 'Not provided'}
-Job Experience Band: "{exp_text}"
+        # 5. Token stem matching against target keywords
+        target_keywords = [k.lower().strip() for k in (target_jobs.get("keywords") or []) if k and k.strip()]
+        recommended_titles = [t.lower().strip() for t in (target_jobs.get("recommended_titles") or []) if t and t.strip()]
+        all_targets = target_keywords + recommended_titles
 
-Evaluate: Is this job role conceptually relevant to the candidate's professional domain ({cand_domain})?
-A role is relevant if:
-- It involves {cand_domain} operations, functions, or processes.
-- It is NOT in out-of-domain verticals ({', '.join(incompatible_verticals.keys()) if incompatible_verticals else 'unrelated industries'}).
-
-Respond with ONLY a JSON object:
-{{"is_relevant": true/false, "reasoning": "one sentence explanation"}}"""
-            try:
-                raw_text = self.generate_text(prompt, default_fallback="")
-                match = re.search(r'\{[^{}]*"is_relevant"[^{}]*\}', raw_text, re.DOTALL)
-                if match:
-                    res_json = json.loads(match.group(0))
-                    return bool(res_json.get("is_relevant", False)), str(res_json.get("reasoning", "LLM evaluation"))
-            except Exception:
-                pass
-
-        # 5. Local semantic heuristics fallback
-        LEVEL_AND_GENERIC_STOPWORDS = {
+        LEVEL_STOPWORDS = {
             "executive", "manager", "officer", "associate", "specialist", "lead",
             "senior", "junior", "assistant", "deputy", "head", "director", "vp",
             "intern", "trainee", "consultant", "professional", "staff", "principal",
@@ -1192,26 +1129,13 @@ Respond with ONLY a JSON object:
             "team", "operations", "service", "services", "backend", "frontend", "sr", "jr"
         }
 
-        # Check for obvious incompatible verticals in title dynamically from cognitive profile
-        for vert_name, vert_markers in incompatible_verticals.items():
-            for bad_kw in vert_markers[:6]:
-                if re.search(rf'\b{re.escape(bad_kw)}\b', title_lower):
-                    cand_domain_tokens = [w for w in re.split(r'[\s/,-]+', cand_domain.lower()) if len(w) > 3 and w not in LEVEL_AND_GENERIC_STOPWORDS]
-                    has_domain = any(re.search(rf'\b{re.escape(d)}\b', title_lower) for d in cand_domain_tokens)
-                    if not has_domain:
-                        return False, f"Card title belongs to incompatible vertical '{vert_name}' without {cand_domain} function."
-
-        target_keywords = [k.lower().strip() for k in (target_jobs.get("keywords") or []) if k and k.strip()]
-        recommended_titles = [t.lower().strip() for t in (target_jobs.get("recommended_titles") or []) if t and t.strip()]
-        all_targets = target_keywords + recommended_titles
-
         for target in all_targets:
-            target_tokens = [t for t in re.split(r'[\s/,-]+', target) if len(t) >= 4 and t not in LEVEL_AND_GENERIC_STOPWORDS]
+            target_tokens = [t for t in re.split(r'[\s/,-]+', target) if len(t) >= 4 and t not in LEVEL_STOPWORDS]
             if not target_tokens:
                 continue
             for tt in target_tokens:
                 for w in words:
-                    if w not in LEVEL_AND_GENERIC_STOPWORDS and len(w) >= 4 and (w.startswith(tt[:5]) or tt.startswith(w[:5])):
+                    if w not in LEVEL_STOPWORDS and len(w) >= 4 and (w.startswith(tt[:5]) or tt.startswith(w[:5])):
                         return True, f"Stem match between title domain token '{w}' and target token '{tt}'."
 
         return False, f"Title '{title}' does not match candidate domain, skills, or target keywords."
@@ -1225,58 +1149,53 @@ Respond with ONLY a JSON object:
     ) -> list[str]:
         """
         Tier 4 Autonomous Starvation Recovery:
-        Inspects the candidate's resume, actual years of experience (e.g. 9.5 years),
-        and the list of titles observed on the job portal during a discovery cycle.
-        Infers 5-8 high-yield, seniority-aligned designations that reflect the candidate's
-        true seniority tier (e.g. Senior Accountant, Assistant Manager, Specialist) rather
-        than entry-level titles.
+        Inspects resume, actual years of experience, and observed portal titles
+        to infer 5-8 high-yield designations matching candidate seniority tier.
         """
         market_titles_sample = list(market_seen_titles or [])[:25]
-        
         cog_prof = self.profile_context.load_cognitive_profile() if self.profile_context else None
         if not cog_prof and self.profile_context:
             cog_prof = self.synthesize_cognitive_profile()
         cand_domain = cog_prof.get("candidate_domain", "Candidate Domain") if cog_prof else "Candidate Domain"
         core_skills = cog_prof.get("core_domain_skills", []) if cog_prof else []
 
-        # 1. Attempt LLM generation via Gemini if available
-        if self.gemini_client:
-            prompt = f"""You are an expert career strategist and executive headhunter.
-A candidate with {candidate_exp} years of total experience is searching for jobs, but the current search queries yielded 0 results or were too narrow.
-
+        prompt = f"""You are an executive career strategist.
+A candidate with {candidate_exp} years of total experience in {cand_domain} yielded 0 results or had narrow search keywords.
 Candidate Resume Excerpt:
-{resume_text[:2000] if resume_text else cand_domain + ' Professional with ' + str(candidate_exp) + ' years experience'}
+{resume_text[:2000] if resume_text else cand_domain}
 
 Current Search Keywords: {current_keywords}
-Titles Recently Seen on Job Board (Sample):
+Sample Titles Seen on Portal:
 {market_titles_sample}
 
 Generate a list of 6 to 10 high-yield, senior-level Job Titles / Designations that strictly match:
-1. The candidate's {candidate_exp} years seniority tier (e.g., Senior, Lead, Assistant Manager, Manager, Specialist level - NOT junior/assistant/intern).
+1. The candidate's {candidate_exp} years seniority tier (e.g., Senior, Lead, Assistant Manager, Specialist level).
 2. The candidate's primary domain ({cand_domain}).
-3. Realistic portal search titles used on Naukri/LinkedIn.
+3. Standard portal search designations used on Naukri and LinkedIn.
 
 Respond with ONLY a JSON array of title strings:
 ["Title 1", "Title 2", ...]"""
+
+        raw = self.generate_text(prompt=prompt, task_type="STARVATION_EXPANSION")
+        if raw:
             try:
-                raw_text = self.generate_text(prompt, default_fallback="")
-                match = re.search(r'\[\s*".*?"\s*\]', raw_text, re.DOTALL)
+                match = re.search(r'\[\s*".*?"\s*\]', raw, re.DOTALL)
                 if match:
                     titles = json.loads(match.group(0))
                     cleaned = [str(t).strip() for t in titles if isinstance(t, str) and len(t.strip()) > 3]
                     if len(cleaned) >= 3:
                         return cleaned
-            except Exception as e:
-                print(f"[AI CLIENT] Notice during designation expansion: {e}", flush=True)
+            except Exception:
+                pass
 
-        # 2. Dynamic rule-based seniority expansion fallback
+        # Dynamic rule-based seniority expansion fallback
         manager_level = "Assistant Manager" if candidate_exp >= 7.0 else "Executive"
         lead_level = "Lead" if candidate_exp >= 8.0 else "Specialist"
         senior_prefix = "Senior" if candidate_exp >= 4.0 else ""
 
         fallback_expanded = []
         for kw in current_keywords[:5]:
-            clean_kw = kw.replace("Senior", "").replace("Assistant Manager", "").replace("Lead", "").strip()
+            clean_kw = re.sub(r'\b(Senior|Lead|Assistant Manager|Executive)\b', '', kw, flags=re.IGNORECASE).strip("- ")
             if clean_kw:
                 if candidate_exp >= 7.0:
                     fallback_expanded.append(f"{manager_level} - {clean_kw}")
@@ -1296,4 +1215,4 @@ Respond with ONLY a JSON array of title strings:
             if t_clean.lower() not in cur_set and t_clean.lower() not in seen_expanded:
                 seen_expanded.add(t_clean.lower())
                 result.append(t_clean)
-        return result[:10]
+        return result[:10]

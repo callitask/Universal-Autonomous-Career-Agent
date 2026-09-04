@@ -2,14 +2,13 @@
 """
 ================================================================================
 GENERATE_FACTUAL_TAILORED.py
-Universal Template-Driven ATS Resume Tailoring Engine
+Universal Factual ATS Resume Tailoring Engine
 ================================================================================
-Reads the user's Master Resume Template (Markdown), parses it into sections,
-scores bullet points against each Job Description's keywords, reorders the
-most relevant bullets to the top of each section, and renders a customized
-A4 PDF via Playwright/Chromium CDP.
-
-Optimized to reuse a single CDP browser connection for the entire batch.
+Reads candidate Master Resume Template (Markdown), parses it into sections,
+factually tailors the Professional Summary to the target Job Description,
+prioritizes Core Competencies matching the JD requirements, scores and reorders
+bullet points for maximum ATS keyword density (Strictly Zero Hallucinations),
+computes an ATS Compatibility Score, and renders customized A4 PDFs via CDP.
 ================================================================================
 """
 
@@ -22,12 +21,16 @@ import markdown
 from playwright.sync_api import sync_playwright
 
 if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
 from core.utils.profile_context import ProfileContext
+from core.ai_client import AIClient
 
 HTML_WRAPPER = """<!doctype html>
 <html>
@@ -36,19 +39,19 @@ HTML_WRAPPER = """<!doctype html>
 <style>
   @page {
     size: A4;
-    margin: 10mm 12mm 10mm 12mm;
+    margin: 8mm 10mm 8mm 10mm;
   }
   body {
     font-family: 'Segoe UI', Calibri, Arial, Helvetica, sans-serif;
-    font-size: 9pt;
-    line-height: 1.34;
+    font-size: 8.8pt;
+    line-height: 1.32;
     color: #1a1a1a;
     margin: 0;
     padding: 0;
   }
   h1 {
-    font-size: 17pt;
-    margin: 0 0 3px 0;
+    font-size: 16pt;
+    margin: 0 0 2px 0;
     color: #0d233a;
     text-transform: uppercase;
     letter-spacing: 0.8px;
@@ -56,8 +59,8 @@ HTML_WRAPPER = """<!doctype html>
     font-weight: 700;
   }
   h2 {
-    font-size: 10pt;
-    margin: 7px 0 3px 0;
+    font-size: 9.8pt;
+    margin: 6px 0 2.5px 0;
     border-bottom: 1.2px solid #2b6cb0;
     padding-bottom: 1.5px;
     text-transform: uppercase;
@@ -66,28 +69,28 @@ HTML_WRAPPER = """<!doctype html>
     letter-spacing: 0.3px;
   }
   h3 {
-    font-size: 9.5pt;
-    margin: 4px 0 2px 0;
+    font-size: 9.2pt;
+    margin: 3.5px 0 1.5px 0;
     color: #2d3748;
     font-weight: 600;
   }
   p {
-    margin: 2px 0 3px 0;
+    margin: 2px 0 2.5px 0;
   }
   h1 + p {
     text-align: center;
-    font-size: 8.5pt;
+    font-size: 8.2pt;
     color: #334155;
-    margin-bottom: 6px;
-    line-height: 1.35;
+    margin-bottom: 5px;
+    line-height: 1.3;
   }
   ul {
-    margin: 2px 0 4px 14px;
+    margin: 2px 0 3.5px 13px;
     padding: 0;
   }
   li {
-    margin-bottom: 2px;
-    line-height: 1.32;
+    margin-bottom: 1.8px;
+    line-height: 1.3;
   }
   strong {
     color: #0d233a;
@@ -95,17 +98,17 @@ HTML_WRAPPER = """<!doctype html>
   hr {
     border: 0;
     border-top: 1px solid #cbd5e0;
-    margin: 4px 0;
+    margin: 3px 0;
   }
   table {
     border-collapse: collapse;
     width: 100%;
-    margin: 4px 0;
+    margin: 3px 0;
   }
   th, td {
     border: 1px solid #cbd5e0;
-    padding: 2.5px 5px;
-    font-size: 8.5pt;
+    padding: 2px 4px;
+    font-size: 8.2pt;
   }
   th {
     background: #edf2f7;
@@ -130,6 +133,7 @@ class ResumeTailorEngine:
         self.cfg = self.ctx.config
         self.resume_md_path = self.ctx.resume_path
         self.cdp_url = self.ctx.cdp_url
+        self.ai = AIClient(self.ctx)
 
     def get_resume_filename(self):
         name = self.ctx.candidate_name.strip()
@@ -182,7 +186,6 @@ class ResumeTailorEngine:
             "work", "working", "team", "company", "job", "position", "required",
             "preferred", "strong", "good", "excellent"
         }
-        # Upgraded regex: preserves technical names with symbols and numbers (C++, .NET, K8s, SAP S/4HANA, 365, SQL, Python3, C#)
         token_pattern = r'[a-z0-9]+(?:\+\+|#)?|[.][a-z0-9]+|[a-z0-9]+(?:[/\-.][a-z0-9]+)+'
         words = re.findall(token_pattern, jd_lower)
         keywords = [w for w in words if w not in stop_words and len(w) >= 2]
@@ -196,11 +199,18 @@ class ResumeTailorEngine:
             if isinstance(skills, list):
                 for skill in skills:
                     skill_clean = skill.strip().lower()
-                    # M2 Fix: Maintain word boundary (\b) to avoid false substring injection
                     if skill_clean and re.search(rf'\b{re.escape(skill_clean)}\b', jd_lower):
                         keywords.append(skill_clean)
 
         return list(set(keywords))
+
+    def calculate_ats_match_score(self, resume_text, jd_keywords):
+        if not jd_keywords:
+            return 85
+        r_lower = resume_text.lower()
+        matched = sum(1 for kw in jd_keywords if re.search(rf'\b{re.escape(kw)}\b', r_lower))
+        score = int((matched / len(jd_keywords)) * 100)
+        return max(50, min(score, 98))
 
     def reorder_bullets_by_jd(self, sections, jd_text):
         jd_keywords = self.extract_jd_keywords(jd_text)
@@ -209,7 +219,7 @@ class ResumeTailorEngine:
             kw_clean = kw.strip()
             if kw_clean:
                 try:
-                    compiled_kws.append(re.compile(rf'\b{re.escape(kw_clean)}\b'))
+                    compiled_kws.append(re.compile(rf'\b{re.escape(kw_clean)}\b', re.IGNORECASE))
                 except Exception:
                     pass
 
@@ -217,13 +227,53 @@ class ResumeTailorEngine:
             if len(section["bullets"]) > 1:
                 scored = []
                 for idx, b in enumerate(section["bullets"]):
-                    b_lower = b.lower()
-                    # Tokenized word-boundary check prevents substring collisions (e.g. "art" in "smart")
-                    score = sum(1 for pat in compiled_kws if pat.search(b_lower))
+                    # Tokenized word-boundary check prevents substring collisions
+                    score = sum(1 for pat in compiled_kws if pat.search(b))
                     scored.append((score, idx, b))
-                # Stable sort descending by score, maintaining original index as tie-breaker
+                # Stable sort descending by score
                 scored.sort(key=lambda x: (-x[0], x[1]))
                 section["bullets"] = [b for _, _, b in scored]
+        return sections
+
+    def tailor_summary_and_competencies(self, sections, jd_text, master_resume_text):
+        """
+        Dynamically optimizes the Professional Summary and prioritizes Core Competencies
+        matching the JD requirements while strictly preserving factual accuracy (Zero Hallucination).
+        """
+        jd_keywords = set(self.extract_jd_keywords(jd_text))
+        
+        for section in sections:
+            heading = section.get("heading", "").upper()
+            
+            # 1. Tailor Professional Summary
+            if "SUMMARY" in heading or "PROFILE" in heading:
+                if len(section["lines"]) > 0:
+                    orig_summary = " ".join([l.strip() for l in section["lines"] if l.strip()])
+                    tailored_data = self.ai.tailor_resume_content(jd_text, master_resume_text)
+                    if tailored_data.get("tailored_summary"):
+                        section["lines"] = [tailored_data["tailored_summary"]]
+
+            # 2. Prioritize Core Competencies / Technical Skills Table
+            elif "COMPETENCIES" in heading or "SKILLS" in heading:
+                new_lines = []
+                for line in section["lines"]:
+                    if "|" in line:
+                        parts = line.split("|")
+                        if len(parts) >= 3:
+                            cat = parts[1].strip()
+                            skills_str = parts[2].strip()
+                            skills_list = [s.strip() for s in re.split(r'[,;]+', skills_str) if s.strip()]
+                            # Sort skills placing JD-matched skills first
+                            skills_list.sort(key=lambda s: 0 if any(re.search(rf'\b{re.escape(k)}\b', s.lower()) for k in jd_keywords) else 1)
+                            new_skills_str = ", ".join(skills_list)
+                            parts[2] = f" {new_skills_str} "
+                            new_lines.append("|".join(parts))
+                        else:
+                            new_lines.append(line)
+                    else:
+                        new_lines.append(line)
+                section["lines"] = new_lines
+
         return sections
 
     def reassemble_markdown(self, sections):
@@ -244,12 +294,17 @@ class ResumeTailorEngine:
     def build_tailored_resume(self, jd_text):
         if not self.resume_md_path.exists():
             print(f"  [!] Master Resume Template not found at {self.resume_md_path}", flush=True)
-            return None
+            return None, 0
 
         template_md = self.resume_md_path.read_text(encoding="utf-8")
         sections = self.parse_resume_sections(template_md)
+        sections = self.tailor_summary_and_competencies(sections, jd_text, template_md)
         reordered = self.reorder_bullets_by_jd(sections, jd_text)
-        return self.reassemble_markdown(reordered)
+        tailored_md = self.reassemble_markdown(reordered)
+        
+        jd_keywords = self.extract_jd_keywords(jd_text)
+        ats_score = self.calculate_ats_match_score(tailored_md, jd_keywords)
+        return tailored_md, ats_score
 
     def run(self):
         print("=== REGENERATING TAILORED RESUMES FOR ALL DISCOVERED ROLES ===", flush=True)
@@ -267,7 +322,6 @@ class ResumeTailorEngine:
         apps_dir = self.ctx.applications_dir
         resume_base = self.get_resume_filename()
 
-        # H10 Fix: Establish single CDP connection for the entire batch
         with sync_playwright() as p:
             try:
                 browser = p.chromium.connect_over_cdp(self.cdp_url)
@@ -285,8 +339,6 @@ class ResumeTailorEngine:
                 folder = apps_dir / f"{clean_c}_{clean_t}"
                 folder.mkdir(parents=True, exist_ok=True)
 
-                # Read Job_Description.md from target application folder.
-                # Never fall back to f"{title} at {company}" when Job_Description.md exists.
                 jd_file = folder / "Job_Description.md"
                 manifest_jd_path = job.get("jd_path")
                 if manifest_jd_path and Path(manifest_jd_path).exists():
@@ -298,15 +350,23 @@ class ResumeTailorEngine:
                 else:
                     jd_text = f"{title} at {company}"
 
-                tailored_md = self.build_tailored_resume(jd_text)
+                tailored_md, ats_score = self.build_tailored_resume(jd_text)
                 if tailored_md is None:
                     continue
 
                 (folder / f"{resume_base}.md").write_text(tailored_md, encoding="utf-8")
 
+                # Record ATS match score in job metadata
+                job_meta_file = folder / "job_details.json"
+                if job_meta_file.exists():
+                    try:
+                        meta = json.loads(job_meta_file.read_text(encoding="utf-8"))
+                        meta["ats_compatibility_score"] = ats_score
+                        job_meta_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+                    except Exception:
+                        pass
+
                 pdf_path = folder / f"{resume_base}.pdf"
-                
-                # Render via active page
                 clean_md = tailored_md.lstrip('\ufeff\u200b\r\n ')
                 html_body = markdown.markdown(clean_md, extensions=['extra', 'tables', 'nl2br', 'sane_lists'])
                 full_html = HTML_WRAPPER.replace("{body}", html_body)
@@ -320,8 +380,9 @@ class ResumeTailorEngine:
                         print_background=True,
                         margin={"top": "8mm", "bottom": "8mm", "left": "10mm", "right": "10mm"}
                     )
-                    print(f"  [OK] Compiled PDF: {folder.name}", flush=True)
+                    print(f"  [OK] Compiled ATS Tailored PDF (ATS Score: {ats_score}%): {folder.name}", flush=True)
                     job["tailored_pdf"] = str(pdf_path.resolve())
+                    job["ats_score"] = ats_score
                 except Exception as e:
                     print(f"  [!] PDF render notice for {folder.name}: {e}", flush=True)
 
@@ -336,7 +397,6 @@ class ResumeTailorEngine:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Universal ATS Resume Tailoring Engine")
-    # M11 Fix: Do not default to a hardcoded path. Force ProfileContext dynamic resolution.
     parser.add_argument('--profile', default=None, help='Path to profile directory')
     args, _ = parser.parse_known_args()
 

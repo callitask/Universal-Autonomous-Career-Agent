@@ -2,9 +2,13 @@
 ================================================================================
 UNIVERSAL AUTONOMOUS CAREER AGENT: APPLICATION ENGINE
 File: core/05_apply_jobs.py
-Description: Full-lifecycle autonomous job application executor supporting
-             1-click apply, external redirect gating, reverse-engineered
-             Naukri chatbot drawer automation, and AG 2.0 job-specific logging.
+Description: Full-lifecycle autonomous job application executor supporting:
+             1. 1-Click apply verification (Naukri & LinkedIn)
+             2. External redirect gating (saved_external_jobs.json)
+             3. Reverse-engineered Naukri chatbot drawer solver (C9 & H5 compliant)
+             4. Native LinkedIn Easy Apply multi-step modal solver
+             5. Zero-API Antigravity 2.0 Cognitive IPC integration for Q&A
+             6. Per-job audit logging (ques_ans_chatbot.json) and canonical tracker CSV.
 ================================================================================
 """
 
@@ -40,12 +44,6 @@ def human_jitter(min_ms: int = 150, max_ms: int = 400):
     time.sleep(random.randint(min_ms, max_ms) / 1000.0)
 
 
-def human_type(page, text: str):
-    for char in text:
-        page.keyboard.insert_text(char)
-        time.sleep(random.randint(30, 85) / 1000.0)
-
-
 def log_section(title: str) -> None:
     print(f"\n{'=' * 80}", flush=True)
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {title}", flush=True)
@@ -61,7 +59,10 @@ def log_substep(category: str, message: str) -> None:
 
 
 class ChatbotResolver:
-    
+    """
+    DOM Chatbot Reverse-Engineering Engine for Naukri and platform modals.
+    Implements Guardrails C7, C8, C9, H1, H2, H3, H5, H6.
+    """
     CHIP_SELECTORS = (
         "div.radioItem, div.choiceChip, div.clickableChip, div.optionItem, "
         "div[class*='radioItem'], label[class*='radio'], ul.ChoiceList li, "
@@ -178,17 +179,6 @@ class ChatbotResolver:
         return active_question, filtered_greeting
 
     def detect_ui_control(self) -> str:
-        """
-        Detects active UI control using aggressive native JS evaluation to pierce
-        React virtual DOM wrappers and detect raw structural intents.
-        Recognizes:
-        - File uploaders (input[type='file'])
-        - Date inputs (input[type='date'], input.datePicker)
-        - Yes/No toggle pills, custom radio wrappers (label.ssrc__label, div.customRadio, div.radioItem), multi-select chips
-        - Standard <select> and custom dropdowns
-        - Contenteditable inputs and textareas
-        Strictly ignores .chipMsg (Naukri Bot Logo) to prevent false radio detection.
-        """
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
 
         # 1. File Upload
@@ -201,12 +191,11 @@ class ChatbotResolver:
         if date_input.count() > 0 and date_input.first.is_visible():
             return "DATE_INPUT"
 
-        # 3. Radio / Choice Chips / Toggle Pills / Custom Radio Wrappers
+        # 3. Radio / Choice Chips / Custom Radios (Strictly ignoring .chipMsg)
         is_radio = self.page.evaluate("""() => {
             const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
             if (drawer.querySelector('input[type="radio"], input[type="checkbox"]')) return true;
             
-            // Target valid choice chips while STRICTLY IGNORING the bot logo (.chipMsg)
             const chips = Array.from(drawer.querySelectorAll(
                 '.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"], ' +
                 'label.ssrc__label, div.customRadio, div.radioItem, div.togglePill, button.toggle, ' +
@@ -215,11 +204,10 @@ class ChatbotResolver:
             
             return chips.length > 0;
         }""")
-        
         if is_radio:
             return "RADIO_CHIP"
 
-        # 4. Dropdowns and Standard <select>
+        # 4. Dropdowns
         select_dropdown = drawer.locator("select, div.custom-select, div[class*='dropdown'], div[class*='select-dropdown']")
         if select_dropdown.count() > 0 and select_dropdown.first.is_visible():
             return "DROPDOWN"
@@ -244,16 +232,11 @@ class ChatbotResolver:
         return "UNKNOWN"
 
     def get_radio_options(self) -> List[str]:
-        """
-        Executes a deep DOM extraction to locate and return the labels associated 
-        with any visible radio buttons, lists, toggle pills, or choice chips. 
-        Strictly avoids extracting chatbot conversational text and ignores .chipMsg.
-        """
         options = self.page.evaluate("""() => {
             const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
             const opts = new Set();
             
-            // Strategy A: Explicit Radio Inputs (New Naukri Structure)
+            // Strategy A: Explicit Radio Inputs
             const radios = drawer.querySelectorAll('input[type="radio"], input[type="checkbox"]');
             if (radios.length > 0) {
                 radios.forEach(r => {
@@ -275,7 +258,7 @@ class ChatbotResolver:
                 });
             }
             
-            // Strategy B: Choice Chips, Toggle Pills, and Custom Radio Wrappers
+            // Strategy B: Choice Chips and Custom Radio Wrappers
             const chips = drawer.querySelectorAll(
                 '.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"], ' +
                 'label.ssrc__label, div.customRadio, div.togglePill, button.toggle, div.yesNoToggle, ' +
@@ -284,7 +267,7 @@ class ChatbotResolver:
             chips.forEach(c => {
                 if (c.closest('.chipMsg') || c.classList.contains('chipMsg')) return;
                 const txt = c.innerText.trim();
-                if (txt && txt.length < 150 && !txt.includes('\\n')) {
+                if (txt && txt.length < 150 && !txt.includes('\n')) {
                     opts.add(txt);
                 }
             });
@@ -295,7 +278,7 @@ class ChatbotResolver:
 
     def resolve_answer(self, question: str, options: Optional[List[str]] = None, control_type: str = "CONTENTEDITABLE") -> str:
         q_clean = question.strip()
-        log_step("AI BRAIN", f"Grounded Resume Analysis -> Evaluating question against candidate resume...")
+        log_step("AI BRAIN", f"Grounded Resume Analysis -> Resolving screening question...")
         ai_response = self.ai.answer_screening_question(
             question=q_clean,
             candidate_profile=self.config,
@@ -304,7 +287,7 @@ class ChatbotResolver:
             resume_text=self.resume_text
         )
         cleaned_ans = ai_response.strip().strip('"').strip("'")
-        log_step("AI BRAIN", f"AG 2.0 Resolved Factual Answer: '{cleaned_ans}'")
+        log_step("AI BRAIN", f"Resolved Factual Answer: '{cleaned_ans}'")
         return cleaned_ans
 
     def _get_input_field(self):
@@ -333,7 +316,7 @@ class ChatbotResolver:
             log_step("WARNING", "Could not locate contenteditable textarea in chatbot drawer.")
             return False
 
-        log_step("CHATBOT", f"Targeting interactive input container with answer: '{answer}'")
+        log_step("CHATBOT", f"Targeting input container with answer: '{answer}'")
         self.scroll_drawer_to_bottom()
 
         try:
@@ -363,7 +346,6 @@ class ChatbotResolver:
                     el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
                 }
                 
-                // Pure Vanilla JS without Playwright extensions to prevent SyntaxError
                 const btn = document.querySelector('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .sendMsg');
                 if (btn) {
                     btn.classList.remove('disabled');
@@ -419,7 +401,6 @@ class ChatbotResolver:
             const cleanTarget = targetText.toLowerCase().trim();
             const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
             
-            // Priority 1: Label matching a specific input ID
             const labels = drawer.querySelectorAll('label');
             for (let lbl of labels) {
                 if (lbl.closest('.chipMsg') || lbl.classList.contains('chipMsg')) continue;
@@ -437,11 +418,10 @@ class ChatbotResolver:
                 }
             }
             
-            // Priority 2: Generic elements matching text
             const elements = drawer.querySelectorAll('span, div, button, label, a');
             for (let el of elements) {
                 if (el.closest('.chipMsg') || el.classList.contains('chipMsg')) continue;
-                if (el.children.length > 2) continue; // Skip layout wrappers
+                if (el.children.length > 2) continue;
                 let text = (el.innerText || '').toLowerCase().trim();
                 
                 if (text === cleanTarget) {
@@ -452,7 +432,6 @@ class ChatbotResolver:
             return false;
         }""", clean_target)
 
-        # H3 Guardrail Fallback: Escape single quotes in Playwright :has-text() selector
         if not clicked:
             try:
                 escaped_text = clean_target.replace("'", "\\'")
@@ -481,15 +460,14 @@ class ChatbotResolver:
                 }
                 return false;
             }""")
-            
             self.page.wait_for_timeout(800)
             return True
 
-        log_step("WARNING", f"Could not execute DOM click on element for option: '{matched_option}'")
+        log_step("WARNING", f"Could not click element for option: '{matched_option}'")
         return False
 
     def execute_file_upload(self, tailored_pdf_path: Optional[str] = None) -> bool:
-        drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
+        drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer'], div.jobs-easy-apply-modal").first
         file_input = drawer.locator("input[type='file'], input.chatbot_Uploader, input[id*='Uploader']").first
         
         if file_input.count() == 0:
@@ -521,7 +499,9 @@ class ChatbotResolver:
             "responses recorded",
             "responses have been recorded",
             "profile shared with recruiter",
-            "has reached the recruiter"
+            "has reached the recruiter",
+            "application sent",
+            "your application was sent"
         ]
         
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
@@ -541,6 +521,295 @@ class ChatbotResolver:
 
 
 # ==============================================================================
+# LINKEDIN EASY APPLY AUTOMATION ENGINE
+# ==============================================================================
+
+class LinkedInApplyHandler:
+    """
+    Dedicated handler for LinkedIn Easy Apply multi-step modal dialogs.
+    Executes form filling, radio button selection, file attachment, and step progression.
+    Guarantees Guardrail H1 compliance: strictly eliminates blind options[0] fallbacks,
+    routes unmatched queries to Antigravity IPC, and performs clean modal dismissal/discard.
+    """
+    def __init__(self, page, ctx: ProfileContext, ai_client: AIClient):
+        self.page = page
+        self.ctx = ctx
+        self.ai = ai_client
+        self.config = getattr(ctx, "config", {})
+        self.cand = self.config.get("candidate", {})
+
+    def is_modal_open(self) -> bool:
+        if not self.page:
+            return False
+        modal = self.page.locator("div.jobs-easy-apply-modal, div[data-view-name='job-apply-modal'], div.artdeco-modal").first
+        return modal.count() > 0 and modal.is_visible()
+
+    def discard_and_close_modal(self) -> bool:
+        """
+        Safely dismisses and discards an active LinkedIn Easy Apply modal dialog.
+        Prevents dangling modal states that could block subsequent operations or scans.
+        """
+        if not self.page:
+            return True
+        log_step("LINKEDIN", "Executing clean modal dismissal and application discard...")
+        try:
+            # 1. Locate and click modal dismiss / close button
+            dismiss_selectors = [
+                "button[aria-label='Dismiss']",
+                "button[data-test-modal-close-btn]",
+                "button.artdeco-modal__dismiss",
+                ".artdeco-modal__dismiss",
+                "button[data-control-name='overlay.close_padding']",
+                "button:has(svg[data-test-icon='close-small'])",
+                "button:has(svg[data-test-icon='close-medium'])"
+            ]
+            dismissed = False
+            for sel in dismiss_selectors:
+                loc = self.page.locator(sel).first
+                if loc.count() > 0 and loc.is_visible():
+                    loc.click()
+                    dismissed = True
+                    break
+
+            if not dismissed:
+                self.page.keyboard.press("Escape")
+
+            self.page.wait_for_timeout(1000)
+
+            # 2. Confirm the 'Discard application' prompt if presented
+            discard_selectors = [
+                "button[data-control-name='discard_application_confirm_btn']",
+                "button[data-test-dialog-secondary-action]",
+                "button:has-text('Discard')",
+                "button.artdeco-button--primary:has-text('Discard')",
+                "button:has-text('Save as draft')"
+            ]
+            for d_sel in discard_selectors:
+                d_loc = self.page.locator(d_sel).first
+                if d_loc.count() > 0 and d_loc.is_visible():
+                    log_step("LINKEDIN", "Confirming 'Discard application' dialog...")
+                    d_loc.click()
+                    self.page.wait_for_timeout(1000)
+                    break
+
+            return not self.is_modal_open()
+        except Exception as e:
+            log_step("WARNING", f"Modal discard notice: {e}")
+            return False
+
+    def handle_easy_apply(self, job: Dict[str, Any]) -> str:
+        log_step("LINKEDIN", "Engaging LinkedIn Easy Apply Engine...")
+        tailored_pdf = job.get("pdf_path") or job.get("tailored_pdf", "")
+        max_steps = 15
+        step = 0
+
+        try:
+            while step < max_steps:
+                step += 1
+                self.page.wait_for_timeout(1500)
+
+                # 1. Check for application submission success
+                body_text = self.page.locator("body").inner_text().lower()
+                if any(m in body_text for m in ["application sent", "your application was sent", "application submitted"]):
+                    log_step("SUCCESS", "LinkedIn Easy Apply confirmed submitted!")
+                    # Dismiss post-apply modal if present
+                    try:
+                        dismiss_btn = self.page.locator("button[aria-label='Dismiss'], button:has-text('Done')").first
+                        if dismiss_btn.is_visible():
+                            dismiss_btn.click()
+                    except Exception:
+                        pass
+                    return "APPLIED_LINKEDIN_EASY_APPLY"
+
+                if not self.is_modal_open():
+                    # Re-verify if completed
+                    if any(m in body_text for m in ["application sent", "your application was sent"]):
+                        return "APPLIED_LINKEDIN_EASY_APPLY"
+                    log_step("WARNING", "LinkedIn Easy Apply modal closed prematurely.")
+                    return "DRAWER_CLOSED"
+
+                modal = self.page.locator("div.jobs-easy-apply-modal, div.artdeco-modal").first
+
+                # 2. Handle File Upload if requested on this step
+                file_input = modal.locator("input[type='file']").first
+                if file_input.count() > 0 and file_input.is_visible():
+                    if tailored_pdf and os.path.exists(tailored_pdf):
+                        log_step("LINKEDIN", f"Attaching Tailored PDF: {os.path.basename(tailored_pdf)}")
+                        file_input.set_input_files(tailored_pdf)
+                        self.page.wait_for_timeout(1500)
+
+                # 3. Handle Form Text Inputs
+                text_inputs = modal.locator("input[type='text'], input:not([type]), textarea").all()
+                for inp in text_inputs:
+                    try:
+                        if inp.is_visible() and not inp.input_value():
+                            inp_id = inp.get_attribute("id") or ""
+                            label_el = modal.locator(f"label[for='{inp_id}']").first if inp_id else None
+                            q_text = label_el.inner_text().strip() if (label_el and label_el.count()) else "Input field"
+                            
+                            ans = ""
+                            q_lower = q_text.lower()
+                            if "phone" in q_lower or "mobile" in q_lower:
+                                ans = str(self.cand.get("phone", ""))
+                            elif "email" in q_lower:
+                                ans = str(self.cand.get("email", ""))
+                            else:
+                                ans = self.ai.answer_screening_question(
+                                    question=q_text,
+                                    candidate_profile=self.config,
+                                    control_type="TEXT"
+                                )
+                            if ans:
+                                inp.fill(ans)
+                                human_jitter(100, 250)
+                    except Exception:
+                        pass
+
+                # 4. Handle Radio / Checkbox Fieldsets (H1 Strict Compliance)
+                fieldsets = modal.locator("fieldset").all()
+                for fs in fieldsets:
+                    try:
+                        if fs.is_visible():
+                            legend = fs.locator("legend").first
+                            q_text = legend.inner_text().strip() if legend.count() else ""
+                            radios = fs.locator("input[type='radio']").all()
+                            if radios:
+                                options = []
+                                for r in radios:
+                                    r_id = r.get_attribute("id") or ""
+                                    lbl = fs.locator(f"label[for='{r_id}']").first
+                                    if lbl.count():
+                                        options.append(lbl.inner_text().strip())
+                                if options and q_text:
+                                    ans = self.ai.answer_screening_question(
+                                        question=q_text,
+                                        candidate_profile=self.config,
+                                        options=options,
+                                        control_type="RADIO"
+                                    )
+                                    best_opt = self.ai._best_option_match(ans, options)
+                                    
+                                    # H1 Remediation: No blind options[0] fallback; route to Antigravity IPC
+                                    if not best_opt:
+                                        log_step("LINKEDIN", f"No exact match for '{ans}'. Engaging Antigravity IPC fallback for radio options: {options}")
+                                        ipc_ans = self.ai._fallback_antigravity_ipc(
+                                            prompt=(
+                                                f"LinkedIn Easy Apply Screening Question:\n"
+                                                f"Question: {q_text}\n"
+                                                f"Available Options:\n" + "\n".join(f"- {o}" for o in options) + "\n\n"
+                                                f"Candidate Profile: {self.config.get('candidate', {})}\n"
+                                                f"Select the exact matching option string from the available options above."
+                                            ),
+                                            question=q_text,
+                                            options=options,
+                                            control_type="RADIO",
+                                            task_type="SCREENING_QUESTION"
+                                        )
+                                        best_opt = self.ai._best_option_match(ipc_ans, options)
+
+                                    if best_opt:
+                                        safe_opt = best_opt.replace("'", "\\'")
+                                        matched_lbl = fs.locator(f"label:has-text('{safe_opt}')").first
+                                        if matched_lbl.count():
+                                            matched_lbl.click()
+                                            human_jitter(100, 250)
+                                    else:
+                                        log_step("WARNING", f"Guardrail H1: Zero option match for radio question '{q_text}'. Refusing blind fallback. Aborting.")
+                                        self.discard_and_close_modal()
+                                        return "FAILED"
+                    except Exception as ex:
+                        log_step("WARNING", f"Radio fieldset handling notice: {ex}")
+
+                # 5. Handle Select Dropdowns (H1 Strict Compliance)
+                selects = modal.locator("select").all()
+                for sel_el in selects:
+                    try:
+                        if sel_el.is_visible() and not sel_el.input_value():
+                            sel_id = sel_el.get_attribute("id") or ""
+                            lbl = modal.locator(f"label[for='{sel_id}']").first
+                            q_text = lbl.inner_text().strip() if lbl.count() else "Select option"
+                            opts = sel_el.locator("option").all_inner_texts()
+                            valid_opts = [o.strip() for o in opts if o.strip() and "select" not in o.lower()]
+                            if valid_opts:
+                                ans = self.ai.answer_screening_question(
+                                    question=q_text,
+                                    candidate_profile=self.config,
+                                    options=valid_opts,
+                                    control_type="DROPDOWN"
+                                )
+                                best = self.ai._best_option_match(ans, valid_opts)
+
+                                # H1 Remediation: No blind valid_opts[0] fallback; route to Antigravity IPC
+                                if not best:
+                                    log_step("LINKEDIN", f"No exact match for '{ans}'. Engaging Antigravity IPC fallback for dropdown options: {valid_opts}")
+                                    ipc_ans = self.ai._fallback_antigravity_ipc(
+                                        prompt=(
+                                            f"LinkedIn Easy Apply Dropdown Question:\n"
+                                            f"Question: {q_text}\n"
+                                            f"Available Options:\n" + "\n".join(f"- {o}" for o in valid_opts) + "\n\n"
+                                            f"Candidate Profile: {self.config.get('candidate', {})}\n"
+                                            f"Select the exact matching option string from the available options above."
+                                        ),
+                                        question=q_text,
+                                        options=valid_opts,
+                                        control_type="DROPDOWN",
+                                        task_type="SCREENING_QUESTION"
+                                    )
+                                    best = self.ai._best_option_match(ipc_ans, valid_opts)
+
+                                if best:
+                                    sel_el.select_option(label=best)
+                                    human_jitter(100, 250)
+                                else:
+                                    log_step("WARNING", f"Guardrail H1: Zero option match for dropdown question '{q_text}'. Refusing blind fallback. Aborting.")
+                                    self.discard_and_close_modal()
+                                    return "FAILED"
+                    except Exception as ex:
+                        log_step("WARNING", f"Dropdown handling notice: {ex}")
+
+                # 6. Step Progression: Check buttons in order of priority
+                submit_btn = modal.locator("button:has-text('Submit application'), button:has-text('Submit')").first
+                if submit_btn.count() > 0 and submit_btn.is_visible():
+                    log_step("LINKEDIN", "Clicking 'Submit application'...")
+                    submit_btn.click()
+                    self.page.wait_for_timeout(3000)
+                    continue
+
+                review_btn = modal.locator("button:has-text('Review')").first
+                if review_btn.count() > 0 and review_btn.is_visible():
+                    log_step("LINKEDIN", "Clicking 'Review' button...")
+                    review_btn.click()
+                    self.page.wait_for_timeout(1500)
+                    continue
+
+                next_btn = modal.locator("button:has-text('Next')").first
+                if next_btn.count() > 0 and next_btn.is_visible():
+                    log_step("LINKEDIN", "Clicking 'Next' button...")
+                    next_btn.click()
+                    self.page.wait_for_timeout(1500)
+                    continue
+
+                # If no progression button could be identified or clicked:
+                error_loc = modal.locator(".artdeco-inline-feedback--error, div[data-test-form-builder-error]").first
+                if error_loc.count() > 0 and error_loc.is_visible():
+                    err_text = error_loc.inner_text().strip()
+                    log_step("WARNING", f"LinkedIn form validation error detected: {err_text}")
+                else:
+                    log_step("WARNING", "No progression button (Submit/Review/Next) located in modal.")
+                self.discard_and_close_modal()
+                return "FAILED"
+
+            log_step("FAILED", "Exceeded max steps in LinkedIn Easy Apply modal.")
+            self.discard_and_close_modal()
+            return "FAILED"
+
+        except Exception as e:
+            log_step("WARNING", f"Unhandled exception in LinkedIn Easy Apply handler: {e}")
+            self.discard_and_close_modal()
+            return "FAILED"
+
+
+# ==============================================================================
 # MASTER APPLICATION CONTROLLER
 # ==============================================================================
 
@@ -553,6 +822,7 @@ class ApplicationEngine:
             "total": 0,
             "applied_1click": 0,
             "applied_chatbot": 0,
+            "applied_linkedin": 0,
             "redirect_external": 0,
             "failed": 0,
             "skipped": 0
@@ -626,8 +896,9 @@ class ApplicationEngine:
         url = job.get("url", "")
         title = job.get("job_title") or job.get("title", "Job Role")
         company = job.get("company", "Employer")
+        platform = job.get("platform", "naukri").lower()
         
-        log_section(f"Processing Application: {company} | {title}")
+        log_section(f"Processing Application: [{platform.upper()}] {company} | {title}")
         log_step("NAVIGATE", f"Opening Job URL: {url}")
         
         try:
@@ -638,6 +909,7 @@ class ApplicationEngine:
             log_step("ERROR", f"Navigation timeout or failure: {e}")
             return "FAILED"
 
+        # Check for external employer website redirects
         ext_btn_selectors = [
             "button:has-text('Apply on company website')",
             "a:has-text('Apply on company website')",
@@ -652,10 +924,13 @@ class ApplicationEngine:
                 self.record_external_redirect(job, url)
                 return "REDIRECT_EXTERNAL"
 
+        # Check if already applied
         already_applied_selectors = [
             "button:has-text('Already Applied')",
             "span:has-text('Already Applied')",
-            "div:has-text('You have already applied')"
+            "div:has-text('You have already applied')",
+            "button:has-text('Applied')",
+            ".jobs-s-apply__applied-date"
         ]
         for sel in already_applied_selectors:
             loc = page.locator(sel)
@@ -663,6 +938,20 @@ class ApplicationEngine:
                 log_step("STATUS", "Already applied previously. Skipping.")
                 return "SKIPPED_ALREADY_APPLIED"
 
+        # Platform Specific Branching
+        if platform == "linkedin":
+            li_handler = LinkedInApplyHandler(page, self.ctx, self.ai)
+            easy_apply_btn = page.locator("button.jobs-apply-button, button:has-text('Easy Apply')").first
+            if easy_apply_btn.count() > 0 and easy_apply_btn.is_visible():
+                log_step("CLICK", "Clicking LinkedIn 'Easy Apply' button...")
+                easy_apply_btn.click()
+                page.wait_for_timeout(2000)
+                return li_handler.handle_easy_apply(job)
+            else:
+                log_step("WARNING", "LinkedIn Easy Apply button not found on page.")
+                return "APPLY_BUTTON_NOT_FOUND"
+
+        # Naukri Native Apply Handling
         apply_btn_selectors = [
             "button#apply-button",
             "button.apply-button",
@@ -708,7 +997,7 @@ class ApplicationEngine:
                 "div.apply-message:has-text('applied')",
                 ".applied-txt:has-text('Applied')",
                 "span:has-text('Applied to')",
-                "div:has-text('Applied to \"')"
+                "div:has-text('Applied to')"
             ]
             for s_sel in success_selectors:
                 try:
@@ -764,7 +1053,7 @@ class ApplicationEngine:
             iteration += 1
             page.wait_for_timeout(1500)
             
-            # 1. Platform rejection banner detection
+            # 1. Platform rejection banner detection (Guardrail C9)
             rejection_markers = [
                 "not accepted due to incomplete information",
                 "application was not accepted",
@@ -801,7 +1090,7 @@ class ApplicationEngine:
                 log_step("SUCCESS", f"Application Completed! {done_msg}")
                 return "APPLIED_CHATBOT"
 
-            # 3. Premature drawer closure detection
+            # 3. Premature drawer closure detection (Guardrail C9)
             if not resolver.is_drawer_open():
                 page.wait_for_timeout(1000)
                 if not resolver.is_drawer_open():
@@ -809,7 +1098,7 @@ class ApplicationEngine:
                     if is_done:
                         log_step("SUCCESS", f"Application Completed! {done_msg}")
                         return "APPLIED_CHATBOT"
-                    log_step("DRAWER_CLOSED", "Chatbot drawer closed or unmounted prematurely. Aborting screening loop.")
+                    log_step("DRAWER_CLOSED", "Chatbot drawer closed prematurely. Aborting.")
                     return "DRAWER_CLOSED"
 
             active_q, filtered_greeting = resolver.extract_active_question()
@@ -823,11 +1112,10 @@ class ApplicationEngine:
                 stuck_count += 1
                 log_step("WARNING", f"Chatbot question repeated ({stuck_count}/3): '{active_q}'")
                 if stuck_count >= 2:
-                    log_step("WARNING", "Chatbot waiting on repeated question. Retrying Enter commit...")
                     page.keyboard.press("Enter")
                     page.wait_for_timeout(500)
                 if stuck_count >= 3:
-                    log_step("FAILED", f"Chatbot permanently stuck on same question 3 times: '{active_q}'. Aborting loop.")
+                    log_step("FAILED", f"Chatbot permanently stuck on same question: '{active_q}'. Aborting loop.")
                     qa_history.append({
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "question": active_q,
@@ -859,7 +1147,6 @@ class ApplicationEngine:
             ans = ""
             if control_type == "RADIO_CHIP":
                 options = resolver.get_radio_options()
-                
                 if not options:
                     log_step("WARNING", "RADIO_CHIP detected but no options found. Falling back to text.")
                     control_type = "CONTENTEDITABLE"
@@ -867,18 +1154,15 @@ class ApplicationEngine:
                     log_step("CHOICES", f"{options}")
                     ans = resolver.resolve_answer(active_q, options=options, control_type="RADIO_CHIP")
                     log_step("ACTION", f"Selecting Option: \"{ans}\"")
-                    
                     selection_ok = resolver.execute_chip_selection(ans)
                     if not selection_ok:
-                        log_step("WARNING", "Native JS click failed. Attempting contenteditable fallback...")
+                        log_step("WARNING", "Native click failed. Attempting contenteditable fallback...")
                         resolver.execute_contenteditable_input(ans)
 
             if control_type == "CONTENTEDITABLE":
                 ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
                 log_step("ACTION", f"Submitting text response: \"{ans}\"")
-                success = resolver.execute_contenteditable_input(ans)
-                if not success:
-                    log_step("WARNING", "Failed typing into input container.")
+                resolver.execute_contenteditable_input(ans)
 
             elif control_type == "FILE_UPLOAD":
                 log_step("ACTION", "Resume File Upload requested by screening drawer.")
@@ -912,15 +1196,11 @@ class ApplicationEngine:
                     resolver.execute_contenteditable_input(ans)
 
             elif control_type not in ["RADIO_CHIP", "CONTENTEDITABLE", "FILE_UPLOAD", "DROPDOWN", "DATE_INPUT"]:
-                # Bug 4 Fix: Verify if a contenteditable input is actually visible before attempting typing
                 input_field = resolver._get_input_field()
                 if input_field and input_field.is_visible():
-                    log_step("ACTION", "Contenteditable input field verified visible. Falling back to text input.")
                     ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
                     resolver.execute_contenteditable_input(ans)
                 else:
-                    # Do NOT force text typing into detached DOM nodes!
-                    log_step("WARNING", "No visible input field found for UNKNOWN control. Scanning for interactive elements...")
                     visible_interactive = page.evaluate("""() => {
                         const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
                         const elements = drawer.querySelectorAll('button, label, [class*="chip"], [class*="radio"], [class*="toggle"], div.choiceChip, div.clickableChip');
@@ -935,31 +1215,9 @@ class ApplicationEngine:
                         }
                         return items;
                     }""")
-
                     if visible_interactive:
-                        log_step("CHATBOT", f"Discovered interactive options in drawer: {visible_interactive}")
                         ans = resolver.resolve_answer(active_q, options=visible_interactive, control_type="RADIO_CHIP")
-                        selected = resolver.execute_chip_selection(ans)
-                        if not selected:
-                            log_step("WARNING", f"Could not click discovered option '{ans}'. Routing to pending_question.json IPC...")
-                            ans = resolver.ai._fallback_antigravity_ipc(
-                                prompt=f"Chatbot question '{active_q}' in drawer with unrecognized control. Visible interactive options: {visible_interactive}. Provide the exact action or answer.",
-                                question=active_q,
-                                options=visible_interactive,
-                                control_type="UNKNOWN"
-                            )
-                            if ans in visible_interactive:
-                                resolver.execute_chip_selection(ans)
-                    else:
-                        log_step("WARNING", "No interactive elements discovered. Routing to AG 2.0 File-Based IPC...")
-                        ans = resolver.ai._fallback_antigravity_ipc(
-                            prompt=f"Chatbot question '{active_q}' in drawer with no visible input field or chips. Provide the text or action required.",
-                            question=active_q,
-                            options=None,
-                            control_type="UNKNOWN"
-                        )
-                        if resolver._get_input_field():
-                            resolver.execute_contenteditable_input(ans)
+                        resolver.execute_chip_selection(ans)
 
             qa_history.append({
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1005,17 +1263,21 @@ class ApplicationEngine:
             company = job.get("company", "Unknown")
             job_title = job.get("job_title") or job.get("title", "Unknown")
             pdf_path = job.get("pdf_path") or job.get("tailored_pdf", "")
+            platform = job.get("platform", "Naukri")
             
-            if status in ["APPLIED_1CLICK", "APPLIED_CHATBOT"]:
+            if status in ["APPLIED_1CLICK", "APPLIED_CHATBOT", "APPLIED_LINKEDIN_EASY_APPLY"]:
                 applied_count += 1
                 if status == "APPLIED_1CLICK":
                     self.stats["applied_1click"] += 1
+                elif status == "APPLIED_LINKEDIN_EASY_APPLY":
+                    self.stats["applied_linkedin"] += 1
                 else:
                     self.stats["applied_chatbot"] += 1
+
                 self.record_tracker_entry({
                     "company": company,
                     "job_title": job_title,
-                    "platform": job.get("platform", "Naukri"),
+                    "platform": platform,
                     "url": job.get("url"),
                     "score": job.get("score") or job.get("match_score", "N/A"),
                     "status": status,
@@ -1027,7 +1289,7 @@ class ApplicationEngine:
                 self.record_tracker_entry({
                     "company": company,
                     "job_title": job_title,
-                    "platform": job.get("platform", "Naukri"),
+                    "platform": platform,
                     "url": job.get("url"),
                     "score": job.get("score") or job.get("match_score", "N/A"),
                     "status": "REDIRECT_EXTERNAL",
@@ -1042,11 +1304,11 @@ class ApplicationEngine:
                 if status == "FAILED_PLATFORM_REJECTED":
                     failure_reason = "Platform rejected application banner (incomplete screening responses)"
                 elif status == "DRAWER_CLOSED":
-                    failure_reason = "Chatbot drawer closed or unmounted prematurely"
+                    failure_reason = "Chatbot drawer closed prematurely"
                 self.record_tracker_entry({
                     "company": company,
                     "job_title": job_title,
-                    "platform": job.get("platform", "Naukri"),
+                    "platform": platform,
                     "url": job.get("url"),
                     "score": job.get("score") or job.get("match_score", "N/A"),
                     "status": "FAILED",
@@ -1059,6 +1321,7 @@ class ApplicationEngine:
         print(f"    Total Jobs Evaluated:      {self.stats['total']}", flush=True)
         print(f"    Applied (1-Click):         {self.stats['applied_1click']}", flush=True)
         print(f"    Applied (Chatbot Solved):  {self.stats['applied_chatbot']}", flush=True)
+        print(f"    Applied (LinkedIn Apply):  {self.stats['applied_linkedin']}", flush=True)
         print(f"    External Redirects Saved:  {self.stats['redirect_external']}", flush=True)
         print(f"    Skipped / Already Applied: {self.stats['skipped']}", flush=True)
         print(f"    Failed:                    {self.stats['failed']}", flush=True)

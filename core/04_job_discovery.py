@@ -4,9 +4,13 @@ UNIVERSAL AUTONOMOUS CAREER AGENT
 File: core/04_job_discovery.py
 ================================================================================
 Universal Batched Discovery Engine (Naukri + LinkedIn)
-- Strict Domain & Title Gating: Completely dynamic, reading purely from candidate 
-  config target_jobs constraints. Includes C6 strict negative gating and positive domain gating.
-- Score Threshold: Automatically qualifies and applies to roles scoring >= 40%.
+- Safe Two-Tier Deduplication: Uses canonical Job URL and composite (Company + Title)
+  hash. Strictly prevents raw job titles from polluting the deduplication ledger,
+  ensuring applications to a title at Company A never block Company B.
+- Dynamic Domain & Title Gating: Incorporates C6 negative keyword gating,
+  incompatible vertical checking, and Tier 2B cognitive card arbitration.
+- Two-Stage Cognitive Evaluation: Connects seamlessly to the Zero-API Antigravity 2.0
+  Cognitive IPC Bridge for human-grade JD qualification (score >= 60%).
 - Micro-batched (BATCH_SIZE=1) for synchronous tailor -> upload -> apply isolation.
 - 100% Config-Driven & Profile Agnostic. Zero blocking terminal calls.
 ================================================================================
@@ -25,7 +29,7 @@ import logging
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-# Force standard output to UTF-8 and line-buffering (H4 Guardrail)
+# Force standard output to UTF-8 and line-buffering (Guardrail H4)
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 except Exception:
@@ -45,8 +49,18 @@ MAX_PAGES_PER_SEARCH = 3
 MATCH_THRESHOLD = 60
 
 
+def make_composite_key(company: str, title: str) -> str:
+    """Generates a normalized composite key to deduplicate postings without blocking titles."""
+    clean_c = re.sub(r'[^a-z0-9]', '', str(company or '').lower())
+    clean_t = re.sub(r'[^a-z0-9]', '', str(title or '').lower())
+    return f"{clean_c}::{clean_t}"
+
+
 def get_already_processed_urls(profile_dir: Path) -> set:
-    """C2 & N1 Fix: Safely parses CSV files handling both new and legacy headers for deduplication."""
+    """
+    Safely parses tracker CSV and external jobs files for deduplication.
+    Stores Job URLs and composite (Company + Title) keys. Never stores raw solitary titles.
+    """
     processed = set()
     for file_name in ["applications_tracker.csv", "saved_external_jobs.json"]:
         file_path = profile_dir / "output" / file_name
@@ -55,15 +69,15 @@ def get_already_processed_urls(profile_dir: Path) -> set:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    # 1. Try New Schema (Job URL & Job Title)
+                    # 1. Canonical Job URL
                     if "Job URL" in row and row["Job URL"]:
                         processed.add(row["Job URL"].strip().lower())
-                    if "Job Title" in row and row["Job Title"]:
-                        processed.add(row["Job Title"].strip().lower())
                     
-                    # 2. Try Legacy Schema (Role maps to title in processed_ledger)
-                    if "Role" in row and row["Role"]:
-                        processed.add(row["Role"].strip().lower())
+                    # 2. Composite Company + Title hash
+                    comp = row.get("Company", "")
+                    title = row.get("Job Title", row.get("Role", ""))
+                    if comp and title:
+                        processed.add(make_composite_key(comp, title))
                     
                     # 3. DIRECTIVE 7.2 Fallback: Scan all row values for URL patterns
                     for val in row.values():
@@ -76,10 +90,12 @@ def get_already_processed_urls(profile_dir: Path) -> set:
                 for item in data:
                     if item.get("url"): 
                         processed.add(item["url"].strip().lower())
-                    if item.get("title"): 
-                        processed.add(item["title"].strip().lower())
                     if item.get("original_url"):
                         processed.add(item["original_url"].strip().lower())
+                    comp = item.get("company", "")
+                    title = item.get("job_title", item.get("title", ""))
+                    if comp and title:
+                        processed.add(make_composite_key(comp, title))
             except Exception:
                 pass
                 
@@ -99,10 +115,11 @@ def is_title_allowed(
     """
     Tier 2 Multi-Pass Gating & Cognitive Arbitration:
     - 1. C6 Fix: Strictly rejects titles containing negative keywords unconditionally.
-    - 2. Deterministic Positive Match: Matches titles using prefix/stem-aware matching,
+    - 2. Incompatible Vertical Gate: Detects and filters obvious out-of-domain verticals.
+    - 3. Deterministic Positive Match: Matches titles using prefix/stem-aware matching,
          domain tokens, or card skill tags from the search page.
-    - 3. Tier 2B Cognitive Triage: If unfamiliar or abbreviated, consults the AI Brain
-         (ai_client.arbitrate_card_fit). If approved, learns the title into config and passes!
+    - 4. Tier 2B Cognitive Triage: If unfamiliar or abbreviated, consults the AI Brain
+         (ai_client.arbitrate_card_fit).
     """
     title_lower = title.lower().strip()
 
@@ -112,11 +129,25 @@ def is_title_allowed(
         if neg_clean and re.search(rf'\b{re.escape(neg_clean)}\b', title_lower):
             return False
 
-    # 2. Strict Positive Alignment (Domain Relevance)
+    # 2. Incompatible Vertical Quick Gating
+    if ctx:
+        cog_prof = ctx.load_cognitive_profile()
+        if cog_prof:
+            cand_domain = cog_prof.get("candidate_domain", "").lower()
+            incompatibles = cog_prof.get("incompatible_verticals", {})
+            for vert_name, vert_markers in incompatibles.items():
+                for marker in vert_markers[:5]:
+                    if re.search(rf'\b{re.escape(marker)}\b', title_lower):
+                        # Verify if candidate domain function is in title
+                        domain_words = [w for w in re.split(r'[\s/,-]+', cand_domain) if len(w) > 3]
+                        if not any(re.search(rf'\b{re.escape(dw)}\b', title_lower) for dw in domain_words):
+                            return False
+
+    # 3. Strict Positive Alignment (Domain Relevance)
     if not target_keywords:
         return True
 
-    # 2.1 Direct exact phrase match (case-insensitive)
+    # 3.1 Direct exact phrase match (case-insensitive)
     for target in target_keywords:
         target_clean = str(target).strip().lower() if target else ""
         if not target_clean:
@@ -128,12 +159,10 @@ def is_title_allowed(
     if not title_tokens:
         return False
 
-    # Helper function: tests if a target token matches any title token via exact match or stem/prefix
     def token_matches(target_tok: str, tok_list: list) -> bool:
         for tok in tok_list:
             if tok == target_tok:
                 return True
-            # Stem/prefix matching for words with length >= 4 (e.g. account/accounts, finance/financial, audit/auditor)
             if len(tok) >= 4 and len(target_tok) >= 4 and (tok.startswith(target_tok[:5]) or target_tok.startswith(tok[:5])):
                 return True
         return False
@@ -145,8 +174,7 @@ def is_title_allowed(
         "general", "global", "regional", "assistant", "deputy", "group", "team"
     }
 
-    # 2.2 Target Phrase Stem/Prefix Overlap
-    # If all significant tokens of any target keyword match title tokens (via exact or stem match)
+    # 3.2 Target Phrase Stem/Prefix Overlap
     for target in target_keywords:
         target_clean = str(target).strip().lower() if target else ""
         if not target_clean:
@@ -159,8 +187,7 @@ def is_title_allowed(
         if target_tokens and all(token_matches(tt, title_tokens) for tt in target_tokens):
             return True
 
-    # 2.3 Primary Domain Keyword Direct Match
-    # Dynamically extract domain tokens (length >= 4, non-stopwords) from candidate target keywords
+    # 3.3 Primary Domain Keyword Direct Match
     dynamic_domain_tokens = set()
     for target in target_keywords:
         target_clean = str(target).strip().lower() if target else ""
@@ -168,7 +195,6 @@ def is_title_allowed(
             if len(t) >= 4 and t not in stopwords:
                 dynamic_domain_tokens.add(t)
 
-    # Allow direct domain token matches if a primary domain word is present in the title
     for tt in title_tokens:
         if tt in dynamic_domain_tokens:
             return True
@@ -176,7 +202,7 @@ def is_title_allowed(
             if len(tt) >= 4 and len(dt) >= 4 and (tt.startswith(dt[:5]) or dt.startswith(tt[:5])):
                 return True
 
-    # 2.4 Card Skills Overlap (if search card displayed skill tags)
+    # 3.4 Card Skills Overlap
     if card_skills:
         for cs in card_skills:
             cs_clean = cs.lower().strip()
@@ -186,7 +212,7 @@ def is_title_allowed(
                 if len(cs_clean) >= 4 and len(dt) >= 4 and (cs_clean.startswith(dt[:5]) or dt.startswith(cs_clean[:5])):
                     return True
 
-    # 3. Tier 2B: Cognitive Brain Arbitration (Fallback for unfamiliar / creative titles)
+    # 4. Tier 2B: Cognitive Brain Arbitration
     if ai_client and hasattr(ai_client, "arbitrate_card_fit"):
         fits, reason = ai_client.arbitrate_card_fit(
             title=title,
@@ -202,10 +228,7 @@ def is_title_allowed(
 
 
 def cleanup_browser_tabs(context, tracked_pages=None, active_page=None):
-    """
-    Safely cleans up only tabs opened by the discovery runner without closing unrelated user tabs.
-    Preserves user browsing tabs while cleaning up redundant discovery pages.
-    """
+    """Safely cleans up only tabs opened by discovery without closing user browsing tabs."""
     try:
         if tracked_pages is not None:
             for p in list(tracked_pages):
@@ -234,7 +257,6 @@ def process_batch(batch: list, profile_dir: Path, platform: str):
     print("=" * 60 + "\n", flush=True)
     
     print("  [PIPELINE] 1/3: Generating Factual Tailored Resume...", flush=True)
-    # H6 Fix: Add check=True to halt if PDF tailoring fails
     subprocess.run([sys.executable, str(BASE_DIR / "core" / "generate_factual_tailored.py"), "--profile", str(profile_dir)], check=True)
     
     if platform.lower() == "naukri":
@@ -260,7 +282,15 @@ def run_batched_discovery(profile_path: str):
     legacy_processed = get_already_processed_urls(profile_dir)
     persistent_ledger = ctx.load_processed_ledger()
     persistent_items = persistent_ledger.keys() if isinstance(persistent_ledger, dict) else persistent_ledger
-    processed_ledger = set(str(k).lower().strip() for k in persistent_items) | legacy_processed
+    
+    # Filter out legacy raw titles from the loaded ledger set to avoid false blockades!
+    clean_persistent = set()
+    for k in persistent_items:
+        str_k = str(k).lower().strip()
+        if str_k.startswith("http://") or str_k.startswith("https://") or "::" in str_k:
+            clean_persistent.add(str_k)
+
+    processed_ledger = clean_persistent | legacy_processed
     ai = AIClient(ctx)
     ai.synthesize_cognitive_profile()
     
@@ -416,7 +446,9 @@ def run_batched_discovery(profile_path: str):
                             card_skills = job.get("card_skills", [])
                             exp_text = job.get("exp_text", "")
                             
-                            if url.lower() in processed_ledger or title.lower() in processed_ledger:
+                            # Safe Two-Tier Deduplication: Check URL and Composite (Company + Title) key
+                            composite_key = make_composite_key(company, title)
+                            if url.lower() in processed_ledger or composite_key in processed_ledger:
                                 continue
                                 
                             if not is_title_allowed(
@@ -431,9 +463,9 @@ def run_batched_discovery(profile_path: str):
                             ):
                                 print(f"  -> Rejecting Irrelevant Job: {title} @ {company} [DOMAIN GATED]", flush=True)
                                 processed_ledger.add(url.lower())
-                                processed_ledger.add(title.lower())
+                                processed_ledger.add(composite_key)
                                 ctx.add_to_processed_ledger(url.lower(), status="domain_gated", metadata={"title": title, "company": company})
-                                ctx.add_to_processed_ledger(title.lower(), status="processed_title")
+                                ctx.add_to_processed_ledger(composite_key, status="composite_gated")
                                 continue
                                 
                             print(f"  -> Deep Scanning: {title} @ {company}...", flush=True)
@@ -453,7 +485,9 @@ def run_batched_discovery(profile_path: str):
                             if is_external:
                                 print("     [EXTERNAL APPLY REJECTED]", flush=True)
                                 processed_ledger.add(url.lower())
+                                processed_ledger.add(composite_key)
                                 ctx.add_to_processed_ledger(url.lower(), status="external_apply", metadata={"title": title, "company": company})
+                                ctx.add_to_processed_ledger(composite_key, status="composite_external")
                                 continue
                                 
                             full_desc = ""
@@ -490,6 +524,7 @@ def run_batched_discovery(profile_path: str):
                             if not full_desc:
                                 print("     [FAILED - NO DESCRIPTION FOUND ON PAGE]", flush=True)
                                 processed_ledger.add(url.lower())
+                                processed_ledger.add(composite_key)
                                 ctx.add_to_processed_ledger(url.lower(), status="no_description", metadata={"title": title, "company": company})
                                 continue
                                 
@@ -499,17 +534,14 @@ def run_batched_discovery(profile_path: str):
                             if score >= MATCH_THRESHOLD:
                                 print(f"     [MATCH QUEUED! Score: {score}%]", flush=True)
 
-                                # Sanitize folder names dynamically (Phase 2 Requirement)
                                 clean_c = re.sub(r"[^\w\s-]", "", company).strip().replace(" ", "_")[:50]
                                 clean_t = re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_")[:50]
                                 app_folder = profile_dir / "output" / "applications" / f"{clean_c}_{clean_t}"
                                 app_folder.mkdir(parents=True, exist_ok=True)
 
-                                # Immediately write real scraped description to disk
                                 jd_file_path = app_folder / "Job_Description.md"
                                 jd_file_path.write_text(full_desc, encoding="utf-8")
 
-                                # Write job metadata to job_details.json
                                 job_meta = {
                                     "title": title,
                                     "company": company,
@@ -522,7 +554,6 @@ def run_batched_discovery(profile_path: str):
                                 }
                                 (app_folder / "job_details.json").write_text(json.dumps(job_meta, indent=2), encoding="utf-8")
 
-                                # Include jd_path and description in search_manifest.json entry
                                 job_entry = {
                                     "title": title,
                                     "company": company,
@@ -535,9 +566,9 @@ def run_batched_discovery(profile_path: str):
                                 }
                                 current_batch.append(job_entry)
                                 processed_ledger.add(url.lower())
-                                processed_ledger.add(title.lower())
+                                processed_ledger.add(composite_key)
                                 ctx.add_to_processed_ledger(url.lower(), status="qualified", metadata={"title": title, "company": company, "score": score})
-                                ctx.add_to_processed_ledger(title.lower(), status="processed_title")
+                                ctx.add_to_processed_ledger(composite_key, status="composite_qualified")
                                 
                                 if len(current_batch) >= BATCH_SIZE:
                                     process_batch(current_batch, profile_dir, current_platform_exec)
@@ -546,6 +577,7 @@ def run_batched_discovery(profile_path: str):
                             else:
                                 print(f"     [FAILED. Score: {score}%]", flush=True)
                                 processed_ledger.add(url.lower())
+                                processed_ledger.add(composite_key)
                                 ctx.add_to_processed_ledger(url.lower(), status="low_score", metadata={"title": title, "company": company, "score": score})
                                 
                             if applied_count >= max_applies:
@@ -606,6 +638,7 @@ def run_batched_discovery(profile_path: str):
         pass
 
     print(f"\n=== BATCH DISCOVERY COMPLETE. Processed {applied_count} total applications. ===", flush=True)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

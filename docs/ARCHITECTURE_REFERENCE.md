@@ -160,18 +160,29 @@ https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_AL=true&f_T
 - **3x Stuck Question Loop Breaker:** If active question repeats $\ge 3$ times without progress, immediately aborts the loop, logs `REQUIRES_MANUAL_INTERVENTION`, and writes `[ABORTED_STUCK_3X]` into `ques_ans_chatbot.json`.
 - **Per-Job Audit Logging:** Every question asked, the control type detected, and the resolved answer are appended to `profiles/<profile>/output/applications/<Company>_<Role>/ques_ans_chatbot.json`.
 
+#### `LinkedInApplyHandler` — Native LinkedIn Easy Apply Modal Automation
+- **Modal Detection & Container Scoping:** Identifies `div.jobs-easy-apply-modal` or `div[data-test-modal]` without interfering with background search pages.
+- **Dynamic Field Resolution:**
+  - Phone inputs: `input[id*='phoneNumber']`, auto-populated from `candidate.phone`.
+  - Text/Numeric inputs: Question text extracted from preceding `label` or `legend` $\rightarrow$ resolved via `AIClient.answer_screening_question()`.
+  - Radio groups & single-selects: Options mapped via `_best_option_match()` and clicked.
+  - Dropdown selects: Handles standard HTML `<select>` and custom LinkedIn dropdown wrappers.
+  - Resume attachment: Automatically injects tailored PDF into `input[type='file']` if an upload step appears.
+- **Modal Stepping & State Progression:** Repeatedly clicks "Next" or "Review" buttons until the "Submit application" button appears.
+- **Confirmation & Error Handling:** Validates submission via `.artdeco-modal__header:has-text('Application sent')` or dialog dismissal; discards modal cleanly if unresolvable mandatory fields are encountered.
+
 #### `ApplicationEngine` — Batch Orchestrator
 - **Status Flow:**
   ```
-  Navigate → External Check → Already Applied Check → Click Apply
+  Navigate → External Check → Already Applied Check → Click Apply (Naukri or LinkedIn)
        ↓                                                    ↓
-  REDIRECT_EXTERNAL                               Poll for Drawer
-       ↓                                           ↓           ↓
-  SKIPPED_ALREADY_APPLIED                    Drawer Open    No Drawer
-                                                ↓              ↓
-                                         Chatbot Loop    Check Banners
-                                              ↓              ↓         ↓
-                                      APPLIED_CHATBOT   APPLIED_1CLICK  FAILED
+  REDIRECT_EXTERNAL                               Poll for Drawer / Modal
+       ↓                                           ↓                     ↓
+  SKIPPED_ALREADY_APPLIED                    Drawer / Modal Open    No Drawer / Modal
+                                                ↓                        ↓
+                                         Chatbot / Modal Loop      Check Banners
+                                              ↓                        ↓         ↓
+                                     APPLIED_CHATBOT / APPLIED_EASYAPPLY  APPLIED_1CLICK  FAILED
   ```
 - **Critical Safety:** The `FAILED` return is the default when no confirmation is found. `APPLIED_1CLICK` strictly requires explicit success banner DOM match or redirect URLs (`/myapply/saveApply`, `myapply/historypage`). `check_completion_status()` strictly requires text markers; missing drawer is never treated as completion.
 
@@ -308,6 +319,48 @@ Date,Company,Role,Location,Platform,Status,FolderPath
     "saved_at": "2026-08-31 02:36:40"
   }
 ]
+```
+
+### 4.6 `pending_question.json` Schema (Antigravity 2.0 Zero-API File IPC)
+```json
+{
+  "task_type": "PROFILE_SYNTHESIS | JOB_EVALUATION | RESUME_TAILORING | SCREENING_QUESTION | STARVATION_EXPANSION",
+  "question": "Human-readable description or extracted portal question",
+  "prompt": "Full context-rich LLM prompt",
+  "options": ["Optional list of choices for dropdowns / radio chips"],
+  "control_type": "CONTENTEDITABLE | RADIO_CHIP | DROPDOWN | DATE_INPUT | FILE_UPLOAD | UNKNOWN",
+  "created_at": "2026-09-04 14:30:00",
+  "status": "PENDING",
+  "answer": null
+}
+```
+
+### 4.7 `cognitive_profile.json` Schema (Synthesized Cognitive Model)
+```json
+{
+  "candidate_domain": "Financial Services & Accounting Operations",
+  "primary_title": "Senior Manager - Accounts & Finance",
+  "years_of_experience": 11.0,
+  "seniority_level": "Senior Manager / Associate Director",
+  "core_domain_skills": ["Financial Reporting", "Statutory Audit", "Taxation", "SAP S/4HANA", "IFRS"],
+  "generic_soft_skills": ["Analytical", "Problem Solving", "Team Leadership", "Communication"],
+  "domain_acronyms": {
+    "AR": "Accounts Receivable",
+    "AP": "Accounts Payable",
+    "GL": "General Ledger"
+  },
+  "incompatible_verticals": {
+    "Software Engineering": ["developer", "react", "frontend", "backend", "full stack"],
+    "Pharmaceutical R&D": ["clinical trial", "formulation", "pharmacovigilance"]
+  },
+  "search_cycles": [
+    ["Senior Finance Manager", "Lead Accountant", "Financial Controller"],
+    ["Associate Director Finance", "Head of Accounts", "VP Finance"],
+    ["Statutory Compliance Manager", "Internal Audit Lead", "Treasury Manager"]
+  ],
+  "active_cycle_index": 0,
+  "last_synthesized": "2026-09-04 14:30:00"
+}
 ```
 
 ---

@@ -136,10 +136,29 @@
     ctx.load_processed_ledger() -> set
     ctx.add_to_processed_ledger(item: str, status: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None)
     ```
-    Persists evaluated, rejected, external-applied, or qualified job URLs and titles to `profiles/<profile>/output/processed_ledger.json`. Prevents re-scanning or token burning across agent restarts.
+    Persists evaluated, rejected, external-applied, or qualified job URLs and composite keys (`clean_company::clean_title`) to `profiles/<profile>/output/processed_ledger.json`. Prevents re-scanning or token burning across agent restarts.
+    **CRITICAL LEDGER RULE:** Solitary job titles must NEVER be added to `processed_ledger.json` (e.g., adding just `"Senior Accountant"`). Doing so blocks all applications to that title across the entire market. Only composite keys (`f"{clean_company}::{clean_title}"`) and job URLs are permitted in the ledger.
 
 14. **Discovery Recency Filter Contract (`04_job_discovery.py`):**
     All discovery searches must include platform-level freshness parameters (`&jobAge=3` on Naukri; `&f_TPR=r259200` on LinkedIn) derived from `target_jobs.job_age_days` (default 3 days) to eliminate stale postings.
+
+15. **Zero-API Cognitive IPC Protocol Contract (`ai_client.py`):**
+    When `GEMINI_API_KEY` is not present, `AIClient` delegates reasoning to Google Antigravity 2.0 via `profiles/<profile>/output/pending_question.json`. Supports 5 distinct task types:
+    - `PROFILE_SYNTHESIS`: Cognitive profile extraction from resume markdown.
+    - `JOB_EVALUATION`: Two-stage semantic and factual qualification scoring ($0-100\%$).
+    - `RESUME_TAILORING`: Targeted summary adaptation and core competencies reordering.
+    - `SCREENING_QUESTION`: Portal chatbot / Easy Apply modal form input resolution.
+    - `STARVATION_EXPANSION`: Designation queue expansion on 0 matches.
+    The agent polls `pending_question.json` at 0.5s intervals and resumes immediately upon answer ingestion, unlinking the file. Terminal `stdin` is strictly prohibited.
+
+16. **LinkedIn Easy Apply Modal Automation Contract (`05_apply_jobs.py`):**
+    `LinkedInApplyHandler` manages native LinkedIn Easy Apply multi-step modal automation:
+    - Traverses modals inside `div.jobs-easy-apply-modal` or `div[data-test-modal]`.
+    - Handles text inputs, phone fields, single-select radios, and native/custom dropdowns.
+    - Resolves screening queries through `AIClient.answer_screening_question()`.
+    - Automatically uploads tailored ATS PDF (`input[type='file']`) when resume upload step appears.
+    - Advances through multi-step forms using "Next", "Review", and commits via "Submit application".
+    - Detects unresolvable errors and clicks modal dismiss / discard without leaving dangling state.
 
 ---
 
@@ -147,7 +166,7 @@
 
 1. **Decoupled Handlers:** Fixes and enhancements to Naukri automation scripts (`02_profile_sync_naukri.py`, `02b_naukri_fast_resume_upload.py`, Naukri scrapers/solvers) must never touch, break, or mutate LinkedIn scripts (`03_profile_sync_linkedin.py`, LinkedIn Easy Apply handlers), and vice versa.
 
-2. **Container-Isolated Scrolling:** Never issue page-level scroll commands when a modal or chatbot drawer is active. Scroll exclusively within the identified dialog container (`.chatbot_MessageContainer`).
+2. **Container-Isolated Scrolling:** Never issue page-level scroll commands when a modal or chatbot drawer is active. Scroll exclusively within the identified dialog container (`.chatbot_MessageContainer` on Naukri; `.jobs-easy-apply-modal` on LinkedIn).
 
 3. **Contenteditable Typing Standard:** When populating `contenteditable="true"` containers (Naukri chatbot, LinkedIn ProseMirror), never use `.fill()`. Always:
    - Focus the element via `.click(force=True)`
@@ -271,6 +290,15 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 
 ### H6: stdin Subprocess Blocking
 **Rule:** Never use `sys.stdin.readline()` or `input()` inside the pipeline. Because the scripts run as nested daemon subprocesses, terminal prompts will permanently hang the execution loop. Use File-Based IPC polling (`pending_question.json`) instead.
+
+### D1: Composite Ledger Deduplication (Anti-Title Starvation)
+**Rule:** `04_job_discovery.py` must NEVER insert raw, solitary job titles into `processed_ledger.json`. Adding bare titles causes the agent to reject every subsequent job with that title across all other companies in the market. Deduplication must strictly use the composite key: `f"{clean_company}::{clean_title}"` or direct Job URLs.
+
+### D2: Anchored Experience Parsing & Company Age Filtering
+**Rule:** When parsing required experience from job descriptions in `ai_client.py` and `04_job_discovery.py`, regex matching must be anchored to requirement phrases (`minimum`, `exp`, `years of experience`, `relevant experience`). Never match naked `r'(\d+)\s*years'` across entire JD text, which matches company founding history (e.g., *"Serving clients for 25+ years"*) and causes false auto-rejections of candidates. Any parsed number $> 20$ must be ignored unless candidate experience itself exceeds 18 years.
+
+### D3: Cross-Functional Domain Title Overrides
+**Rule:** Non-technical domain roles (Finance, Operations, Accounting, Legal, Supply Chain) frequently list software tools like "SQL database", "Accounting Software", or "Python scripting". The Incompatible Vertical hard gate in `evaluate_job_match()` must inspect the job title first. If the job title aligns with the candidate's core domain, technical tools mentioned in the JD must NOT trigger an out-of-domain tech vertical rejection.
 
 ---
 

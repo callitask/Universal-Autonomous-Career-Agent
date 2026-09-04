@@ -36,7 +36,7 @@ P = cfg.get("profile_content", {})
 EMP = P.get("employment", {})
 CDP_URL = C.get("cdp_url", "http://127.0.0.1:9222")
 
-AI_CLIENT = AIClient()
+AI_CLIENT = AIClient(CTX)
 
 def log(msg):
     print(f"  {msg}", flush=True)

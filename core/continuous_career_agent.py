@@ -32,6 +32,7 @@ def run_step(step_name, script_name, profile_arg):
 def main():
     parser = argparse.ArgumentParser(description="Continuous Universal Career Agent")
     parser.add_argument("--profile", required=True, help="Profile path (e.g., profiles/bharat_pandey)")
+    parser.add_argument("--analyze", action="store_true", help="Run AI Profile Analyzer to synthesize cognitive profile from resume")
     parser.add_argument("--sync-profile", action="store_true", help="Sync Naukri & LinkedIn profile info once")
     parser.add_argument("--delay", type=int, default=30, help="Seconds to sleep between full batch cycles")
     args = parser.parse_args()
@@ -43,6 +44,9 @@ def main():
     logger.info("  [DAEMON] CONTINUOUS UNIVERSAL CAREER AGENT ENGAGED")
     logger.info(f"  [ACTIVE PROFILE]  {profile_arg}")
     logger.info("=========================================================")
+
+    if args.analyze:
+        run_step("Cognitive Profile Analysis & Synthesis", "01_ai_analyzer.py", profile_arg)
 
     if args.sync_profile:
         run_step("Naukri Profile Sync", "02_profile_sync_naukri.py", profile_arg)
