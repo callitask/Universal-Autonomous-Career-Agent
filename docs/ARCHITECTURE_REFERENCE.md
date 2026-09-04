@@ -21,6 +21,10 @@ The Universal Autonomous Career Agent is a **multi-process, file-coordinated, CD
 
 **Execution Model:** Sequential subprocess chain. No threading. No async. Each phase runs as a standalone Python process orchestrated by `continuous_career_agent.py` or `04_job_discovery.py`.
 
+**Architectural Separation of Concerns:**
+- **Developer Scope (`core/`, `docs/`, `core/utils/`):** In coding sessions, the AI assistant operates strictly as the Principal Agent Developer, updating engine logic, documentation, and tooling. The developer **never manually edits files inside `profiles/`**.
+- **Runtime Agent Scope (`profiles/`):** When the agent is executed, the agent itself autonomously and intelligently reads candidate resumes, synthesizes `cognitive_profile.json`, maintains `processed_ledger.json`, caches `auto_learned_truths`, and adapts `candidate_config.json` (e.g. starvation title auto-expansion) without manual developer patching.
+
 ---
 
 ## 2. PIPELINE EXECUTION SEQUENCE
@@ -68,18 +72,23 @@ continuous_career_agent.py (daemon loop)
 | Method | Purpose | Fallback Chain |
 |:---|:---|:---|
 | `generate_text(...)` | General LLM text generation (profile summary, bullets) | Operational Gemini client → `pending_question.json` File-Based IPC |
-| `evaluate_job_match(...)` | Two-Stage Cognitive Qualification Engine (0-100) | Stage 1 Gatekeeper (C6 negative, domain stem, exp band) → Stage 2 Precision (Gemini JSON / IPC 40-65 / Heuristics with min 2 skills, $\ge 60\%$ threshold) |
-| `arbitrate_card_fit(...)` | Tier 2B Cognitive Card Arbitration (SRP) | Evaluates unfamiliar roles, domain abbreviations (RTR, P2P, BRS), and card skills $\rightarrow$ Gemini / Heuristics |
-| `analyze_and_expand_designations(...)` | Tier 4 Autonomous Starvation Recovery | Analyzes `resume.md` + 9.5y experience + seen market titles $\rightarrow$ Auto-enriches `candidate_config.json` |
+| `synthesize_cognitive_profile(...)` | Runtime Cognitive Profile Model synthesis | Gemini LLM → Deterministic Taxonomy Engine → saves to `cognitive_profile.json` |
+| `get_active_search_cycle()` | Returns current batch of 5–8 designations | Loads `cognitive_profile.json` → returns active cycle |
+| `advance_search_cycle()` | Advances designation batch across discovery sweeps | Increments `active_cycle_index` % cycles → saves `cognitive_profile.json` |
+| `evaluate_job_match(...)` | Two-Stage Cognitive Qualification Engine (0-100) | Stage 1 Gatekeeper (C6 negative, domain stem, exp band, dynamic incompatible verticals) → Stage 2 Precision (Gemini JSON / IPC 40-65 / Heuristics with min 2 core skills, $\ge 60\%$ threshold) |
+| `arbitrate_card_fit(...)` | Tier 2B Cognitive Card Arbitration (SRP) | Evaluates unfamiliar roles, dynamic acronyms, and card skills $\rightarrow$ Gemini / Heuristics against `cognitive_profile.json` |
+| `analyze_and_expand_designations(...)` | Tier 4 Autonomous Starvation Recovery | Analyzes `resume.md` + experience + seen market titles $\rightarrow$ Auto-enriches `candidate_config.json` |
 | `answer_screening_question(...)` | Resolves chatbot questions | Exact cache (`auto_learned_truths`) → Gemini API → File IPC polling |
 | `_best_option_match(...)` | Maps freeform answer to UI choices | Exact → word-boundary (`\b`) → numeric → boolean → `None` (H1/H2 compliant) |
 | `_persist_learned_truth(...)` | Caches verified answers to config | Atomic via `ProfileContext.save_config()` (`.tmp` + `os.replace`) |
 | `_fallback_antigravity_ipc(...)` | AG 2.0 Handshake Hook | Writes `pending_question.json` and polls until AG 2.0 fills the `"answer"` key |
 
 **Critical Design Decisions:**
-- **Two-Stage Cognitive Qualification Engine:** Stage 1 Deterministic Gatekeeper (C6 absolute negative keyword gating, domain root-stem token gating `dt[:5] == tt[:5]`, experience band filter auto-rejecting >3yr gap) eliminates false-positive applications to out-of-domain roles. Stage 2 Precision scoring enforces a strict 60% qualification bar and minimum 2 core skills requirement.
-- **Tier 2B Cognitive Card Arbitration:** Ensures no role matching candidate skills or experience is auto-rejected on the search page. Evaluates domain abbreviations and visible skill chips; auto-learns approved titles into `recommended_titles`.
-- **Tier 4 Autonomous Starvation Recovery:** If 0 jobs are found in a sweep, the Brain analyzes all seen market titles, compares with `resume.md` and candidate's 9.5 years experience, and expands `candidate_config.json` with high-yield senior designations.
+- **Autonomous Cognitive Profile Synthesis:** At runtime, `AIClient.synthesize_cognitive_profile()` inspects the active candidate's `resume.md` and configuration, derives their domain (e.g. Finance & Accounting, Software Engineering, etc.), core vs. generic soft skills, domain acronyms, out-of-domain incompatible verticals, and multi-cycle designation queues (Cycle 1 core, Cycle 2 seniority/lateral, Cycle 3 specialized/functional) stored in `profiles/<profile>/output/cognitive_profile.json`.
+- **Zero-Hardcoding Contract:** Zero vertical dictionaries, domain words, or soft skill sets exist in Python source code. All evaluation gates in `evaluate_job_match()` and `arbitrate_card_fit()` read dynamically from `cognitive_profile.json`.
+- **Two-Stage Cognitive Qualification Engine:** Stage 1 Deterministic Gatekeeper enforces C6 absolute negative keywords, domain root-stem token gating (excluding hierarchy stopwords), an **Incompatible Industry/Vertical Hard Gate** (rejecting verticals flagged incompatible by the cognitive profile), and an experience band filter (>3yr gap auto-rejects). Stage 2 Precision scoring enforces a strict 60% qualification bar and requires $\ge 2$ distinct **CORE functional domain skills** (excluding soft skills like "analytical" or "problem solving").
+- **Tier 2B Cognitive Card Arbitration:** Evaluates unfamiliar roles, dynamic domain abbreviations, and visible skill chips while strictly rejecting incompatible verticals; does not contaminate candidate configuration with card titles.
+- **Tier 4 Autonomous Starvation Recovery:** If 0 jobs are found in a sweep, the Brain analyzes all seen market titles, compares with `resume.md` and candidate's total experience, and expands `candidate_config.json` with high-yield senior designations within the candidate's domain.
 - **Zero Terminal Blocking:** Removed `sys.stdin.readline()`. The background daemon will never freeze waiting for terminal input.
 - **AG 2.0 File IPC Polling:** Non-blocking polling of `pending_question.json`. Once an answer is detected, it proceeds instantly and unlinks the file.
 - **Strict Exact-Match Caching Only:** When checking `auto_learned_truths`, uses strict `key.strip().lower() == question.strip().lower()`.
@@ -91,44 +100,48 @@ continuous_career_agent.py (daemon loop)
 
 **Execution Flow:**
 1. Connect to Chrome via CDP at `candidate.cdp_url`
-2. Load dedup ledger from CSV + external JSON; initialize `session_seen_titles = set()`
-3. For each (platform × location × keyword × page):
-   a. Navigate to search results page (SRP)
+2. Load persistent dedup ledger (`processed_ledger.json`) + CSV + external JSON; initialize `session_seen_titles = set()`
+3. Retrieve active cycle of 5–8 designations via `ai.get_active_search_cycle()`
+4. For each (platform × location × keyword in active_cycle × page):
+   a. Navigate to search results page (SRP) with recency filter (`&jobAge=3` or `&f_TPR=r259200`)
    b. Extract up to 15 job cards per page, including `title`, `company`, `url`, `exp_text` (e.g. "5-10 Yrs"), and `card_skills` tags
    c. Record all discovered titles in `session_seen_titles`
    d. Multi-Pass Gating (`is_title_allowed`):
       - C6 Negative Check (Absolute drop: `Sales`, `Intern`, `Director`)
       - Direct Keyword / Stem Match (Immediate Pass)
       - Card Skills Match (Immediate Pass if card tags match candidate taxonomy)
-      - Tier 2B Cognitive Brain Arbitration (`ai.arbitrate_card_fit`): Evaluates role, domain abbreviations (RTR, P2P, BRS), and candidate skills; auto-saves approved designations to `candidate_config.json`
-   e. Deep scan detail page: check for external apply $\rightarrow$ gate and record to `saved_external_jobs.json` if present
-   f. Extract full JD text + required skill tags
-   g. Two-Stage AI score evaluation $\rightarrow$ qualify only if `score >= 60`
+      - Tier 2B Cognitive Brain Arbitration (`ai.arbitrate_card_fit`): Evaluates role, dynamic acronyms, and candidate skills against `cognitive_profile.json`
+      - If rejected: immediately persist to `processed_ledger.json` (`status="domain_gated"`)
+   e. Deep scan detail page: check for external apply $\rightarrow$ gate and record to `saved_external_jobs.json` and `processed_ledger.json` if present
+   f. Extract full JD text + specifications + required skill tags
+   g. Two-Stage AI score evaluation $\rightarrow$ qualify only if `score >= 60`; persist low scores to `processed_ledger.json`
    h. Dynamically sanitize application folder: `profiles/<profile>/output/applications/<Company>_<Role>/`
    i. Immediately write `Job_Description.md` and `job_details.json` to the application folder
    j. Append enriched job entry (`jd_path`, `description`) to `search_manifest.json`
-   k. When batch reaches BATCH_SIZE=1: trigger tailoring → upload → apply pipeline
-4. Resume discovery sweep
-5. **Tier 4 Autonomous Starvation Auto-Healing:**
-   If `applied_count == 0` after the full sweep, triggers `ai.analyze_and_expand_designations()` using `session_seen_titles` and candidate's 9.5y experience, atomically updating `candidate_config.json` with senior market designations.
+   k. Persist qualified URL & title to `processed_ledger.json`
+   l. When batch reaches BATCH_SIZE=1: trigger tailoring → upload → apply pipeline
+5. Resume discovery sweep
+6. Advance search cycle via `ai.advance_search_cycle()` for next sweep
+7. **Tier 4 Autonomous Starvation Auto-Healing:**
+   If `applied_count == 0` after the full sweep, triggers `ai.analyze_and_expand_designations()` using `session_seen_titles` and candidate's total experience, atomically updating `candidate_config.json` with senior market designations.
 
 **Non-Hijacking Tab Cleanup:**
 `cleanup_browser_tabs(context, tracked_pages, active_page)` tracks only Playwright pages created by discovery workers, safely closing non-active worker tabs while strictly protecting unrelated user browsing tabs.
 
 **Naukri URL Pattern:**
 ```
-https://www.naukri.com/{keyword-slug}-jobs-in-{location-slug}[-{page}]?experience={N}[&ctcFilter={lo}to{hi}]
+https://www.naukri.com/{keyword-slug}-jobs-in-{location-slug}[-{page}]?experience={N}&jobAge={age}[&ctcFilter={lo}to{hi}]
 ```
 
 **LinkedIn URL Pattern:**
 ```
-https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_AL=true&start={N*25}
+https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_AL=true&f_TPR=r259200&start={N*25}
 ```
 
 **Deduplication Sources:**
+- `processed_ledger.json` → Multi-session persistent deduplication ledger via `ctx.load_processed_ledger()` and `ctx.add_to_processed_ledger()`
 - `applications_tracker.csv` → `"Job URL"` column via `csv.DictReader`
 - `saved_external_jobs.json` → `url` and `title` fields
-- In-memory `processed_ledger` set (populated at startup, updated during run)
 
 ---
 
@@ -141,6 +154,8 @@ https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_AL=true&sta
 - **Control Detection Priority:** `FILE_UPLOAD` → `DATE_INPUT` → `RADIO_CHIP` (chips, toggle pills, custom radios, excluding `.chipMsg`) → `DROPDOWN` → `CONTENTEDITABLE` → `UNKNOWN`.
 - **Contenteditable React Protocol:** Click → Ctrl+A → Backspace → `page.keyboard.insert_text(answer)` → native `document.execCommand('insertText')` → manual `dispatchEvent` (Input/Change/Keydown/Keyup) → forcefully remove `.disabled` class and `disabled` attribute from Send/Submit button.
 - **Chip Selection:** Escapes single quotes via `replace("'", "\\'")` (H3 Guardrail), clicks matching chip/label natively and via Playwright locators, and triggers Save/Next button.
+- **Platform Rejection Banner Detection (Guardrail C9):** Checks for platform rejection banners (*"Oops! Your application was not accepted due to incomplete information..."*, *"application was not accepted"*) and aborts immediately (`FAILED_PLATFORM_REJECTED`) instead of looping 25 times.
+- **Premature Drawer Closure Detection (Guardrail C9):** Detects unmounted or dismissed chatbot drawers (`not resolver.is_drawer_open()`), verifies completion, and aborts immediately (`DRAWER_CLOSED`) rather than hanging.
 - **Bug 4 Fix & Unknown Control Fallback:** Checks visibility of `contenteditable` input before attempting typing; if no visible input exists, extracts all visible interactive labels/chips and routes to `pending_question.json` IPC to prevent blind typing loops into detached DOM nodes.
 - **3x Stuck Question Loop Breaker:** If active question repeats $\ge 3$ times without progress, immediately aborts the loop, logs `REQUIRES_MANUAL_INTERVENTION`, and writes `[ABORTED_STUCK_3X]` into `ques_ans_chatbot.json`.
 - **Per-Job Audit Logging:** Every question asked, the control type detected, and the resolved answer are appended to `profiles/<profile>/output/applications/<Company>_<Role>/ques_ans_chatbot.json`.

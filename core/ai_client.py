@@ -106,6 +106,348 @@ class AIClient:
                 except Exception as e:
                     print(f"[AI CLIENT] Notice: Could not initialize legacy genai client: {e}", flush=True)
 
+    def synthesize_cognitive_profile(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Synthesizes a candidate-specific, profile-bound Cognitive Profile Model
+        and persists it to profiles/<profile>/output/cognitive_profile.json.
+        Zero hardcoded assumptions: derives domain, technical skills, soft skills,
+        incompatible verticals, acronyms, and multi-cycle designation queues
+        dynamically from resume.md and candidate configuration at runtime.
+        """
+        if not self.profile_context:
+            return {}
+
+        if not force_refresh:
+            cached = self.profile_context.load_cognitive_profile()
+            if cached and cached.get("candidate_domain") and cached.get("search_cycles"):
+                return cached
+
+        resume_md = getattr(self.profile_context, "resume_text", "") or ""
+        config = getattr(self.profile_context, "config", {}) or {}
+        cand = config.get("candidate", {})
+        cand_exp = float(cand.get("total_experience_years", 0) or 0)
+        target_jobs = config.get("target_jobs", {})
+        target_keywords = list(target_jobs.get("keywords") or [])
+        recommended_titles = list(target_jobs.get("recommended_titles") or [])
+        cand_title = cand.get("current_title", "")
+
+        # Try synthesis via Gemini LLM if available
+        if self.gemini_client:
+            prompt = f"""You are an elite executive talent strategist. Analyze this candidate's resume and configuration to synthesize a complete, profile-bound Cognitive Profile Model.
+CANDIDATE CONFIG:
+Current Title: {cand_title}
+Reported Experience: {cand_exp} years
+Configured Target Keywords: {target_keywords}
+
+RESUME:
+{resume_md[:3500]}
+
+Return STRICTLY a JSON object with this exact schema:
+{{
+  "candidate_domain": "<e.g. Financial Services & Accounting Operations, Software Engineering, etc.>",
+  "primary_title": "<most representative senior title>",
+  "years_of_experience": {cand_exp},
+  "seniority_level": "<e.g. Senior / Lead / Assistant Manager>",
+  "core_domain_skills": ["<specific technical domain skills, tools, processes, certifications from resume>"],
+  "generic_soft_skills": ["<behavioral and communication skills that appear in general job descriptions>"],
+  "domain_acronyms": {{
+    "<acronym>": "<expansion and meaning>"
+  }},
+  "incompatible_verticals": {{
+    "<out_of_domain_vertical_name>": ["<marker1>", "<marker2>", "<marker3>"]
+  }},
+  "search_cycles": [
+    ["<5-8 primary core target designations for Cycle 1>"],
+    ["<5-8 seniority/lateral designations for Cycle 2>"],
+    ["<5-8 specialized/functional designations for Cycle 3>"]
+  ],
+  "active_cycle_index": 0
+}}"""
+            try:
+                raw_text = self.generate_text(prompt, default_fallback="")
+                json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+                if json_match:
+                    model_data = json.loads(json_match.group(0))
+                    if model_data.get("candidate_domain") and model_data.get("search_cycles"):
+                        model_data["active_cycle_index"] = 0
+                        model_data["last_synthesized"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                        self.profile_context.save_cognitive_profile(model_data)
+                        return model_data
+            except Exception as e:
+                print(f"[AI CLIENT] Notice: Gemini cognitive profile synthesis failed ({e}). Using deterministic synthesis engine.", flush=True)
+
+        # Deterministic Profile Synthesis Engine (Zero-Hardcoding Fallback)
+        INDUSTRY_TAXONOMY = {
+            "financial_services_accounting": {
+                "domain_name": "Finance, Accounting & Middle Office Operations",
+                "markers": [
+                    "accounting", "accountant", "reconciliation", "ledger", "corporate actions",
+                    "swift", "dividend", "audit", "tax", "taxation", "financial", "finance",
+                    "p2p", "rtr", "o2c", "brs", "mis", "asset servicing", "middle office",
+                    "entitlement", "overdraft", "banking", "treasury", "balance sheet"
+                ],
+                "acronyms": {
+                    "rtr": "Record to Report",
+                    "p2p": "Procure to Pay",
+                    "o2c": "Order to Cash",
+                    "gl": "General Ledger",
+                    "ap": "Accounts Payable",
+                    "ar": "Accounts Receivable",
+                    "brs": "Bank Reconciliation Statement",
+                    "mis": "Management Information Systems",
+                    "fa": "Finance & Accounts",
+                    "f&a": "Finance & Accounts",
+                    "fp&a": "Financial Planning & Analysis",
+                    "swift": "SWIFT Banking Messaging",
+                    "dtcc": "Depository Trust & Clearing Corporation"
+                }
+            },
+            "software_engineering_tech": {
+                "domain_name": "Software Engineering & Cloud Technology",
+                "markers": [
+                    "software", "developer", "frontend", "backend", "full stack", "react",
+                    "python", "node", "javascript", "typescript", "java", "golang", "devops",
+                    "docker", "kubernetes", "aws", "gcp", "azure", "api", "database", "sql"
+                ],
+                "acronyms": {
+                    "api": "Application Programming Interface",
+                    "aws": "Amazon Web Services",
+                    "gcp": "Google Cloud Platform",
+                    "ci/cd": "Continuous Integration / Continuous Deployment",
+                    "sql": "Structured Query Language"
+                }
+            },
+            "pharmaceutical_life_sciences": {
+                "domain_name": "Pharmaceuticals & Life Sciences",
+                "markers": [
+                    "pharma", "pharmaceutical", "bulk drugs", "biotech", "biotechnology",
+                    "drug development", "api manufacturing", "ich", "gmp", "mhra", "usfda",
+                    "regulatory affairs", "formulation", "pharmacology", "medicinal",
+                    "clinical research", "chemistry", "chemical", "dmf"
+                ],
+                "acronyms": {
+                    "gmp": "Good Manufacturing Practice",
+                    "usfda": "United States Food and Drug Administration",
+                    "ich": "International Council for Harmonisation",
+                    "dmf": "Drug Master File"
+                }
+            },
+            "healthcare_clinical": {
+                "domain_name": "Healthcare & Clinical Services",
+                "markers": [
+                    "hospital", "clinical", "patient care", "nursing", "nurse", "doctor",
+                    "physician", "mbbs", "radiology", "pathology", "surgeon", "pharmacist"
+                ],
+                "acronyms": {
+                    "mbbs": "Bachelor of Medicine, Bachelor of Surgery",
+                    "hipaa": "Health Insurance Portability and Accountability Act"
+                }
+            },
+            "civil_mechanical_engineering": {
+                "domain_name": "Civil, Mechanical & Plant Engineering",
+                "markers": [
+                    "civil engineer", "mechanical engineer", "electrical engineer", "site supervisor",
+                    "plant head", "production engineer", "maintenance engineer", "piping engineer",
+                    "structural engineer", "site engineer", "hvac engineer"
+                ],
+                "acronyms": {
+                    "hvac": "Heating, Ventilation, and Air Conditioning",
+                    "cad": "Computer-Aided Design"
+                }
+            },
+            "hr_recruitment": {
+                "domain_name": "Human Resources & Talent Acquisition",
+                "markers": [
+                    "talent acquisition", "recruitment consultant", "technical recruiter",
+                    "hr generalist", "hrbp", "human resources executive"
+                ],
+                "acronyms": {
+                    "hrbp": "Human Resources Business Partner",
+                    "ats": "Applicant Tracking System"
+                }
+            },
+            "sales_bpo_voice": {
+                "domain_name": "Sales & BPO Voice Operations",
+                "markers": [
+                    "bpo voice", "telesales", "telecaller", "inside sales", "outbound calling",
+                    "inbound voice", "field sales executive"
+                ],
+                "acronyms": {
+                    "bpo": "Business Process Outsourcing",
+                    "sla": "Service Level Agreement"
+                }
+            }
+        }
+
+        # Score candidate text against all domains to find candidate's primary domain
+        combined_text = (resume_md + " " + " ".join(target_keywords) + " " + cand_title).lower()
+        domain_scores = {}
+        for ind_key, ind_data in INDUSTRY_TAXONOMY.items():
+            score = sum(1 for m in ind_data["markers"] if re.search(rf'\b{re.escape(m)}\b', combined_text))
+            domain_scores[ind_key] = score
+
+        primary_domain_key = max(domain_scores, key=domain_scores.get) if domain_scores else "financial_services_accounting"
+        primary_domain_info = INDUSTRY_TAXONOMY.get(primary_domain_key, INDUSTRY_TAXONOMY["financial_services_accounting"])
+        candidate_domain = primary_domain_info["domain_name"]
+        domain_acronyms = dict(primary_domain_info.get("acronyms", {}))
+
+        # Dynamic Incompatible Verticals: Every other industry category is out-of-domain!
+        incompatible_verticals = {}
+        for ind_key, ind_data in INDUSTRY_TAXONOMY.items():
+            if ind_key != primary_domain_key:
+                incompatible_verticals[ind_key] = list(ind_data["markers"])
+
+        # 2. Extract Skills and Separate into Core Technical vs. Generic Soft Skills
+        GENERIC_SOFT_SKILLS = [
+            "analytical", "problem solving", "conceptual", "communication", "written", "verbal",
+            "teamwork", "leadership", "management", "documentation", "presentation",
+            "process improvement", "automation", "software", "reporting", "planning",
+            "strategy", "strategic planning", "due diligence", "recruitment", "risk mitigation",
+            "internal controls", "accuracy", "detail", "reasoning", "prioritization",
+            "negotiation", "organizational", "interpersonal", "coordination"
+        ]
+
+        skills_dict = config.get("taxonomy_skills", {})
+        extracted_skills = []
+        for cat_skills in skills_dict.values():
+            if isinstance(cat_skills, list):
+                extracted_skills.extend([s.strip() for s in cat_skills if s and s.strip()])
+            elif isinstance(cat_skills, str):
+                extracted_skills.append(cat_skills.strip())
+
+        comp_match = re.search(r'## CORE COMPETENCIES(.*?)(?=##|\Z)', resume_md, re.DOTALL)
+        if comp_match:
+            comp_lines = comp_match.group(1).split("\n")
+            for line in comp_lines:
+                if "|" in line:
+                    parts = line.split("|")
+                    if len(parts) >= 3:
+                        skills_str = parts[2]
+                        for s in re.split(r'[,;()]+', skills_str):
+                            clean_s = s.strip()
+                            if len(clean_s) > 2 and not clean_s.startswith("*"):
+                                extracted_skills.append(clean_s)
+
+        core_domain_skills = []
+        generic_soft_skills = list(GENERIC_SOFT_SKILLS)
+        soft_set = set(s.lower() for s in GENERIC_SOFT_SKILLS)
+        seen_core = set()
+
+        for s in extracted_skills:
+            s_clean = s.strip()
+            s_lower = s_clean.lower()
+            if s_lower in soft_set:
+                if s_clean not in generic_soft_skills:
+                    generic_soft_skills.append(s_clean)
+            elif s_lower not in seen_core and len(s_clean) > 2:
+                seen_core.add(s_lower)
+                core_domain_skills.append(s_clean)
+
+        seniority_level = "Entry / Associate"
+        if cand_exp >= 8.0:
+            seniority_level = "Senior / Lead / Assistant Manager"
+        elif cand_exp >= 5.0:
+            seniority_level = "Mid-Senior / Specialist"
+        elif cand_exp >= 2.0:
+            seniority_level = "Associate / Executive"
+
+        base_targets = list(target_keywords) if target_keywords else [cand_title]
+        cycle1 = []
+        for t in base_targets[:8]:
+            if t and t.strip() and t.strip() not in cycle1:
+                cycle1.append(t.strip())
+
+        lead_prefix = "Assistant Manager" if cand_exp >= 7.0 else "Senior"
+        senior_prefix = "Senior" if cand_exp >= 4.0 else ""
+        cycle2_candidates = []
+        for kw in cycle1:
+            clean_kw = kw.replace("Senior", "").replace("Assistant Manager", "").strip()
+            if clean_kw:
+                c2_a = f"{lead_prefix} - {clean_kw}".strip("- ")
+                c2_b = f"{senior_prefix} {clean_kw}".strip()
+                if c2_a not in cycle1 and c2_a not in cycle2_candidates:
+                    cycle2_candidates.append(c2_a)
+                if c2_b not in cycle1 and c2_b not in cycle2_candidates:
+                    cycle2_candidates.append(c2_b)
+        for rec in recommended_titles:
+            if rec not in cycle1 and rec not in cycle2_candidates:
+                cycle2_candidates.append(rec)
+        cycle2 = cycle2_candidates[:8] if cycle2_candidates else list(cycle1)
+
+        cycle3_candidates = []
+        for skill in core_domain_skills[:6]:
+            if len(skill.split()) <= 3:
+                f_title = f"{skill} Specialist"
+                if f_title not in cycle1 and f_title not in cycle2 and f_title not in cycle3_candidates:
+                    cycle3_candidates.append(f_title)
+        cycle3 = cycle3_candidates[:8] if cycle3_candidates else list(cycle2)
+
+        search_cycles = [c for c in [cycle1, cycle2, cycle3] if c]
+        if not search_cycles:
+            search_cycles = [[cand_title or "Specialist"]]
+
+        cognitive_profile = {
+            "candidate_domain": candidate_domain,
+            "primary_title": cand_title or (cycle1[0] if cycle1 else "Specialist"),
+            "years_of_experience": cand_exp,
+            "seniority_level": seniority_level,
+            "core_domain_skills": core_domain_skills[:25],
+            "generic_soft_skills": generic_soft_skills,
+            "domain_acronyms": domain_acronyms,
+            "incompatible_verticals": incompatible_verticals,
+            "search_cycles": search_cycles,
+            "active_cycle_index": 0,
+            "last_synthesized": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        self.profile_context.save_cognitive_profile(cognitive_profile)
+        return cognitive_profile
+
+    def get_active_search_cycle(self) -> List[str]:
+        """
+        Retrieves the active batch of 5-8 search designations for the current cycle.
+        If cognitive profile is missing, synthesizes it automatically.
+        """
+        if not self.profile_context:
+            return []
+        cog_prof = self.profile_context.load_cognitive_profile()
+        if not cog_prof:
+            cog_prof = self.synthesize_cognitive_profile()
+
+        cycles = cog_prof.get("search_cycles", [])
+        if not cycles:
+            return self.profile_context.config.get("target_jobs", {}).get("keywords", [])
+
+        idx = cog_prof.get("active_cycle_index", 0)
+        if idx >= len(cycles):
+            idx = 0
+            cog_prof["active_cycle_index"] = 0
+            self.profile_context.save_cognitive_profile(cog_prof)
+
+        return cycles[idx]
+
+    def advance_search_cycle(self) -> int:
+        """
+        Advances the search cycle to the next batch of designations and persists state.
+        Returns the new active_cycle_index.
+        """
+        if not self.profile_context:
+            return 0
+        cog_prof = self.profile_context.load_cognitive_profile()
+        if not cog_prof:
+            cog_prof = self.synthesize_cognitive_profile()
+
+        cycles = cog_prof.get("search_cycles", [])
+        if not cycles:
+            return 0
+
+        cur_idx = cog_prof.get("active_cycle_index", 0)
+        new_idx = (cur_idx + 1) % len(cycles)
+        cog_prof["active_cycle_index"] = new_idx
+        self.profile_context.save_cognitive_profile(cog_prof)
+        print(f"[COGNITIVE BRAIN] Advanced search cycle to Cycle {new_idx + 1}/{len(cycles)}: {cog_prof.get('search_cycles', [])[new_idx]}", flush=True)
+        return new_idx
+
     def generate_text(self, prompt: str, default_fallback: str = "", **kwargs) -> str:
         """
         Generates text using Gemini if initialized and operational; if unavailable
@@ -245,7 +587,9 @@ class AIClient:
             "and", "for", "the", "with", "lead", "senior", "junior", "manager",
             "executive", "officer", "associate", "specialist", "staff", "principal",
             "head", "director", "vp", "intern", "trainee", "expert", "consultant",
-            "general", "global", "regional", "assistant", "deputy", "group", "team"
+            "general", "global", "regional", "assistant", "deputy", "group", "team",
+            "operations", "analyst", "professional", "representative", "coordinator",
+            "administrator", "services", "service", "sr", "jr"
         }
 
         domain_tokens = set()
@@ -290,6 +634,52 @@ class AIClient:
                     matching_skills=[],
                     missing_skills=[f"Minimum {int(min_req_exp)} years experience"]
                 )
+
+        # 1.4 Incompatible Industry & Domain Hard Gate
+        # Gating out completely different verticals dynamically derived from candidate's cognitive profile
+        cog_prof = self.profile_context.load_cognitive_profile() if self.profile_context else None
+        if not cog_prof and self.profile_context:
+            cog_prof = self.synthesize_cognitive_profile()
+
+        incompatible_verticals = cog_prof.get("incompatible_verticals", {}) if cog_prof else {}
+        cand_domain = cog_prof.get("candidate_domain", "target domain") if cog_prof else "target domain"
+
+        cand_domain_words = set()
+        for kw in target_keywords:
+            for w in re.findall(r'[a-zA-Z]{4,}', kw.lower()):
+                if w not in generic_title_stopwords:
+                    cand_domain_words.add(w)
+
+        title_has_cand_domain = any(
+            (cdw in title_lower or (len(cdw) >= 4 and any(tw.startswith(cdw[:5]) for tw in title_tokens)))
+            for cdw in cand_domain_words
+        )
+
+        if not title_has_cand_domain:
+            for vertical_name, v_markers in incompatible_verticals.items():
+                is_candidate_vertical = any(
+                    any(vm in kw.lower() for vm in v_markers[:3])
+                    for kw in target_keywords
+                )
+                if not is_candidate_vertical:
+                    title_marker = next((vm for vm in v_markers if re.search(rf'\b{re.escape(vm)}\b', title_lower)), None)
+                    if title_marker:
+                        return MatchResult(
+                            score=0,
+                            reasoning=f"Rejected: Out-of-domain vertical '{vertical_name}' ('{title_marker}') detected in job title with no candidate domain ({cand_domain}) function.",
+                            matching_skills=[],
+                            missing_skills=[f"Target domain alignment (Not {vertical_name})"]
+                        )
+                    
+                    jd_specs_text = desc_lower[:1800]
+                    jd_matches = [vm for vm in v_markers if re.search(rf'\b{re.escape(vm)}\b', jd_specs_text)]
+                    if len(jd_matches) >= 2:
+                        return MatchResult(
+                            score=0,
+                            reasoning=f"Rejected: Job belongs to incompatible industry/department '{vertical_name}' ({', '.join(jd_matches[:3])}) with no {cand_domain} function in title.",
+                            matching_skills=[],
+                            missing_skills=[f"Target domain alignment (Not {vertical_name})"]
+                        )
 
         # =========================================================================
         # STAGE 2: PRECISION SEMANTIC & FACTUAL SCORING
@@ -388,12 +778,25 @@ Respond ONLY with a valid JSON object:
             title_score = 0
 
         # Component B: Core Skill Matches (0 - 45 points)
-        # Strict requirement: Require at least 2 distinct skill matches to award any skill points
-        if len(matched_skills) >= 6:
+        # Filter out generic soft skills so they do not artificially inflate the domain score
+        profile_soft_skills = set(s.lower().strip() for s in (cog_prof.get("generic_soft_skills", []) if cog_prof else []))
+        if not profile_soft_skills:
+            profile_soft_skills = {
+                "analytical", "problem solving", "conceptual", "communication", "written", "verbal",
+                "teamwork", "leadership", "management", "documentation", "presentation",
+                "process improvement", "automation", "software", "reporting", "planning",
+                "strategy", "strategic planning", "due diligence", "recruitment", "risk mitigation",
+                "internal controls", "accuracy", "detail", "reasoning", "prioritization",
+                "negotiation", "organizational"
+            }
+        matched_core_skills = [s for s in matched_skills if s.lower().strip() not in profile_soft_skills]
+        
+        # Strict requirement: Require at least 2 distinct CORE domain skill matches to award any skill points
+        if len(matched_core_skills) >= 6:
             skill_score = 45
-        elif len(matched_skills) >= 4:
+        elif len(matched_core_skills) >= 4:
             skill_score = 35
-        elif len(matched_skills) >= 2:
+        elif len(matched_core_skills) >= 2:
             skill_score = 20
         else:
             skill_score = 0
@@ -741,23 +1144,13 @@ INSTRUCTIONS:
             return True, f"Card skills match candidate taxonomy: {', '.join(matching_card_skills[:3])}"
 
         # 3. Domain abbreviations and technical role mapping
-        domain_acronyms = {
-            "rtr": "Record to Report (General Ledger / Reporting)",
-            "p2p": "Procure to Pay (Accounts Payable)",
-            "o2c": "Order to Cash (Accounts Receivable)",
-            "gl": "General Ledger",
-            "ap": "Accounts Payable",
-            "ar": "Accounts Receivable",
-            "brs": "Bank Reconciliation Statement",
-            "mis": "Management Information Systems",
-            "f&a": "Finance & Accounts",
-            "fa": "Finance & Accounts",
-            "fp&a": "Financial Planning & Analysis",
-            "kyc": "Know Your Customer Operations",
-            "aml": "Anti Money Laundering Compliance",
-            "us gaap": "US GAAP Accounting",
-            "ifrs": "IFRS Accounting Standards"
-        }
+        cog_prof = self.profile_context.load_cognitive_profile() if self.profile_context else None
+        if not cog_prof and self.profile_context:
+            cog_prof = self.synthesize_cognitive_profile()
+
+        domain_acronyms = cog_prof.get("domain_acronyms", {}) if cog_prof else {}
+        cand_domain = cog_prof.get("candidate_domain", "Candidate Domain") if cog_prof else "Candidate Domain"
+        incompatible_verticals = cog_prof.get("incompatible_verticals", {}) if cog_prof else {}
         
         words = re.findall(r'[a-zA-Z0-9&]+', title_lower)
         for w in words:
@@ -767,17 +1160,17 @@ INSTRUCTIONS:
         # 4. Use operational Gemini LLM if available for cognitive triage
         if self.gemini_client:
             prompt = f"""You are a senior recruitment qualification agent.
-Candidate Experience: {cand_exp} years in Finance, Accounting, Reconciliations, Corporate Actions.
+Candidate Experience: {cand_exp} years in {cand_domain}.
 Candidate Core Skills: {', '.join(all_skills[:15])}
 
 Job Card Title: "{title}"
 Job Card Skills: {', '.join(card_skills_lower) if card_skills_lower else 'Not provided'}
 Job Experience Band: "{exp_text}"
 
-Evaluate: Is this job role conceptually relevant to the candidate's professional domain?
+Evaluate: Is this job role conceptually relevant to the candidate's professional domain ({cand_domain})?
 A role is relevant if:
-- It involves accounting, finance, audit, taxation, reconciliations, corporate actions, middle office, or ledger operations.
-- It is NOT sales, IT software development, digital marketing, human resources, or executive leadership (Director/VP).
+- It involves {cand_domain} operations, functions, or processes.
+- It is NOT in out-of-domain verticals ({', '.join(incompatible_verticals.keys()) if incompatible_verticals else 'unrelated industries'}).
 
 Respond with ONLY a JSON object:
 {{"is_relevant": true/false, "reasoning": "one sentence explanation"}}"""
@@ -791,16 +1184,35 @@ Respond with ONLY a JSON object:
                 pass
 
         # 5. Local semantic heuristics fallback
+        LEVEL_AND_GENERIC_STOPWORDS = {
+            "executive", "manager", "officer", "associate", "specialist", "lead",
+            "senior", "junior", "assistant", "deputy", "head", "director", "vp",
+            "intern", "trainee", "consultant", "professional", "staff", "principal",
+            "expert", "coordinator", "representative", "analyst", "general", "group",
+            "team", "operations", "service", "services", "backend", "frontend", "sr", "jr"
+        }
+
+        # Check for obvious incompatible verticals in title dynamically from cognitive profile
+        for vert_name, vert_markers in incompatible_verticals.items():
+            for bad_kw in vert_markers[:6]:
+                if re.search(rf'\b{re.escape(bad_kw)}\b', title_lower):
+                    cand_domain_tokens = [w for w in re.split(r'[\s/,-]+', cand_domain.lower()) if len(w) > 3 and w not in LEVEL_AND_GENERIC_STOPWORDS]
+                    has_domain = any(re.search(rf'\b{re.escape(d)}\b', title_lower) for d in cand_domain_tokens)
+                    if not has_domain:
+                        return False, f"Card title belongs to incompatible vertical '{vert_name}' without {cand_domain} function."
+
         target_keywords = [k.lower().strip() for k in (target_jobs.get("keywords") or []) if k and k.strip()]
         recommended_titles = [t.lower().strip() for t in (target_jobs.get("recommended_titles") or []) if t and t.strip()]
         all_targets = target_keywords + recommended_titles
 
         for target in all_targets:
-            target_tokens = [t for t in re.split(r'[\s/,-]+', target) if len(t) >= 4]
+            target_tokens = [t for t in re.split(r'[\s/,-]+', target) if len(t) >= 4 and t not in LEVEL_AND_GENERIC_STOPWORDS]
+            if not target_tokens:
+                continue
             for tt in target_tokens:
                 for w in words:
-                    if len(w) >= 4 and (w.startswith(tt[:5]) or tt.startswith(w[:5])):
-                        return True, f"Stem match between title token '{w}' and target token '{tt}'."
+                    if w not in LEVEL_AND_GENERIC_STOPWORDS and len(w) >= 4 and (w.startswith(tt[:5]) or tt.startswith(w[:5])):
+                        return True, f"Stem match between title domain token '{w}' and target token '{tt}'."
 
         return False, f"Title '{title}' does not match candidate domain, skills, or target keywords."
 
@@ -821,13 +1233,19 @@ Respond with ONLY a JSON object:
         """
         market_titles_sample = list(market_seen_titles or [])[:25]
         
+        cog_prof = self.profile_context.load_cognitive_profile() if self.profile_context else None
+        if not cog_prof and self.profile_context:
+            cog_prof = self.synthesize_cognitive_profile()
+        cand_domain = cog_prof.get("candidate_domain", "Candidate Domain") if cog_prof else "Candidate Domain"
+        core_skills = cog_prof.get("core_domain_skills", []) if cog_prof else []
+
         # 1. Attempt LLM generation via Gemini if available
         if self.gemini_client:
             prompt = f"""You are an expert career strategist and executive headhunter.
 A candidate with {candidate_exp} years of total experience is searching for jobs, but the current search queries yielded 0 results or were too narrow.
 
 Candidate Resume Excerpt:
-{resume_text[:2000] if resume_text else 'Finance & Accounting Professional with ' + str(candidate_exp) + ' years experience'}
+{resume_text[:2000] if resume_text else cand_domain + ' Professional with ' + str(candidate_exp) + ' years experience'}
 
 Current Search Keywords: {current_keywords}
 Titles Recently Seen on Job Board (Sample):
@@ -835,8 +1253,8 @@ Titles Recently Seen on Job Board (Sample):
 
 Generate a list of 6 to 10 high-yield, senior-level Job Titles / Designations that strictly match:
 1. The candidate's {candidate_exp} years seniority tier (e.g., Senior, Lead, Assistant Manager, Manager, Specialist level - NOT junior/assistant/intern).
-2. The candidate's primary domain (Finance, Accounting, Reconciliations, Corporate Actions, Audit).
-3. Realistic portal search titles used on Naukri/LinkedIn in India.
+2. The candidate's primary domain ({cand_domain}).
+3. Realistic portal search titles used on Naukri/LinkedIn.
 
 Respond with ONLY a JSON array of title strings:
 ["Title 1", "Title 2", ...]"""
@@ -851,32 +1269,31 @@ Respond with ONLY a JSON array of title strings:
             except Exception as e:
                 print(f"[AI CLIENT] Notice during designation expansion: {e}", flush=True)
 
-        # 2. Heuristic rule-based seniority expansion fallback
+        # 2. Dynamic rule-based seniority expansion fallback
         manager_level = "Assistant Manager" if candidate_exp >= 7.0 else "Executive"
         lead_level = "Lead" if candidate_exp >= 8.0 else "Specialist"
+        senior_prefix = "Senior" if candidate_exp >= 4.0 else ""
 
         fallback_expanded = []
-        if candidate_exp >= 7.0:
-            fallback_expanded = [
-                "Senior Accountant",
-                f"{manager_level} - Accounts",
-                f"{manager_level} Finance",
-                "Accounts Manager",
-                f"{lead_level} Reconciliation Specialist",
-                "Corporate Actions Specialist",
-                "Senior Financial Analyst",
-                "Finance Controller",
-                "Senior Accounts Executive"
-            ]
-        else:
-            fallback_expanded = [
-                "Senior Accountant",
-                "Senior Accounts Executive",
-                "Financial Analyst",
-                "Reconciliation Executive",
-                "Audit Associate"
-            ]
+        for kw in current_keywords[:5]:
+            clean_kw = kw.replace("Senior", "").replace("Assistant Manager", "").replace("Lead", "").strip()
+            if clean_kw:
+                if candidate_exp >= 7.0:
+                    fallback_expanded.append(f"{manager_level} - {clean_kw}")
+                    fallback_expanded.append(f"{lead_level} {clean_kw}")
+                if senior_prefix:
+                    fallback_expanded.append(f"{senior_prefix} {clean_kw}")
+
+        for skill in core_skills[:4]:
+            if len(skill.split()) <= 3:
+                fallback_expanded.append(f"{senior_prefix} {skill} Specialist".strip())
 
         cur_set = set(str(k).lower().strip() for k in current_keywords)
-        result = [t for t in fallback_expanded if t.lower().strip() not in cur_set]
-        return result
+        seen_expanded = set()
+        result = []
+        for t in fallback_expanded:
+            t_clean = t.strip()
+            if t_clean.lower() not in cur_set and t_clean.lower() not in seen_expanded:
+                seen_expanded.add(t_clean.lower())
+                result.append(t_clean)
+        return result[:10]

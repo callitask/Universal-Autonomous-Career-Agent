@@ -27,6 +27,11 @@
 4. **Isolated Output Paths:** All outputs (tailored resumes, PDF packages, trackers, search manifests, and screenshots) must write strictly to `profiles/<profile_name>/output/`.
 5. **No Hardcoded Regex Intercepts for Screening Questions:** Never match questions like `"notice period"`, `"experience"`, `"CTC"` to hardcoded numeric values. Every screening question must be routed through: exact cache match in `auto_learned_truths` → AI model analysis → terminal fallback. No shortcuts.
 6. **No Hardcoded Model Names as Constants:** Model identifiers (e.g., `gemini-2.5-flash`) should be configurable via `candidate_config.json` or environment variables when possible.
+7. **Zero-Hardcoding via Cognitive Profile Synthesis:** Never hardcode domain words, vertical dictionaries, or soft skill sets in Python code. All domain models, core vs. soft skill taxonomies, domain acronyms, and multi-cycle designation queues must be synthesized dynamically by `AIClient.synthesize_cognitive_profile()` and saved to `profiles/<profile>/output/cognitive_profile.json`. Out-of-domain vertical checks and search cycles must read strictly from the candidate's cognitive profile.
+8. **Strict Developer Boundary vs. Runtime Sandbox Separation:**
+   - **Developer Role:** In any development session, the AI assistant acts strictly as the **Principal Agent Developer**, modifying only the engine code (`core/`), documentation (`docs/`), utilities (`core/utils/`), and test harnesses.
+   - **Hands Off `profiles/`:** The developer must **NEVER manually edit files inside the `profiles/` directory** (including `candidate_config.json`, `resume.md`, or candidate sandboxes).
+   - **Autonomous Runtime Adaptation:** The agent code must be engineered so that **when the agent runs**, the agent itself autonomously and smartly reads, synthesizes, adapts, and updates candidate data (e.g. `cognitive_profile.json`, `processed_ledger.json`, `auto_learned_truths`, and `recommended_titles`) at runtime without human or developer manual file patching.
 
 ---
 
@@ -56,12 +61,13 @@
    **Two-Stage Cognitive Qualification Architecture:**
    * **Stage 1: Deterministic Hard Filter (Gatekeeper)**
      - *C6 Absolute Negative Gating:* Role rejected immediately (`score=0`) if any negative keyword matches in `job_title` or JD header.
-     - *Domain Title Alignment:* Role rejected (`score=0`) if zero phrase or root-stem token overlap (`dt[:5] == tt[:5]`) exists with target domains.
+     - *Domain Title Alignment:* Role rejected (`score=0`) if zero phrase or root-stem token overlap (`dt[:5] == tt[:5]`) exists with target domains. Generic hierarchy words (`manager`, `executive`, `analyst`, `operations`) are excluded from domain stem matching.
+     - *Incompatible Vertical Hard Gate:* Role rejected immediately (`score=0`) if job title, specifications, or JD belongs to an incompatible vertical (Pharmaceutical R&D, Healthcare Clinical, Civil/Mechanical Engineering, Software Dev, HR, BPO) without candidate functional domain alignment (rejects "Regulatory Manager" in Pharma while permitting "Finance Manager" in Pharma).
      - *Experience Band Filter:* Role rejected (`score=0`) if JD requires experience exceeding candidate total experience by > 3 years.
    * **Stage 2: Precision Semantic & Factual Scoring**
      - *Dual-Brain LLM Route:* Structured JSON evaluation via operational Gemini client.
      - *Ambiguous Score IPC Handshake:* Scores in 40–65 range optionally routed to `pending_question.json` File IPC for AG 2.0 evaluation.
-     - *Deterministic Factual Fallback:* Title/Domain (0–35), Core Skills (0–45, strictly requiring $\ge 2$ distinct skill matches to award any points), Experience (0–20).
+     - *Deterministic Factual Fallback:* Title/Domain (0–35), Core Skills (0–45, strictly requiring $\ge 2$ distinct CORE domain skills; generic soft skills like "analytical" or "problem solving" are excluded from awarding points), Experience (0–20).
      - *Strict 60% Qualification Bar:* Any role scoring below 60% is rejected, eliminating 40% false positives.
    
    **Return Type (`MatchResult`):**
@@ -104,13 +110,36 @@
    ```python
    def arbitrate_card_fit(self, title: str, card_skills: list = None, exp_text: str = "", candidate_profile: dict = None) -> tuple[bool, str]
    ```
-   Tier 2B Cognitive Card Arbitration: Evaluates whether an unfamiliar, abbreviated, or creative job role on the search results page conceptually aligns with candidate domain, skills taxonomy, and seniority tier. Recognizes domain acronyms (`RTR`, `P2P`, `O2C`, `GL`, `AP`, `AR`, `BRS`, `MIS`, `F&A`, `FP&A`, `KYC`, `AML`, `US GAAP`, `IFRS`) and matches search card skill chips.
+   Tier 2B Cognitive Card Arbitration: Evaluates whether an unfamiliar, abbreviated, or creative job role on the search results page conceptually aligns with candidate domain, skills taxonomy, and seniority tier. Evaluates domain acronyms and incompatible verticals dynamically derived from `cognitive_profile.json` (zero hardcoded strings).
 
 10. **`analyze_and_expand_designations()` Public Method Contract (`AIClient`):**
     ```python
     def analyze_and_expand_designations(self, resume_text: str, candidate_exp: float, current_keywords: list, market_seen_titles: list = None) -> list[str]
     ```
-    Tier 4 Starvation Auto-Healing: Inspects `resume.md` and candidate's total experience (e.g. 9.5 years) alongside live market titles seen during search starvation to infer and return 5–8 high-yield senior designations (e.g., *Senior Accountant*, *Assistant Manager Finance*, *Reconciliation Specialist*).
+    Tier 4 Starvation Auto-Healing: Inspects `resume.md` and candidate's total experience alongside live market titles seen during search starvation to infer and return 5–8 high-yield senior designations strictly within the candidate's synthesized domain.
+
+11. **`synthesize_cognitive_profile()` Public Method Contract (`AIClient`):**
+    ```python
+    def synthesize_cognitive_profile(self, force_refresh: bool = False) -> Dict[str, Any]
+    ```
+    Analyzes `resume.md` and candidate configuration at runtime to derive: `candidate_domain`, `years_of_experience`, `seniority_level`, `core_domain_skills`, `generic_soft_skills`, `domain_acronyms`, `incompatible_verticals`, and `search_cycles`. Saves atomically to `profiles/<profile>/output/cognitive_profile.json`.
+
+12. **`get_active_search_cycle()` & `advance_search_cycle()` Contracts (`AIClient`):**
+    ```python
+    def get_active_search_cycle(self) -> List[str]
+    def advance_search_cycle(self) -> int
+    ```
+    Cycles through dynamically inferred designations in batches of 5–8 titles (Cycle 1 core, Cycle 2 seniority/lateral, Cycle 3 specialized/functional) and advances to the next cycle index across runs.
+
+13. **Multi-Session Persistent Deduplication Ledger Contract (`04_job_discovery.py`):**
+    ```python
+    ctx.load_processed_ledger() -> set
+    ctx.add_to_processed_ledger(item: str, status: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None)
+    ```
+    Persists evaluated, rejected, external-applied, or qualified job URLs and titles to `profiles/<profile>/output/processed_ledger.json`. Prevents re-scanning or token burning across agent restarts.
+
+14. **Discovery Recency Filter Contract (`04_job_discovery.py`):**
+    All discovery searches must include platform-level freshness parameters (`&jobAge=3` on Naukri; `&f_TPR=r259200` on LinkedIn) derived from `target_jobs.job_age_days` (default 3 days) to eliminate stale postings.
 
 ---
 
@@ -221,6 +250,9 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 
 ### C8: Bug 4 Unknown Control Fallback & Detached DOM Protection
 **Rule:** When `detect_ui_control()` returns `UNKNOWN`: verify if a `contenteditable` input is actually visible before attempting typing. If no visible input field exists, do NOT force text typing into detached DOM nodes. Extract all visible interactive labels/chips in the drawer and route through `pending_question.json` File-Based IPC so AG 2.0 can inspect the UI state and supply the appropriate action or value.
+
+### C9: Platform Rejection Banner & Premature Drawer Closure Guardrail
+**Rule:** `_handle_chatbot_loop()` in `05_apply_jobs.py` must actively detect platform rejection banners ("Oops! Your application was not accepted due to incomplete information...", "application was not accepted", "unable to apply") and abort immediately (`FAILED_PLATFORM_REJECTED`) rather than looping blindly across 25 iterations. Furthermore, if the chatbot drawer unmounts or closes prematurely (`not resolver.is_drawer_open()`), the loop must re-verify completion status and abort immediately (`DRAWER_CLOSED`) instead of hanging on empty queries.
 
 ### H1: No Blind `options[0]` Fallback
 **Rule:** `_best_option_match()` must return `None` when no match is found. The caller must handle `None` by falling back to terminal intervention, not by silently picking the first option.

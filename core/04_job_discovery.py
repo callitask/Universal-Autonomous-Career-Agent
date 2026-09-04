@@ -195,18 +195,7 @@ def is_title_allowed(
             candidate_profile=config
         )
         if fits:
-            print(f"     [COGNITIVE BRAIN APPROVED]: '{title}' ({reason})", flush=True)
-            # Autonomously learn and persist this new title into candidate_config.json
-            if ctx and hasattr(ctx, "config") and hasattr(ctx, "save_config"):
-                try:
-                    recommended = ctx.config.setdefault("target_jobs", {}).setdefault("recommended_titles", [])
-                    clean_title_cand = re.sub(r'[\s/,-]+', ' ', title).strip()
-                    if clean_title_cand and clean_title_cand not in recommended:
-                        recommended.append(clean_title_cand)
-                        ctx.save_config()
-                        print(f"     [BRAIN LEARNED NEW DESIGNATION]: Persisted '{clean_title_cand}' to recommended_titles.", flush=True)
-                except Exception:
-                    pass
+            print(f"     [COGNITIVE BRAIN APPROVED FOR DEEP SCAN]: '{title}' ({reason})", flush=True)
             return True
 
     return False
@@ -268,14 +257,22 @@ def run_batched_discovery(profile_path: str):
     resume_path = profile_dir / "resume.md"
     resume_text = resume_path.read_text(encoding="utf-8") if resume_path.exists() else ""
     
-    processed_ledger = get_already_processed_urls(profile_dir)
+    legacy_processed = get_already_processed_urls(profile_dir)
+    persistent_ledger = ctx.load_processed_ledger()
+    persistent_items = persistent_ledger.keys() if isinstance(persistent_ledger, dict) else persistent_ledger
+    processed_ledger = set(str(k).lower().strip() for k in persistent_items) | legacy_processed
     ai = AIClient(ctx)
+    ai.synthesize_cognitive_profile()
     
     cand = config.get("candidate", {})
     target = config.get("target_jobs", {})
     cdp_url = cand.get("cdp_url", "http://127.0.0.1:9222")
     
-    keywords = [k for k in (target.get("keywords") or []) if k and str(k).strip()]
+    # Dynamic Search Cycles: Retrieve active cycle of 5-8 designations from Cognitive Brain
+    active_cycle_keywords = ai.get_active_search_cycle()
+    keywords = active_cycle_keywords if active_cycle_keywords else [k for k in (target.get("keywords") or []) if k and str(k).strip()]
+    print(f"[DISCOVERY CONTROLLER] Active Search Cycle contains {len(keywords)} designations: {keywords}", flush=True)
+
     recommended = [t for t in (target.get("recommended_titles") or []) if t and str(t).strip()]
     current_title = cand.get("current_title", "").strip() if cand.get("current_title") else ""
     all_positive_targets = list(keywords) + list(recommended)
@@ -288,6 +285,7 @@ def run_batched_discovery(profile_path: str):
     exp_years = target.get("experience_years", cand.get("total_experience_years", 0))
     max_applies = int(target.get("max_applies_per_day", 50))
     salary_bracket = target.get("salary_filter_bracket", "")
+    job_age_days = int(target.get("job_age_days", 3))
     
     ctc_filter = ""
     if salary_bracket:
@@ -332,7 +330,7 @@ def run_batched_discovery(profile_path: str):
                             base_url = f"https://www.naukri.com/{query_kw}-jobs-in-{query_loc}"
                             if page_num > 1:
                                 base_url += f"-{page_num}"
-                            query_url = f"{base_url}?experience={int(float(exp_years or 0))}"
+                            query_url = f"{base_url}?experience={int(float(exp_years or 0))}&jobAge={job_age_days}"
                             if ctc_filter:
                                 query_url += f"&ctcFilter={ctc_filter}"
                             card_selector = "div.srp-jobtuple-wrapper, article.jobTuple, div.cust-job-tuple"
@@ -341,7 +339,7 @@ def run_batched_discovery(profile_path: str):
                             query_kw = urllib.parse.quote(kw)
                             query_loc = urllib.parse.quote(primary_loc)
                             start_param = (page_num - 1) * 25
-                            query_url = f"https://www.linkedin.com/jobs/search/?keywords={query_kw}&location={query_loc}&f_AL=true&start={start_param}"
+                            query_url = f"https://www.linkedin.com/jobs/search/?keywords={query_kw}&location={query_loc}&f_AL=true&f_TPR=r259200&start={start_param}"
                             card_selector = "li.jobs-search-results__list-item, div.job-card-container"
                         else:
                             continue
@@ -433,6 +431,9 @@ def run_batched_discovery(profile_path: str):
                             ):
                                 print(f"  -> Rejecting Irrelevant Job: {title} @ {company} [DOMAIN GATED]", flush=True)
                                 processed_ledger.add(url.lower())
+                                processed_ledger.add(title.lower())
+                                ctx.add_to_processed_ledger(url.lower(), status="domain_gated", metadata={"title": title, "company": company})
+                                ctx.add_to_processed_ledger(title.lower(), status="processed_title")
                                 continue
                                 
                             print(f"  -> Deep Scanning: {title} @ {company}...", flush=True)
@@ -452,6 +453,7 @@ def run_batched_discovery(profile_path: str):
                             if is_external:
                                 print("     [EXTERNAL APPLY REJECTED]", flush=True)
                                 processed_ledger.add(url.lower())
+                                ctx.add_to_processed_ledger(url.lower(), status="external_apply", metadata={"title": title, "company": company})
                                 continue
                                 
                             full_desc = ""
@@ -465,6 +467,8 @@ def run_batched_discovery(profile_path: str):
                                     time.sleep(1)
                                 desc_el = page.locator(desc_selector).first
                                 skills_el = page.locator(".styles_key-skill__GIPn_ a span, .styles_chip__7YCfG span, a.styles_chip__7YqPJ, .tags a, .job-tags a").all()
+                                details_el = page.locator("div[class*='other-details'], div.other-details, div[class*='jds-details'], section[class*='job-desc-container'] [class*='details']").first
+                                other_details_text = details_el.inner_text().strip() if details_el.count() else ""
                             else:
                                 desc_selector = "div.jobs-description__content, div.description__text"
                                 for _ in range(8):
@@ -473,16 +477,20 @@ def run_batched_discovery(profile_path: str):
                                     time.sleep(1)
                                 desc_el = page.locator(desc_selector).first
                                 skills_el = []
+                                other_details_text = ""
                                 
                             full_desc = desc_el.inner_text().strip() if desc_el.count() else ""
                             extracted_skills = [sk.inner_text().strip() for sk in skills_el if sk.inner_text().strip()]
                             
+                            if other_details_text:
+                                full_desc += f"\n\nJob Specifications:\n{other_details_text}"
                             if extracted_skills:
                                 full_desc += f"\n\nRequired Skills: {', '.join(extracted_skills)}"
                                 
                             if not full_desc:
                                 print("     [FAILED - NO DESCRIPTION FOUND ON PAGE]", flush=True)
                                 processed_ledger.add(url.lower())
+                                ctx.add_to_processed_ledger(url.lower(), status="no_description", metadata={"title": title, "company": company})
                                 continue
                                 
                             eval_res = ai.evaluate_job_match(title, full_desc, config, resume_text)
@@ -528,6 +536,8 @@ def run_batched_discovery(profile_path: str):
                                 current_batch.append(job_entry)
                                 processed_ledger.add(url.lower())
                                 processed_ledger.add(title.lower())
+                                ctx.add_to_processed_ledger(url.lower(), status="qualified", metadata={"title": title, "company": company, "score": score})
+                                ctx.add_to_processed_ledger(title.lower(), status="processed_title")
                                 
                                 if len(current_batch) >= BATCH_SIZE:
                                     process_batch(current_batch, profile_dir, current_platform_exec)
@@ -536,6 +546,7 @@ def run_batched_discovery(profile_path: str):
                             else:
                                 print(f"     [FAILED. Score: {score}%]", flush=True)
                                 processed_ledger.add(url.lower())
+                                ctx.add_to_processed_ledger(url.lower(), status="low_score", metadata={"title": title, "company": company, "score": score})
                                 
                             if applied_count >= max_applies:
                                 break
@@ -581,6 +592,12 @@ def run_batched_discovery(profile_path: str):
                     print(f" Config updated atomically. Next discovery cycle will search with expanded target keywords.\n", flush=True)
         except Exception as starvation_err:
             logger.warning(f"Notice during starvation analysis: {starvation_err}")
+
+    # Advance search cycle for next run
+    try:
+        ai.advance_search_cycle()
+    except Exception as e:
+        logger.warning(f"Notice advancing search cycle: {e}")
 
     try:
         if discovery_page and not discovery_page.is_closed():

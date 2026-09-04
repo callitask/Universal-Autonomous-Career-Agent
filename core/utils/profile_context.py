@@ -55,6 +55,8 @@ class ProfileContext:
         self.manifest_path = self.output_dir / "search_manifest.json"
         self.tracker_path = self.output_dir / "applications_tracker.csv"
         self.saved_external_path = self.output_dir / "saved_external_jobs.json"
+        self.cognitive_profile_path = self.output_dir / "cognitive_profile.json"
+        self.ledger_path = self.output_dir / "processed_ledger.json"
 
         # 3. Ensure Output Directories Exist
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -121,6 +123,68 @@ class ProfileContext:
         """Refreshes self.config from disk."""
         self.config = self._load_config()
         return self.config
+
+    def load_cognitive_profile(self) -> Dict[str, Any]:
+        """Loads cognitive_profile.json safely if present."""
+        if not self.cognitive_profile_path.exists():
+            return {}
+        try:
+            with open(self.cognitive_profile_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[ProfileContext] Notice: Failed to parse {self.cognitive_profile_path.name}: {e}")
+            return {}
+
+    def save_cognitive_profile(self, data: Dict[str, Any]) -> None:
+        """Persists cognitive_profile.json ATOMICALLY."""
+        try:
+            tmp_path = self.cognitive_profile_path.with_name(self.cognitive_profile_path.name + ".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+            os.replace(tmp_path, self.cognitive_profile_path)
+        except Exception as e:
+            print(f"[ProfileContext] Error saving cognitive profile atomically: {e}")
+
+    def load_processed_ledger(self) -> set:
+        """Loads set of processed URLs/titles across multi-session executions."""
+        ledger = set()
+        if self.ledger_path.exists():
+            try:
+                with open(self.ledger_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        ledger.update([str(x).lower().strip() for x in data if x])
+                    elif isinstance(data, dict):
+                        ledger.update([str(k).lower().strip() for k in data.keys() if k])
+            except Exception as e:
+                print(f"[ProfileContext] Notice: Failed to load ledger: {e}")
+        return ledger
+
+    def save_processed_ledger(self, ledger: set) -> None:
+        """Atomically persists processed ledger set to disk."""
+        try:
+            tmp_path = self.ledger_path.with_name(self.ledger_path.name + ".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(sorted(list(ledger)), f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, self.ledger_path)
+        except Exception as e:
+            print(f"[ProfileContext] Error saving ledger atomically: {e}")
+
+    def add_to_processed_ledger(
+        self,
+        item: str,
+        status: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> None:
+        """Adds a single URL or title to the persistent ledger."""
+        if not item:
+            return
+        item_clean = str(item).lower().strip()
+        ledger = self.load_processed_ledger()
+        if item_clean not in ledger:
+            ledger.add(item_clean)
+            self.save_processed_ledger(ledger)
 
     @property
     def candidate(self) -> Dict[str, Any]:

@@ -514,18 +514,14 @@ class ChatbotResolver:
         success_markers = [
             "applied successfully",
             "application has been submitted",
-            "thank you for applying",
             "your application has reached",
             "successfully applied",
             "application submitted",
-            "you have applied",
-            "application sent",
+            "application sent to recruiter",
             "responses recorded",
-            "profile shared",
-            "thank you",
-            "reached the recruiter",
-            "applied on",
-            "applied to"
+            "responses have been recorded",
+            "profile shared with recruiter",
+            "has reached the recruiter"
         ]
         
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
@@ -534,6 +530,7 @@ class ChatbotResolver:
             for marker in success_markers:
                 if marker in drawer_text:
                     return True, f"Detected success marker in drawer: '{marker}'"
+            return False, ""
 
         page_text = self.page.locator("body").inner_text().lower()
         for marker in success_markers:
@@ -767,10 +764,53 @@ class ApplicationEngine:
             iteration += 1
             page.wait_for_timeout(1500)
             
+            # 1. Platform rejection banner detection
+            rejection_markers = [
+                "not accepted due to incomplete information",
+                "application was not accepted",
+                "application not accepted",
+                "unable to apply",
+                "please answer all mandatory questions",
+                "could not be submitted"
+            ]
+            page_content = ""
+            try:
+                page_content = page.locator("body").inner_text().lower()
+            except Exception:
+                pass
+
+            rejected_msg = next((rm for rm in rejection_markers if rm in page_content), None)
+            if rejected_msg:
+                log_step("REJECTED_PLATFORM", f"Naukri rejected application: '{rejected_msg}'. Terminating screening loop.")
+                qa_history.append({
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "question": "[PLATFORM_REJECTION_BANNER]",
+                    "answer": f"Platform rejected: {rejected_msg}",
+                    "control_type": "REJECTED_BANNER"
+                })
+                try:
+                    with open(qa_log_path, "w", encoding="utf-8") as f:
+                        json.dump(qa_history, f, indent=2)
+                except Exception:
+                    pass
+                return "FAILED_PLATFORM_REJECTED"
+
+            # 2. Completion confirmation detection
             is_done, done_msg = resolver.check_completion_status()
             if is_done:
                 log_step("SUCCESS", f"Application Completed! {done_msg}")
                 return "APPLIED_CHATBOT"
+
+            # 3. Premature drawer closure detection
+            if not resolver.is_drawer_open():
+                page.wait_for_timeout(1000)
+                if not resolver.is_drawer_open():
+                    is_done, done_msg = resolver.check_completion_status()
+                    if is_done:
+                        log_step("SUCCESS", f"Application Completed! {done_msg}")
+                        return "APPLIED_CHATBOT"
+                    log_step("DRAWER_CLOSED", "Chatbot drawer closed or unmounted prematurely. Aborting screening loop.")
+                    return "DRAWER_CLOSED"
 
             active_q, filtered_greeting = resolver.extract_active_question()
             
@@ -998,6 +1038,11 @@ class ApplicationEngine:
                 self.stats["skipped"] += 1
             else:
                 self.stats["failed"] += 1
+                failure_reason = "Application could not be committed or drawer failed"
+                if status == "FAILED_PLATFORM_REJECTED":
+                    failure_reason = "Platform rejected application banner (incomplete screening responses)"
+                elif status == "DRAWER_CLOSED":
+                    failure_reason = "Chatbot drawer closed or unmounted prematurely"
                 self.record_tracker_entry({
                     "company": company,
                     "job_title": job_title,
@@ -1005,7 +1050,7 @@ class ApplicationEngine:
                     "url": job.get("url"),
                     "score": job.get("score") or job.get("match_score", "N/A"),
                     "status": "FAILED",
-                    "notes": "Application could not be committed or drawer failed"
+                    "notes": failure_reason
                 })
             
             time.sleep(2.0)
