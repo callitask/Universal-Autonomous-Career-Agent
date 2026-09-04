@@ -70,11 +70,30 @@ class MatchResult(tuple):
             raise KeyError(f"Invalid key: {item}")
         return super().__getitem__(item)
 
+    def __contains__(self, key):
+        if isinstance(key, str):
+            return key in ("score", "reasoning", "matching_skills", "missing_skills")
+        return super().__contains__(key)
+
     def get(self, key: str, default=None):
         try:
             return self[key]
         except KeyError:
             return default
+
+    def keys(self):
+        return ["score", "reasoning", "matching_skills", "missing_skills"]
+
+    def values(self):
+        return [self.score, self.reasoning, self.matching_skills, self.missing_skills]
+
+    def items(self):
+        return [
+            ("score", self.score),
+            ("reasoning", self.reasoning),
+            ("matching_skills", self.matching_skills),
+            ("missing_skills", self.missing_skills)
+        ]
 
 
 class AIClient:
@@ -677,87 +696,7 @@ Return STRICTLY a JSON object:
             else:
                 missing_skills.append(s_clean)
 
-        # 2.1 Dual-Brain LLM Route (If Gemini API client is operational)
-        if self.gemini_client:
-            try:
-                llm_prompt = f"""You are an elite talent recruiter evaluating whether a candidate genuinely qualifies for this job.
-CANDIDATE PROFILE:
-Current Title: {cand.get('current_title', '')}
-Total Experience: {cand_exp} years
-Key Skills: {json.dumps(skills_dict)}
-Master Resume Excerpt:
-{resume_md[:1800]}
-
-JOB TO EVALUATE:
-Title: {job_title}
-Job Description:
-{job_description[:2500]}
-
-EVALUATION CRITERIA:
-1. Title & Domain Alignment (0-35 points)
-2. Factual Skill Match (0-45 points, strictly requiring real overlap with candidate actual skills)
-3. Experience & Seniority Compatibility (0-20 points)
-4. Passing threshold is strictly 60 points. A score below 60 means candidate should NOT apply.
-
-OUTPUT FORMAT:
-Respond ONLY with a valid JSON object:
-{{
-  "score": <integer 0-100>,
-  "reasoning": "<concise 1-2 sentence explanation>",
-  "matching_skills": ["<skill1>", "<skill2>"],
-  "missing_skills": ["<skill1>", "<skill2>"]
-}}"""
-                raw_llm = ""
-                if hasattr(self.gemini_client, "models"):
-                    resp = self.gemini_client.models.generate_content(
-                        model=kwargs.get("model", "gemini-2.5-flash"),
-                        contents=llm_prompt
-                    )
-                    if resp and resp.text:
-                        raw_llm = resp.text.strip()
-                elif hasattr(self.gemini_client, "generate_content"):
-                    resp = self.gemini_client.generate_content(llm_prompt)
-                    if resp and resp.text:
-                        raw_llm = resp.text.strip()
-
-                if raw_llm:
-                    parsed_match = self._parse_json_match_result(raw_llm)
-                    if parsed_match:
-                        return parsed_match
-            except Exception as e:
-                print(f"[AI CLIENT] Gemini evaluation notice ({e}). Checking AG 2.0 IPC.", flush=True)
-
-        # 2.2 Zero-API Antigravity 2.0 Cognitive IPC Route
-        # If enabled or in zero-API mode, let AG 2.0 evaluate with human-level reasoning
-        enable_ipc_eval = kwargs.get("enable_ipc", True)
-        if enable_ipc_eval and not self.gemini_client:
-            ipc_eval_prompt = f"""Evaluate candidate qualification for this job posting.
-CANDIDATE:
-Title: {cand.get('current_title', '')}
-Experience: {cand_exp} years
-Domain Skills: {matched_skills[:10]}
-Resume Excerpt:
-{resume_md[:1500]}
-
-JOB:
-Title: {job_title}
-Description:
-{job_description[:2000]}
-
-Score from 0 to 100 in strict JSON:
-{{"score": <int 0-100>, "reasoning": "<1-2 sentence rationale>", "matching_skills": [<skills>], "missing_skills": [<skills>]}}"""
-
-            ipc_res = self._fallback_antigravity_ipc(
-                prompt=ipc_eval_prompt,
-                question=f"Evaluate Job Fit: {job_title}",
-                control_type="JSON",
-                task_type="JOB_EVALUATION"
-            )
-            parsed_ipc = self._parse_json_match_result(ipc_res)
-            if parsed_ipc:
-                return parsed_ipc
-
-        # 2.3 Calibrated Deterministic Factual Scoring (Local Fallback)
+        # 2.1 Calibrated Deterministic Factual Scoring (Runs First in Zero-API Mode)
         # Component A: Title/Domain Alignment (0 - 35 points)
         if matched_target_phrase:
             title_score = 35
@@ -808,6 +747,91 @@ Score from 0 to 100 in strict JSON:
                 f"Matched {len(matched_core_skills)} core skills ({skill_score}/45), title score {title_score}/35."
             )
 
+        # 2.2 Dual-Brain LLM Route (If Gemini API client is operational)
+        if self.gemini_client:
+            try:
+                llm_prompt = f"""You are an elite talent recruiter evaluating whether a candidate genuinely qualifies for this job.
+CANDIDATE PROFILE:
+Current Title: {cand.get('current_title', '')}
+Total Experience: {cand_exp} years
+Key Skills: {json.dumps(skills_dict)}
+Master Resume Excerpt:
+{resume_md[:1800]}
+
+JOB TO EVALUATE:
+Title: {job_title}
+Job Description:
+{job_description[:2500]}
+
+EVALUATION CRITERIA:
+1. Title & Domain Alignment (0-35 points)
+2. Factual Skill Match (0-45 points, strictly requiring real overlap with candidate actual skills)
+3. Experience & Seniority Compatibility (0-20 points)
+4. Passing threshold is strictly 60 points. A score below 60 means candidate should NOT apply.
+
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object:
+{{
+  "score": <integer 0-100>,
+  "reasoning": "<concise 1-2 sentence explanation>",
+  "matching_skills": ["<skill1>", "<skill2>"],
+  "missing_skills": ["<skill1>", "<skill2>"]
+}}"""
+                raw_llm = ""
+                if hasattr(self.gemini_client, "models"):
+                    resp = self.gemini_client.models.generate_content(
+                        model=kwargs.get("model", "gemini-2.5-flash"),
+                        contents=llm_prompt
+                    )
+                    if resp and resp.text:
+                        raw_llm = resp.text.strip()
+                elif hasattr(self.gemini_client, "generate_content"):
+                    resp = self.gemini_client.generate_content(llm_prompt)
+                    if resp and resp.text:
+                        raw_llm = resp.text.strip()
+
+                if raw_llm:
+                    parsed_match = self._parse_json_match_result(raw_llm)
+                    if parsed_match:
+                        return parsed_match
+            except Exception as e:
+                print(f"[AI CLIENT] Gemini evaluation notice ({e}). Falling back to calibrated scoring.", flush=True)
+
+        # 2.3 Gated Antigravity 2.0 Cognitive IPC Route (Borderline 40-65% Window Only)
+        # Clear rejections (< 40%) and clear qualifications (>= 60%, when score > 65%) resolve instantly
+        enable_ipc_eval = kwargs.get("enable_ipc", True)
+        if enable_ipc_eval and not self.gemini_client and (40 <= total_score <= 65):
+            ipc_eval_prompt = f"""Evaluate candidate qualification for this job posting.
+The candidate scored a borderline {total_score}% based on factual keyword matching (borderline 40-65% range).
+Please arbitrate whether this role genuinely fits the candidate's background.
+
+CANDIDATE:
+Title: {cand.get('current_title', '')}
+Experience: {cand_exp} years
+Baseline Deterministic Score: {total_score}% (Borderline 40-65% Window)
+Domain Skills: {matched_skills[:10]}
+Resume Excerpt:
+{resume_md[:1500]}
+
+JOB:
+Title: {job_title}
+Description:
+{job_description[:2000]}
+
+Score from 0 to 100 in strict JSON:
+{{"score": <int 0-100>, "reasoning": "<1-2 sentence rationale>", "matching_skills": [<skills>], "missing_skills": [<skills>]}}"""
+
+            ipc_res = self._fallback_antigravity_ipc(
+                prompt=ipc_eval_prompt,
+                question=f"Evaluate Job Fit: {job_title} ({total_score}%)",
+                control_type="JSON",
+                task_type="JOB_EVALUATION"
+            )
+            parsed_ipc = self._parse_json_match_result(ipc_res)
+            if parsed_ipc:
+                return parsed_ipc
+
+        # 2.4 Return Calibrated Factual MatchResult
         return MatchResult(
             score=total_score,
             reasoning=reasoning,
