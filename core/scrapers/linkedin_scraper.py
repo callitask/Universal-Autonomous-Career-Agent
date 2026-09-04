@@ -7,7 +7,7 @@ class LinkedInScraper(JobBoardScraper):
     def build_urls(self):
         urls = []
         kw_str = quote_plus(" ".join(self.ctx.target_keywords[:4]))
-        for loc in (self.ctx.target_locations or ["India"]):
+        for loc in (self.ctx.target_locations or []):
             urls.append((f"https://www.linkedin.com/jobs/search/?f_AL=true&keywords={kw_str}&location={quote_plus(loc)}", loc))
         return urls
 

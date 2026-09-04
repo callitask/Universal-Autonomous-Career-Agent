@@ -231,9 +231,8 @@ Return STRICTLY a JSON object with this exact schema:
         GENERIC_SOFT_SKILLS = [
             "analytical", "problem solving", "conceptual", "communication", "written", "verbal",
             "teamwork", "leadership", "management", "documentation", "presentation",
-            "process improvement", "automation", "reporting", "planning",
-            "strategy", "strategic planning", "due diligence", "recruitment", "risk mitigation",
-            "internal controls", "accuracy", "detail", "reasoning", "prioritization",
+            "process improvement", "reporting", "planning",
+            "strategy", "strategic planning", "accuracy", "detail", "reasoning", "prioritization",
             "negotiation", "organizational", "interpersonal", "coordination"
         ]
 
@@ -616,11 +615,25 @@ Return STRICTLY a JSON object:
             all_targets.append(current_title)
 
         matched_target_phrase = False
+        ALLOWED_PREFIXES = {
+            "senior", "lead", "assistant", "associate", "deputy", "junior",
+            "principal", "staff", "sr", "jr", "trainee", "intern", "team",
+            "group", "general", "global", "regional", "corporate", "divisional", "head", "chief"
+        }
         for target in all_targets:
             target_clean = target.lower().strip()
-            if target_clean and re.search(rf'\b{re.escape(target_clean)}\b', title_lower):
+            if not target_clean:
+                continue
+            if target_clean == title_lower:
                 matched_target_phrase = True
                 break
+            match = re.search(rf'\b{re.escape(target_clean)}\b', title_lower)
+            if match:
+                prefix_text = title_lower[:match.start()].strip()
+                prefix_words = [w for w in re.split(r'[\s/,-]+', prefix_text) if w]
+                if all(pw in ALLOWED_PREFIXES for pw in prefix_words):
+                    matched_target_phrase = True
+                    break
 
         generic_title_stopwords = {
             "and", "for", "the", "with", "lead", "senior", "junior", "manager",
@@ -690,7 +703,6 @@ Return STRICTLY a JSON object:
                     )
 
         # 1.4 Incompatible Industry Gate with Domain Override (Defect 3 Fix)
-        # Bypasses vertical exclusion if candidate domain function is present in job title
         cog_prof = self.profile_context.load_cognitive_profile() if self.profile_context else None
         if not cog_prof and self.profile_context:
             cog_prof = self.synthesize_cognitive_profile()
@@ -698,25 +710,15 @@ Return STRICTLY a JSON object:
         incompatible_verticals = cog_prof.get("incompatible_verticals", {}) if cog_prof else {}
         cand_domain = cog_prof.get("candidate_domain", "target domain") if cog_prof else "target domain"
 
-        cand_domain_words = set()
-        for kw in target_keywords:
-            for w in re.findall(r'[a-zA-Z]{4,}', kw.lower()):
-                if w not in generic_title_stopwords:
-                    cand_domain_words.add(w)
-
-        title_has_cand_domain = any(
-            (cdw in title_lower or (len(cdw) >= 4 and any(tw.startswith(cdw[:5]) for tw in title_tokens)))
-            for cdw in cand_domain_words
-        )
-
-        # If title has candidate domain, NEVER reject due to cross-functional tooling in JD!
-        if not title_has_cand_domain:
+        # If title matches candidate target phrase cleanly, bypass vertical exclusion.
+        # Otherwise, reject if an incompatible vertical marker is present in title.
+        if not matched_target_phrase:
             for vertical_name, v_markers in incompatible_verticals.items():
                 title_marker = next((vm for vm in v_markers if re.search(rf'\b{re.escape(vm)}\b', title_lower)), None)
                 if title_marker:
                     return MatchResult(
                         score=0,
-                        reasoning=f"Rejected: Out-of-domain vertical '{vertical_name}' ('{title_marker}') detected in job title with no candidate domain ({cand_domain}) function.",
+                        reasoning=f"Rejected: Out-of-domain vertical '{vertical_name}' ('{title_marker}') detected in job title with no exact target match for candidate ({cand_domain}).",
                         matching_skills=[],
                         missing_skills=[f"Target domain alignment (Not {vertical_name})"]
                     )
@@ -767,17 +769,49 @@ Return STRICTLY a JSON object:
 
         # Component B: Core Skill Matches (0 - 45 points)
         profile_soft_skills = set(s.lower().strip() for s in (cog_prof.get("generic_soft_skills", []) if cog_prof else []))
-        matched_core_skills = [s for s in matched_skills if s.lower().strip() not in profile_soft_skills]
+
+        # Build core technical skills pool: prioritize curated cognitive profile skills from resume.md
+        core_skills_pool = []
+        seen_core = set()
+        cog_core = cog_prof.get("core_domain_skills", []) if cog_prof else []
+        if cog_core:
+            for s in cog_core:
+                s_clean = s.strip()
+                if s_clean and s_clean.lower() not in seen_core and s_clean.lower() not in profile_soft_skills:
+                    seen_core.add(s_clean.lower())
+                    core_skills_pool.append(s_clean)
+        else:
+            for s in flat_skills:
+                s_clean = s.strip()
+                if s_clean and s_clean.lower() not in seen_core and s_clean.lower() not in profile_soft_skills:
+                    seen_core.add(s_clean.lower())
+                    core_skills_pool.append(s_clean)
+
+        matched_core_skills = []
+        for s in core_skills_pool:
+            if re.search(rf'\b{re.escape(s.lower())}\b', desc_lower):
+                matched_core_skills.append(s)
+
+        matched_soft_skills = []
+        for s in profile_soft_skills:
+            if re.search(rf'\b{re.escape(s)}\b', desc_lower):
+                matched_soft_skills.append(s)
 
         # Require at least 2 distinct core domain skills to award points
         if len(matched_core_skills) >= 6:
-            skill_score = 45
+            skill_score = 40
         elif len(matched_core_skills) >= 4:
-            skill_score = 35
+            skill_score = 30
         elif len(matched_core_skills) >= 2:
             skill_score = 20
+        elif len(matched_core_skills) == 1:
+            skill_score = 10
         else:
-            skill_score = 0
+            skill_score = 0  # Zero core domain skills = 0 points! Soft skills cannot substitute domain qualification.
+
+        # Soft skill bonus: only if candidate already demonstrated technical fit with at least 2 core domain skills
+        if len(matched_core_skills) >= 2 and len(matched_soft_skills) >= 2:
+            skill_score = min(45, skill_score + 5)
 
         # Component C: Experience & Seniority Compatibility (0 - 20 points)
         if exp_matches:
@@ -867,7 +901,7 @@ CANDIDATE:
 Title: {cand.get('current_title', '')}
 Experience: {cand_exp} years
 Baseline Deterministic Score: {total_score}% (Borderline 40-65% Window)
-Domain Skills: {matched_skills[:10]}
+Domain Skills: {matched_core_skills[:10]}
 Resume Excerpt:
 {resume_md[:1500]}
 
@@ -894,7 +928,7 @@ Score from 0 to 100 in strict JSON:
         return MatchResult(
             score=total_score,
             reasoning=reasoning,
-            matching_skills=matched_skills[:8],
+            matching_skills=matched_core_skills[:8],
             missing_skills=missing_skills[:5]
         )
 
@@ -1221,7 +1255,7 @@ INSTRUCTIONS:
             "senior", "junior", "assistant", "deputy", "head", "director", "vp",
             "intern", "trainee", "consultant", "professional", "staff", "principal",
             "expert", "coordinator", "representative", "analyst", "general", "group",
-            "team", "operations", "service", "services", "backend", "frontend", "sr", "jr"
+            "team", "operations", "service", "services", "sr", "jr"
         }
 
         for target in all_targets:

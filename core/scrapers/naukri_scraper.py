@@ -8,7 +8,7 @@ class NaukriScraper(JobBoardScraper):
         urls = []
         for kw in self.ctx.target_keywords[:3]:
             slug = "-".join(kw.lower().split())
-            for loc in (self.ctx.target_locations or ["india"]):
+            for loc in (self.ctx.target_locations or []):
                 loc_slug = loc.lower().replace(" ", "-")
                 urls.append((f"https://www.naukri.com/{slug}-jobs-in-{loc_slug}", loc, kw))
         return urls

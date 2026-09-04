@@ -31,7 +31,7 @@ def run_step(step_name, script_name, profile_arg):
 
 def main():
     parser = argparse.ArgumentParser(description="Continuous Universal Career Agent")
-    parser.add_argument("--profile", required=True, help="Profile path (e.g., profiles/bharat_pandey)")
+    parser.add_argument("--profile", required=True, help="Profile path (e.g., profiles/<profile_name>)")
     parser.add_argument("--analyze", action="store_true", help="Run AI Profile Analyzer to synthesize cognitive profile from resume")
     parser.add_argument("--sync-profile", action="store_true", help="Sync Naukri & LinkedIn profile info once")
     parser.add_argument("--delay", type=int, default=30, help="Seconds to sleep between full batch cycles")

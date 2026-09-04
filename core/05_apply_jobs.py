@@ -232,49 +232,53 @@ class ChatbotResolver:
         return "UNKNOWN"
 
     def get_radio_options(self) -> List[str]:
-        options = self.page.evaluate("""() => {
-            const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
-            const opts = new Set();
-            
-            // Strategy A: Explicit Radio Inputs
-            const radios = drawer.querySelectorAll('input[type="radio"], input[type="checkbox"]');
-            if (radios.length > 0) {
-                radios.forEach(r => {
-                    if (r.closest('.chipMsg')) return;
-                    if (r.id) {
-                        const label = drawer.querySelector(`label[for="${r.id}"]`);
-                        if (label && label.innerText) {
-                            opts.add(label.innerText.trim());
+        try:
+            options = self.page.evaluate(r"""() => {
+                const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
+                const opts = new Set();
+                
+                // Strategy A: Explicit Radio Inputs
+                const radios = drawer.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+                if (radios.length > 0) {
+                    radios.forEach(r => {
+                        if (r.closest('.chipMsg')) return;
+                        if (r.id) {
+                            const label = drawer.querySelector(`label[for="${r.id}"]`);
+                            if (label && label.innerText) {
+                                opts.add(label.innerText.trim());
+                                return;
+                            }
+                        }
+                        if (r.nextElementSibling && (r.nextElementSibling.tagName === 'LABEL' || r.nextElementSibling.tagName === 'SPAN')) {
+                            opts.add(r.nextElementSibling.innerText.trim());
                             return;
                         }
-                    }
-                    if (r.nextElementSibling && (r.nextElementSibling.tagName === 'LABEL' || r.nextElementSibling.tagName === 'SPAN')) {
-                        opts.add(r.nextElementSibling.innerText.trim());
-                        return;
-                    }
-                    if (r.value && r.value.length > 0 && r.value !== 'on') {
-                        opts.add(r.value.trim());
+                        if (r.value && r.value.length > 0 && r.value !== 'on') {
+                            opts.add(r.value.trim());
+                        }
+                    });
+                }
+                
+                // Strategy B: Choice Chips and Custom Radio Wrappers
+                const chips = drawer.querySelectorAll(
+                    '.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"], ' +
+                    'label.ssrc__label, div.customRadio, div.togglePill, button.toggle, div.yesNoToggle, ' +
+                    'label[class*="radio"], ul.ChoiceList li'
+                );
+                chips.forEach(c => {
+                    if (c.closest('.chipMsg') || c.classList.contains('chipMsg')) return;
+                    const txt = c.innerText.trim();
+                    if (txt && txt.length < 150 && !/[\r\n]/.test(txt)) {
+                        opts.add(txt);
                     }
                 });
-            }
-            
-            // Strategy B: Choice Chips and Custom Radio Wrappers
-            const chips = drawer.querySelectorAll(
-                '.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"], ' +
-                'label.ssrc__label, div.customRadio, div.togglePill, button.toggle, div.yesNoToggle, ' +
-                'label[class*="radio"], ul.ChoiceList li'
-            );
-            chips.forEach(c => {
-                if (c.closest('.chipMsg') || c.classList.contains('chipMsg')) return;
-                const txt = c.innerText.trim();
-                if (txt && txt.length < 150 && !txt.includes('\n')) {
-                    opts.add(txt);
-                }
-            });
-            
-            return Array.from(opts).filter(Boolean);
-        }""")
-        return options
+                
+                return Array.from(opts).filter(Boolean);
+            }""")
+            return options or []
+        except Exception as e:
+            log_step("WARNING", f"Error evaluating radio options: {e}")
+            return []
 
     def resolve_answer(self, question: str, options: Optional[List[str]] = None, control_type: str = "CONTENTEDITABLE") -> str:
         q_clean = question.strip()
@@ -346,14 +350,15 @@ class ChatbotResolver:
                     el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
                 }
                 
-                const btn = document.querySelector('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .sendMsg');
+                const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]');
+                const btn = drawer ? drawer.querySelector('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .sendMsg') : document.querySelector('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .sendMsg');
                 if (btn) {
                     btn.classList.remove('disabled');
                     btn.removeAttribute('disabled');
-                } else {
-                    const btns = document.querySelectorAll('button');
+                } else if (drawer) {
+                    const btns = drawer.querySelectorAll('button');
                     for (let b of btns) {
-                        if ((b.innerText || '').toLowerCase().includes('save')) {
+                        if ((b.innerText || '').toLowerCase().includes('save') || (b.innerText || '').toLowerCase().includes('send')) {
                             b.classList.remove('disabled');
                             b.removeAttribute('disabled');
                             break;
@@ -366,23 +371,31 @@ class ChatbotResolver:
             self.page.evaluate(js_dispatch, str(answer))
             human_jitter(150, 300)
 
+            drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='_chatbotContainer'], div[class*='chatbot_Drawer']").first
             send_btn_selectors = [
                 ".sendMsgbtn_container .sendMsg",
                 "div[id*='sendMsg'] .sendMsg",
                 ".sendMsgbtn_container div.send .sendMsg",
                 "span.chatBot-send",
                 "span[class*='send']",
-                "button:has-text('Save')",
-                "button:has-text('Submit')"
+                ".chatbot_SendMessageContainer button"
             ]
             
             clicked = False
             for btn_sel in send_btn_selectors:
-                btn_loc = self.page.locator(btn_sel).first
+                btn_loc = drawer.locator(btn_sel).first
                 if btn_loc.count() > 0 and btn_loc.is_visible():
                     btn_loc.click(force=True)
                     clicked = True
                     break
+
+            if not clicked:
+                for btn_sel in [".sendMsgbtn_container .sendMsg", "div[id*='sendMsg'] .sendMsg"]:
+                    btn_loc = drawer.locator(btn_sel).first
+                    if btn_loc.count() > 0 and btn_loc.is_visible():
+                        btn_loc.click(force=True)
+                        clicked = True
+                        break
 
             if not clicked:
                 self.page.keyboard.press("Enter")
@@ -396,71 +409,56 @@ class ChatbotResolver:
     def execute_chip_selection(self, matched_option: str) -> bool:
         self.scroll_drawer_to_bottom()
         clean_target = str(matched_option).strip()
-        
-        clicked = self.page.evaluate("""(targetText) => {
-            const cleanTarget = targetText.toLowerCase().trim();
-            const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
-            
-            const labels = drawer.querySelectorAll('label');
-            for (let lbl of labels) {
-                if (lbl.closest('.chipMsg') || lbl.classList.contains('chipMsg')) continue;
-                if (lbl.innerText.toLowerCase().trim() === cleanTarget) {
-                    lbl.click();
-                    const radioId = lbl.getAttribute('for');
-                    if (radioId) {
-                        const radioInput = document.getElementById(radioId);
-                        if (radioInput) {
-                            radioInput.checked = true;
-                            radioInput.dispatchEvent(new Event('change', {bubbles: true}));
-                        }
-                    }
-                    return true;
-                }
-            }
-            
-            const elements = drawer.querySelectorAll('span, div, button, label, a');
-            for (let el of elements) {
-                if (el.closest('.chipMsg') || el.classList.contains('chipMsg')) continue;
-                if (el.children.length > 2) continue;
-                let text = (el.innerText || '').toLowerCase().trim();
-                
-                if (text === cleanTarget) {
-                    el.click();
-                    return true;
-                }
-            }
-            return false;
-        }""", clean_target)
+        drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
 
+        # Priority 1: Native Playwright locator click (dispatches real OS mouse events)
+        clicked = False
+        try:
+            escaped_text = clean_target.replace("'", "\\'")
+            chip_loc = drawer.locator(
+                f"button:has-text('{escaped_text}'), label:has-text('{escaped_text}'), "
+                f"div.clickableChip:has-text('{escaped_text}'), div.choiceChip:has-text('{escaped_text}'), "
+                f"div.radioItem:has-text('{escaped_text}'), span:has-text('{escaped_text}')"
+            ).first
+            if chip_loc.count() > 0 and chip_loc.is_visible():
+                chip_loc.click(force=True)
+                clicked = True
+        except Exception:
+            pass
+
+        # Priority 2: Scoped DOM evaluate click if Playwright native locator didn't resolve
         if not clicked:
-            try:
-                escaped_text = clean_target.replace("'", "\\'")
-                drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
-                chip_loc = drawer.locator(
-                    f"button:has-text('{escaped_text}'), label:has-text('{escaped_text}'), "
-                    f"div.clickableChip:has-text('{escaped_text}'), div.choiceChip:has-text('{escaped_text}'), "
-                    f"div.radioItem:has-text('{escaped_text}'), span:has-text('{escaped_text}')"
-                ).first
-                if chip_loc.count() > 0 and chip_loc.is_visible():
-                    chip_loc.click(force=True)
-                    clicked = True
-            except Exception:
-                pass
+            clicked = self.page.evaluate(r"""(targetText) => {
+                const cleanTarget = targetText.toLowerCase().trim();
+                const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]');
+                if (!drawer) return false;
 
-        if clicked:
-            self.page.wait_for_timeout(600)
-            self.page.evaluate("""() => {
-                const btns = document.querySelectorAll('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .footerWrapper button, button');
-                for (let btn of btns) {
-                    let t = (btn.innerText || '').toLowerCase();
-                    if (t.includes('save') || t.includes('next') || t.includes('submit')) {
-                        btn.click();
+                const labels = drawer.querySelectorAll('label');
+                for (let lbl of labels) {
+                    if (lbl.closest('.chipMsg') || lbl.classList.contains('chipMsg')) continue;
+                    if (lbl.innerText.toLowerCase().trim() === cleanTarget) {
+                        lbl.click();
+                        return true;
+                    }
+                }
+
+                const elements = drawer.querySelectorAll('span, div, button, label, a');
+                for (let el of elements) {
+                    if (el.closest('.chipMsg') || el.classList.contains('chipMsg')) continue;
+                    if (el.children.length > 2) continue;
+                    let text = (el.innerText || '').toLowerCase().trim();
+
+                    if (text === cleanTarget) {
+                        el.click();
                         return true;
                     }
                 }
                 return false;
-            }""")
-            self.page.wait_for_timeout(800)
+            }""", clean_target)
+
+        if clicked:
+            # Radio chips are self-submitting upon click. Never trigger empty text area send buttons.
+            self.page.wait_for_timeout(1200)
             return True
 
         log_step("WARNING", f"Could not click element for option: '{matched_option}'")

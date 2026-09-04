@@ -379,7 +379,8 @@ def run_batched_discovery(profile_path: str):
                             query_kw = urllib.parse.quote(kw)
                             query_loc = urllib.parse.quote(primary_loc)
                             start_param = (page_num - 1) * 25
-                            query_url = f"https://www.linkedin.com/jobs/search/?keywords={query_kw}&location={query_loc}&f_AL=true&f_TPR=r259200&start={start_param}"
+                            linkedin_tpr_seconds = job_age_days * 86400
+                            query_url = f"https://www.linkedin.com/jobs/search/?keywords={query_kw}&location={query_loc}&f_AL=true&f_TPR=r{linkedin_tpr_seconds}&start={start_param}"
                             card_selector = "li.jobs-search-results__list-item, div.job-card-container"
                         else:
                             continue
