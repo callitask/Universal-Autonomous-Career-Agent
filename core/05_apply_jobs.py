@@ -892,19 +892,33 @@ class ApplicationEngine:
                 json.dump(records, f, indent=2)
             log_substep("EXTERNAL", f"Saved redirect posting to {ext_file.name}")
 
-    def apply_single_job(self, page, job: Dict[str, Any]) -> str:
+    def apply_single_job(self, page, job: Dict[str, Any], already_at_url: bool = False) -> str:
         url = job.get("url", "")
         title = job.get("job_title") or job.get("title", "Job Role")
         company = job.get("company", "Employer")
         platform = job.get("platform", "naukri").lower()
         
         log_section(f"Processing Application: [{platform.upper()}] {company} | {title}")
-        log_step("NAVIGATE", f"Opening Job URL: {url}")
         
         try:
             page.bring_to_front()
-            page.goto(url, wait_until="domcontentloaded", timeout=45000)
-            page.wait_for_timeout(2000)
+            if not already_at_url or not page.url or page.url == "about:blank":
+                log_step("NAVIGATE", f"Opening Job URL: {url}")
+                page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            else:
+                log_step("NAVIGATE", f"Reusing already open job tab: {page.url}")
+            
+            # Resilient wait for React hydration and main action buttons
+            try:
+                page.wait_for_selector(
+                    "button#apply-button, button.apply-button, button:has-text('Apply'), "
+                    "button:has-text('Already Applied'), span:has-text('Already Applied'), "
+                    "button:has-text('Apply on company website'), a:has-text('Apply on company website'), "
+                    "#company-site-button",
+                    timeout=8000
+                )
+            except Exception:
+                page.wait_for_timeout(1500)
         except Exception as e:
             log_step("ERROR", f"Navigation timeout or failure: {e}")
             return "FAILED"
@@ -955,38 +969,77 @@ class ApplicationEngine:
         apply_btn_selectors = [
             "button#apply-button",
             "button.apply-button",
+            "button.styles_apply-button__uJI3A",
             "button:has-text('Apply on Naukri')",
             "button:has-text('Apply')",
             "div.apply-button-container button",
-            ".styles_jds-apply-button__WbS2i button"
+            ".styles_jds-apply-button__WbS2i button",
+            ".styles_jds-apply-button__WbS2i"
         ]
         
+        # Attach popup listener to capture application questionnaires opening in new tabs
+        popup_tabs = []
+        def handle_popup(new_page):
+            popup_tabs.append(new_page)
+        
+        try:
+            page.context.on("page", handle_popup)
+        except Exception:
+            pass
+
         apply_clicked = False
         for sel in apply_btn_selectors:
             loc = page.locator(sel).first
-            if loc.count() > 0 and loc.first.is_visible():
+            if loc.count() > 0 and loc.is_visible():
                 txt = loc.inner_text().strip()
                 log_step("CLICK", f"Clicking native apply trigger: '{txt}' ({sel})")
-                loc.click(force=True)
+                try:
+                    loc.scroll_into_view_if_needed(timeout=3000)
+                except Exception:
+                    pass
+                loc.click()
                 apply_clicked = True
                 break
 
         if not apply_clicked:
             log_step("WARNING", "No visible native apply trigger found on page.")
+            try:
+                page.context.remove_listener("page", handle_popup)
+            except Exception:
+                pass
             return "APPLY_BUTTON_NOT_FOUND"
 
-        resolver = ChatbotResolver(page, self.ctx, self.ai)
+        target_page = page
+        resolver = ChatbotResolver(target_page, self.ctx, self.ai)
         drawer_opened = False
         applied_1click = False
         success_msg = ""
 
-        for _ in range(16):
+        # Await drawer or 1-click confirmation across primary page and any opened popups
+        for _ in range(20):
             page.wait_for_timeout(500)
+            
+            # Check if popup was opened and contains questionnaire or redirect
+            if popup_tabs:
+                for p_tab in list(popup_tabs):
+                    try:
+                        if not p_tab.is_closed():
+                            p_tab.bring_to_front()
+                            target_page = p_tab
+                            resolver = ChatbotResolver(target_page, self.ctx, self.ai)
+                            if resolver.is_drawer_open():
+                                drawer_opened = True
+                                break
+                    except Exception:
+                        pass
+                if drawer_opened:
+                    break
+
             if resolver.is_drawer_open():
                 drawer_opened = True
                 break
             
-            if "/myapply/saveApply" in page.url or "myapply/historypage" in page.url:
+            if "/myapply/saveApply" in target_page.url or "myapply/historypage" in target_page.url:
                 applied_1click = True
                 success_msg = "Redirected to Naukri success page"
                 break
@@ -1001,7 +1054,7 @@ class ApplicationEngine:
             ]
             for s_sel in success_selectors:
                 try:
-                    loc = page.locator(s_sel).first
+                    loc = target_page.locator(s_sel).first
                     if loc.count() > 0 and loc.is_visible():
                         applied_1click = True
                         success_msg = loc.inner_text().strip()[:50]
@@ -1012,9 +1065,14 @@ class ApplicationEngine:
             if applied_1click:
                 break
 
+        try:
+            page.context.remove_listener("page", handle_popup)
+        except Exception:
+            pass
+
         if drawer_opened:
             log_step("CHATBOT", "Interactive Chatbot Drawer opened! Entering screening loop...")
-            return self._handle_chatbot_loop(page, resolver, job)
+            return self._handle_chatbot_loop(target_page, resolver, job)
 
         if applied_1click:
             log_step("SUCCESS", f"1-Click Apply confirmed via DOM or URL redirect: {success_msg}")
@@ -1246,9 +1304,8 @@ class ApplicationEngine:
             log_step("INFO", "No evaluated jobs found in search_manifest.json to apply for.")
             return
 
-        log_step("QUEUE", f"Loaded {len(jobs_queue)} job postings from manifest.")
-        
-        page = self.browser_mgr.new_transient_page()
+        # Dynamically resolve tab per job or fallback to transient page
+        page = None
         applied_count = 0
         
         try:
@@ -1257,7 +1314,11 @@ class ApplicationEngine:
                     log_step("LIMIT", f"Reached target application batch limit of {max_applications}.")
                     break
                 
-                status = self.apply_single_job(page, job)
+                url = job.get("url", "")
+                page, already_at_url = self.browser_mgr.get_or_create_page_for_url(url)
+                if not page:
+                    page = self.browser_mgr.new_transient_page()
+                status = self.apply_single_job(page, job, already_at_url=already_at_url)
                 self.stats["total"] += 1
                 
                 company = job.get("company", "Unknown")
@@ -1317,7 +1378,8 @@ class ApplicationEngine:
                 
                 time.sleep(2.0)
         finally:
-            self.browser_mgr.close_page(page)
+            if page and not page.is_closed():
+                self.browser_mgr.close_page(page)
             self.browser_mgr.close_orphaned_blank_pages()
             self.browser_mgr.close()
 

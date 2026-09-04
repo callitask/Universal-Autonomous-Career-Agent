@@ -212,7 +212,7 @@ class ResumeTailorEngine:
         score = int((matched / len(jd_keywords)) * 100)
         return max(50, min(score, 98))
 
-    def reorder_bullets_by_jd(self, sections, jd_text):
+    def reorder_bullets_by_jd(self, sections, jd_text, highlight_bullets=None):
         jd_keywords = self.extract_jd_keywords(jd_text)
         compiled_kws = []
         for kw in jd_keywords:
@@ -223,35 +223,42 @@ class ResumeTailorEngine:
                 except Exception:
                     pass
 
+        clean_highlights = [h.lower().strip() for h in (highlight_bullets or []) if h and str(h).strip()]
+
         for section in sections:
             if len(section["bullets"]) > 1:
                 scored = []
                 for idx, b in enumerate(section["bullets"]):
-                    # Tokenized word-boundary check prevents substring collisions
+                    b_lower = b.lower()
+                    # Keyword density score
                     score = sum(1 for pat in compiled_kws if pat.search(b))
+                    # Brain highlight bonus: elevate designated achievement bullets to top
+                    for hl in clean_highlights:
+                        if hl in b_lower or (len(hl) > 20 and hl[:20] in b_lower):
+                            score += 10
+                            break
                     scored.append((score, idx, b))
                 # Stable sort descending by score
                 scored.sort(key=lambda x: (-x[0], x[1]))
                 section["bullets"] = [b for _, _, b in scored]
         return sections
 
-    def tailor_summary_and_competencies(self, sections, jd_text, master_resume_text):
+    def apply_targeted_diff(self, sections, tailored_diff, jd_text):
         """
-        Dynamically optimizes the Professional Summary and prioritizes Core Competencies
-        matching the JD requirements while strictly preserving factual accuracy (Zero Hallucination).
+        Applies targeted diffs (Summary, Prioritized Skills) directly into parsed template sections.
+        Preserves 100% of headers, employment history, dates, degrees, and formatting integrity.
         """
         jd_keywords = set(self.extract_jd_keywords(jd_text))
-        
+        prioritized_skills = [s.strip().lower() for s in (tailored_diff.get("prioritized_skills") or []) if s and str(s).strip()]
+        tailored_summary = tailored_diff.get("tailored_summary", "").strip()
+
         for section in sections:
             heading = section.get("heading", "").upper()
             
-            # 1. Tailor Professional Summary
+            # 1. Inject Tailored Professional Summary
             if "SUMMARY" in heading or "PROFILE" in heading:
-                if len(section["lines"]) > 0:
-                    orig_summary = " ".join([l.strip() for l in section["lines"] if l.strip()])
-                    tailored_data = self.ai.tailor_resume_content(jd_text, master_resume_text)
-                    if tailored_data.get("tailored_summary"):
-                        section["lines"] = [tailored_data["tailored_summary"]]
+                if tailored_summary and len(section["lines"]) > 0:
+                    section["lines"] = [tailored_summary]
 
             # 2. Prioritize Core Competencies / Technical Skills Table
             elif "COMPETENCIES" in heading or "SKILLS" in heading:
@@ -260,11 +267,18 @@ class ResumeTailorEngine:
                     if "|" in line:
                         parts = line.split("|")
                         if len(parts) >= 3:
-                            cat = parts[1].strip()
                             skills_str = parts[2].strip()
                             skills_list = [s.strip() for s in re.split(r'[,;]+', skills_str) if s.strip()]
-                            # Sort skills placing JD-matched skills first
-                            skills_list.sort(key=lambda s: 0 if any(re.search(rf'\b{re.escape(k)}\b', s.lower()) for k in jd_keywords) else 1)
+                            # Prioritize skills matched in brain's diff or JD keywords
+                            def skill_priority(s):
+                                s_low = s.lower()
+                                if any(ps in s_low for ps in prioritized_skills):
+                                    return 0
+                                if any(re.search(rf'\b{re.escape(k)}\b', s_low) for k in jd_keywords):
+                                    return 1
+                                return 2
+
+                            skills_list.sort(key=skill_priority)
                             new_skills_str = ", ".join(skills_list)
                             parts[2] = f" {new_skills_str} "
                             new_lines.append("|".join(parts))
@@ -298,8 +312,11 @@ class ResumeTailorEngine:
 
         template_md = self.resume_md_path.read_text(encoding="utf-8")
         sections = self.parse_resume_sections(template_md)
-        sections = self.tailor_summary_and_competencies(sections, jd_text, template_md)
-        reordered = self.reorder_bullets_by_jd(sections, jd_text)
+        
+        # Retrieve structured diff from AI Brain (or fast local deterministic engine)
+        tailored_diff = self.ai.tailor_resume_content(jd_text, template_md)
+        sections = self.apply_targeted_diff(sections, tailored_diff, jd_text)
+        reordered = self.reorder_bullets_by_jd(sections, jd_text, highlight_bullets=tailored_diff.get("highlight_bullets"))
         tailored_md = self.reassemble_markdown(reordered)
         
         jd_keywords = self.extract_jd_keywords(jd_text)

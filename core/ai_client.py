@@ -210,7 +210,8 @@ Return STRICTLY a JSON object with this exact schema:
             prompt=prompt,
             question="Synthesize Cognitive Profile Model from Resume",
             control_type="JSON",
-            task_type="PROFILE_SYNTHESIS"
+            task_type="PROFILE_SYNTHESIS",
+            timeout_seconds=5.0
         )
         if ipc_res:
             try:
@@ -418,13 +419,19 @@ Return STRICTLY a JSON object with this exact schema:
                 print(f"[AI CLIENT] Gemini API unavailable or rate-limited ({e}). Falling back to AG 2.0 File IPC.", flush=True)
 
         # 2. File-Based IPC Handshake for Antigravity 2.0
+        task_type = kwargs.get("task_type", "TEXT_GENERATION")
+        timeout_sec = kwargs.get("timeout_seconds")
+        if timeout_sec is None and task_type in ("RESUME_TAILORING", "JOB_EVALUATION", "STARVATION_EXPANSION", "PROFILE_SYNTHESIS"):
+            timeout_sec = 5.0
+
         ipc_res = self._fallback_antigravity_ipc(
             prompt=prompt,
             question=kwargs.get("question", prompt.split("\n")[0][:120].strip()),
             options=kwargs.get("options", None),
             control_type=kwargs.get("control_type", "TEXT"),
             max_characters=kwargs.get("max_characters", None),
-            task_type=kwargs.get("task_type", "TEXT_GENERATION")
+            task_type=task_type,
+            timeout_seconds=timeout_sec
         )
 
         if ipc_res and ipc_res.strip():
@@ -434,39 +441,90 @@ Return STRICTLY a JSON object with this exact schema:
 
     def tailor_resume_content(self, jd_text: str, master_resume_text: str) -> Dict[str, Any]:
         """
-        Synthesizes a targeted professional summary and prioritized core competencies
-        specifically tailored to the target Job Description while strictly preserving
-        100% factual accuracy from the candidate's master resume (Zero Hallucinations).
+        Synthesizes targeted replacement diffs (Summary, Prioritized Skills, Highlight Bullets)
+        tailored to the target Job Description while preserving 100% factual accuracy.
+        The brain supplies only targeted diffs; the script deterministically handles replacement.
         """
         prompt = f"""You are an elite executive resume strategist.
 Analyze the target Job Description and the candidate's Master Resume.
 TARGET JOB DESCRIPTION:
-{jd_text[:3000]}
+{jd_text[:2800]}
 
 CANDIDATE MASTER RESUME:
-{master_resume_text[:3500]}
+{master_resume_text[:3000]}
 
 INSTRUCTIONS:
-1. Synthesize an ATS-optimized Professional Summary (3-4 sentences) that directly highlights the candidate's real, factual background in relation to this specific job's core responsibilities and tech stack.
-2. Extract the top 12-16 most relevant Core Competencies / Technical Skills from the candidate's resume, ordered with the skills most demanded by this JD first.
-3. CRITICAL: PRESERVE ABSOLUTE FACTUAL TRUTH. DO NOT INVENT, FABRICATE, OR EXAGGERATE ANY DEGREE, COMPANY, TOOL, OR METRIC.
+1. Synthesize an ATS-optimized Professional Summary (3-4 sentences) highlighting the candidate's factual background for this job's core responsibilities.
+2. Select 5-8 Priority Skills directly from the candidate's resume that match this JD's requirements.
+3. Select 3-5 Highlight Bullets from the candidate's actual resume experience that best demonstrate qualification for this role.
+4. CRITICAL: PRESERVE 100% FACTUAL TRUTH. ZERO FABRICATION OR HALLUCINATION.
 
 Return STRICTLY a JSON object:
 {{
   "tailored_summary": "<polished 3-4 sentence factual summary>",
-  "prioritized_skills": ["<skill1>", "<skill2>", "<skill3>"]
+  "prioritized_skills": ["<skill1>", "<skill2>", "<skill3>", "<skill4>", "<skill5>"],
+  "highlight_bullets": ["<bullet 1 from resume>", "<bullet 2 from resume>", "<bullet 3 from resume>"]
 }}"""
 
         # Try Gemini or AG 2.0 IPC
-        raw = self.generate_text(prompt=prompt, task_type="RESUME_TAILORING")
+        raw = self.generate_text(prompt=prompt, task_type="RESUME_TAILORING", timeout_seconds=5.0)
         if raw:
             try:
                 json_match = re.search(r'\{.*\}', raw, re.DOTALL)
                 if json_match:
-                    return json.loads(json_match.group(0))
+                    parsed = json.loads(json_match.group(0))
+                    if parsed.get("tailored_summary") or parsed.get("prioritized_skills"):
+                        return parsed
             except Exception:
                 pass
-        return {}
+
+        # Deterministic fast local fallback (Zero-API / IPC timeout resilience)
+        return self._deterministic_tailoring_diff(jd_text, master_resume_text)
+
+    def _deterministic_tailoring_diff(self, jd_text: str, master_resume_text: str) -> Dict[str, Any]:
+        """Fast, 100% factual local fallback to generate targeted resume diffs."""
+        jd_lower = jd_text.lower()
+        stop_words = {"the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "of", "with", "by"}
+        jd_words = [w for w in re.findall(r'[a-zA-Z]{3,}', jd_lower) if w not in stop_words]
+
+        # Extract skills from profile config taxonomy
+        profile_skills = []
+        if self.profile_context and self.profile_context.config:
+            for cat_skills in self.profile_context.config.get("taxonomy_skills", {}).values():
+                if isinstance(cat_skills, list):
+                    profile_skills.extend(cat_skills)
+
+        # Score and prioritize candidate skills
+        scored_skills = []
+        for sk in profile_skills:
+            sk_clean = sk.strip()
+            if sk_clean:
+                count = jd_lower.count(sk_clean.lower())
+                scored_skills.append((count, sk_clean))
+        scored_skills.sort(key=lambda x: -x[0])
+        prioritized = [s for cnt, s in scored_skills if cnt > 0][:8]
+        if not prioritized:
+            prioritized = [s for _, s in scored_skills[:6]]
+
+        # Extract existing summary from master resume
+        summary_match = re.search(r'##\s*(?:Professional\s+Summary|Summary|Profile)\s*\n+([^#]+)', master_resume_text, re.IGNORECASE)
+        existing_summary = summary_match.group(1).strip() if summary_match else ""
+        first_p = existing_summary.split("\n\n")[0].strip() if existing_summary else ""
+
+        # Extract highlight bullets
+        bullets = re.findall(r'^\s*[-*]\s+(.*)', master_resume_text, re.MULTILINE)
+        scored_bullets = []
+        for b in bullets:
+            b_score = sum(1 for w in jd_words if w in b.lower())
+            scored_bullets.append((b_score, b.strip()))
+        scored_bullets.sort(key=lambda x: -x[0])
+        highlights = [b for sc, b in scored_bullets if sc > 0][:4]
+
+        return {
+            "tailored_summary": first_p,
+            "prioritized_skills": prioritized,
+            "highlight_bullets": highlights
+        }
 
     def _parse_json_match_result(self, raw_text: str) -> Optional[MatchResult]:
         """Extracts and validates structured MatchResult JSON from LLM or IPC responses."""
@@ -825,7 +883,8 @@ Score from 0 to 100 in strict JSON:
                 prompt=ipc_eval_prompt,
                 question=f"Evaluate Job Fit: {job_title} ({total_score}%)",
                 control_type="JSON",
-                task_type="JOB_EVALUATION"
+                task_type="JOB_EVALUATION",
+                timeout_seconds=5.0
             )
             parsed_ipc = self._parse_json_match_result(ipc_res)
             if parsed_ipc:
@@ -1001,12 +1060,13 @@ INSTRUCTIONS:
         control_type: Optional[str] = None,
         max_characters: Optional[int] = None,
         task_type: str = "QUESTIONNAIRE",
-        payload_extra: Optional[Dict[str, Any]] = None
+        payload_extra: Optional[Dict[str, Any]] = None,
+        timeout_seconds: Optional[float] = None
     ) -> str:
         """
         Universal File-Based IPC Handshake Protocol optimized strictly for Antigravity 2.0.
-        Never freezes on terminal stdin (Guardrail H6). Endlessly polls pending_question.json
-        until Antigravity 2.0 fills the answer key.
+        Never freezes on terminal stdin (Guardrail H6). Polls pending_question.json until
+        Antigravity 2.0 fills the answer key or timeout_seconds elapses.
         Supports QUESTIONNAIRE, JOB_EVALUATION, PROFILE_SYNTHESIS, and RESUME_TAILORING tasks.
         """
         output_dir = getattr(self.profile_context, "output_dir", Path("."))
@@ -1038,8 +1098,9 @@ INSTRUCTIONS:
         except Exception as e:
             print(f"[ERROR] IPC Write Failed: {e}", flush=True)
 
+        timeout_msg = f" (timeout: {timeout_seconds}s)" if timeout_seconds else ""
         print("\n" + "=" * 70, flush=True)
-        print(f"[AG 2.0 COGNITIVE IPC] AWAITING AG 2.0 RESOLUTION: {task_type}", flush=True)
+        print(f"[AG 2.0 COGNITIVE IPC] AWAITING AG 2.0 RESOLUTION: {task_type}{timeout_msg}", flush=True)
         print("=" * 70, flush=True)
         print(f"TASK / QUESTION: {question}", flush=True)
         if options:
@@ -1048,8 +1109,18 @@ INSTRUCTIONS:
         print("-" * 70, flush=True)
         print(">> AG Brain: Please write the answer to the 'answer' key in pending_question.json.", flush=True)
 
+        start_time = time.time()
         while True:
             time.sleep(0.5)
+            if timeout_seconds is not None and (time.time() - start_time) >= timeout_seconds:
+                print(f"\n[AG 2.0 IPC] IPC window elapsed ({timeout_seconds}s). Resiliently continuing with in-memory factual engine.", flush=True)
+                try:
+                    if ipc_file.exists():
+                        ipc_file.unlink()
+                except Exception:
+                    pass
+                return ""
+
             if ipc_file.exists():
                 try:
                     with open(ipc_file, "r", encoding="utf-8") as f:

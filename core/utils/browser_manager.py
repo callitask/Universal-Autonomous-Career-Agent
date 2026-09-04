@@ -83,20 +83,55 @@ class BrowserManager:
             except Exception:
                 pass
 
-    def close_orphaned_blank_pages(self) -> None:
-        """Safely closes empty about:blank tabs without closing the user's primary window."""
+    def get_or_create_page_for_url(self, target_url: str):
+        """
+        Reuses an existing open tab if it already displays target_url (or same path).
+        Returns a tuple: (page: Page, already_at_url: bool)
+        Avoids creating redundant about:blank tabs and eliminates duplicate network loading.
+        """
+        context = self.get_context()
+        self.sweep_blank_tabs()
+
+        clean_target = str(target_url or "").strip().rstrip("/").lower()
+        # Extract base path without query parameters
+        target_base = clean_target.split("?")[0] if "?" in clean_target else clean_target
+
+        for p in context.pages:
+            try:
+                if not p.is_closed():
+                    p_url = str(p.url or "").strip().rstrip("/").lower()
+                    p_base = p_url.split("?")[0] if "?" in p_url else p_url
+
+                    # Check exact match or path match
+                    if (clean_target and p_url == clean_target) or (len(target_base) > 25 and p_base == target_base):
+                        p.bring_to_front()
+                        return p, True
+            except Exception:
+                continue
+
+        # If no page currently has the URL, reuse an existing idle tab or open a transient one
+        page = self.new_transient_page()
+        return page, False
+
+    def sweep_blank_tabs(self, preserve_page: Optional[Page] = None) -> None:
+        """Safely sweeps any orphaned about:blank tabs, preserving the specified page."""
         try:
             context = self.get_context()
             pages = list(context.pages)
             if len(pages) > 1:
                 for p in pages:
-                    try:
-                        if not p.is_closed() and p.url == "about:blank":
-                            p.close()
-                    except Exception:
-                        pass
+                    if p != preserve_page and not p.is_closed():
+                        try:
+                            if p.url in ["about:blank", "chrome://newtab/"]:
+                                p.close()
+                        except Exception:
+                            pass
         except Exception:
             pass
+
+    def close_orphaned_blank_pages(self) -> None:
+        """Safely closes empty about:blank tabs without closing the user's primary window."""
+        self.sweep_blank_tabs()
 
     def close(self):
         """Closes Playwright connection cleanly without terminating user's Chrome instance."""
