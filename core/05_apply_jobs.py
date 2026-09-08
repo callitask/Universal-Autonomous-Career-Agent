@@ -35,7 +35,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.utils.profile_context import ProfileContext
+from core.utils.profile_context import ProfileContext, canonical_job_url
 from core.utils.browser_manager import BrowserManager
 from core.ai_client import AIClient
 
@@ -232,49 +232,60 @@ class ChatbotResolver:
         return "UNKNOWN"
 
     def get_radio_options(self) -> List[str]:
-        options = self.page.evaluate("""() => {
-            const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
-            const opts = new Set();
-            
-            // Strategy A: Explicit Radio Inputs
-            const radios = drawer.querySelectorAll('input[type="radio"], input[type="checkbox"]');
-            if (radios.length > 0) {
-                radios.forEach(r => {
-                    if (r.closest('.chipMsg')) return;
-                    if (r.id) {
-                        const label = drawer.querySelector(`label[for="${r.id}"]`);
-                        if (label && label.innerText) {
-                            opts.add(label.innerText.trim());
-                            return;
+        try:
+            options = self.page.evaluate(r"""() => {
+                try {
+                    const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
+                    const opts = new Set();
+                    
+                    // Strategy A: Explicit Radio Inputs
+                    const radios = drawer.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+                    if (radios.length > 0) {
+                        radios.forEach(r => {
+                            if (r.closest('.chipMsg')) return;
+                            if (r.id) {
+                                try {
+                                    const escapedId = (window.CSS && CSS.escape) ? CSS.escape(r.id) : r.id.replace(/([ #;&,.+*~\':"!^$[\]()=>|/@])/g, '\\$1');
+                                    const label = drawer.querySelector(`label[for="${escapedId}"]`);
+                                    if (label && label.innerText) {
+                                        opts.add(label.innerText.trim());
+                                        return;
+                                    }
+                                } catch (e) {}
+                            }
+                            if (r.nextElementSibling && (r.nextElementSibling.tagName === 'LABEL' || r.nextElementSibling.tagName === 'SPAN')) {
+                                opts.add(r.nextElementSibling.innerText.trim());
+                                return;
+                            }
+                            if (r.value && r.value.length > 0 && r.value !== 'on') {
+                                opts.add(r.value.trim());
+                            }
+                        });
+                    }
+                    
+                    // Strategy B: Choice Chips and Custom Radio Wrappers
+                    const chips = drawer.querySelectorAll(
+                        '.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"], ' +
+                        'label.ssrc__label, div.customRadio, div.togglePill, button.toggle, div.yesNoToggle, ' +
+                        'label[class*="radio"], ul.ChoiceList li'
+                    );
+                    chips.forEach(c => {
+                        if (c.closest('.chipMsg') || c.classList.contains('chipMsg')) return;
+                        const txt = c.innerText.trim();
+                        if (txt && txt.length < 150 && !txt.includes('\n')) {
+                            opts.add(txt);
                         }
-                    }
-                    if (r.nextElementSibling && (r.nextElementSibling.tagName === 'LABEL' || r.nextElementSibling.tagName === 'SPAN')) {
-                        opts.add(r.nextElementSibling.innerText.trim());
-                        return;
-                    }
-                    if (r.value && r.value.length > 0 && r.value !== 'on') {
-                        opts.add(r.value.trim());
-                    }
-                });
-            }
-            
-            // Strategy B: Choice Chips and Custom Radio Wrappers
-            const chips = drawer.querySelectorAll(
-                '.choiceChip, .clickableChip, .radioItem, .optionItem, [class*="chipItem"], ' +
-                'label.ssrc__label, div.customRadio, div.togglePill, button.toggle, div.yesNoToggle, ' +
-                'label[class*="radio"], ul.ChoiceList li'
-            );
-            chips.forEach(c => {
-                if (c.closest('.chipMsg') || c.classList.contains('chipMsg')) return;
-                const txt = c.innerText.trim();
-                if (txt && txt.length < 150 && !txt.includes('\n')) {
-                    opts.add(txt);
+                    });
+                    
+                    return Array.from(opts).filter(Boolean);
+                } catch (err) {
+                    return [];
                 }
-            });
-            
-            return Array.from(opts).filter(Boolean);
-        }""")
-        return options
+            }""")
+            return options if isinstance(options, list) else []
+        except Exception as e:
+            log_step("WARNING", f"Exception during get_radio_options evaluation: {e}")
+            return []
 
     def resolve_answer(self, question: str, options: Optional[List[str]] = None, control_type: str = "CONTENTEDITABLE") -> str:
         q_clean = question.strip()
@@ -903,11 +914,23 @@ class ApplicationEngine:
         
         try:
             page.bring_to_front()
-            page.goto(url, wait_until="domcontentloaded", timeout=45000)
-            page.wait_for_timeout(2000)
+            current_clean = canonical_job_url(page.url)
+            target_clean = canonical_job_url(url)
+            if current_clean and target_clean and current_clean == target_clean:
+                log_step("NAVIGATE", "Tab is already aligned with target job URL.")
+                page.wait_for_timeout(1500)
+            else:
+                page.goto(url, wait_until="domcontentloaded", timeout=35000)
+                page.wait_for_timeout(2000)
         except Exception as e:
-            log_step("ERROR", f"Navigation timeout or failure: {e}")
-            return "FAILED"
+            log_step("WARNING", f"Initial navigation notice: {e}. Retrying navigation once...")
+            try:
+                page.wait_for_timeout(1500)
+                page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(2000)
+            except Exception as e2:
+                log_step("ERROR", f"Navigation timeout or failure after retry: {e2}")
+                return "FAILED"
 
         # Check for external employer website redirects
         ext_btn_selectors = [
@@ -1014,7 +1037,11 @@ class ApplicationEngine:
 
         if drawer_opened:
             log_step("CHATBOT", "Interactive Chatbot Drawer opened! Entering screening loop...")
-            return self._handle_chatbot_loop(page, resolver, job)
+            try:
+                return self._handle_chatbot_loop(page, resolver, job)
+            except Exception as e:
+                log_step("ERROR", f"Unhandled exception in chatbot loop: {e}")
+                return "FAILED"
 
         if applied_1click:
             log_step("SUCCESS", f"1-Click Apply confirmed via DOM or URL redirect: {success_msg}")
@@ -1048,6 +1075,7 @@ class ApplicationEngine:
 
         last_processed_q = ""
         stuck_count = 0
+        consecutive_silent_ticks = 0
 
         while iteration < max_iterations:
             iteration += 1
@@ -1104,9 +1132,32 @@ class ApplicationEngine:
             active_q, filtered_greeting = resolver.extract_active_question()
             
             if not active_q:
-                log_step("CHATBOT", f"Iteration {iteration}: Awaiting recruiter question or completion confirmation...")
+                consecutive_silent_ticks += 1
+                log_step("CHATBOT", f"Iteration {iteration}: Awaiting recruiter question or completion confirmation ({consecutive_silent_ticks * 2}s elapsed)...")
                 page.wait_for_timeout(2000)
+                if consecutive_silent_ticks >= 4:
+                    is_done, done_msg = resolver.check_completion_status()
+                    if is_done:
+                        log_step("SUCCESS", f"Application Completed during silence! {done_msg}")
+                        return "APPLIED_CHATBOT"
+                if consecutive_silent_ticks >= 8:
+                    log_step("HALT_DETECTED", "Recruiter drawer inactive/halted for >16s without response or completion. Aborting loop safely.")
+                    qa_history.append({
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "question": "[INACTIVITY_TIMEOUT]",
+                        "answer": "[HALTED_CHATBOT_NO_RESPONSE]",
+                        "control_type": "TIMEOUT",
+                        "status": "REQUIRES_MANUAL_INTERVENTION"
+                    })
+                    try:
+                        with open(qa_log_path, "w", encoding="utf-8") as f:
+                            json.dump(qa_history, f, indent=2)
+                    except Exception:
+                        pass
+                    return "FAILED"
                 continue
+            else:
+                consecutive_silent_ticks = 0
 
             if active_q == last_processed_q:
                 stuck_count += 1
@@ -1146,7 +1197,11 @@ class ApplicationEngine:
 
             ans = ""
             if control_type == "RADIO_CHIP":
-                options = resolver.get_radio_options()
+                try:
+                    options = resolver.get_radio_options()
+                except Exception as ex:
+                    log_step("WARNING", f"Notice retrieving radio options: {ex}. Falling back to text input.")
+                    options = []
                 if not options:
                     log_step("WARNING", "RADIO_CHIP detected but no options found. Falling back to text.")
                     control_type = "CONTENTEDITABLE"
@@ -1249,7 +1304,6 @@ class ApplicationEngine:
         log_step("QUEUE", f"Loaded {len(jobs_queue)} job postings from manifest.")
         
         context = self.browser_mgr.get_context()
-        page = self.browser_mgr.new_page()
         applied_count = 0
         
         for job in jobs_queue:
@@ -1257,7 +1311,18 @@ class ApplicationEngine:
                 log_step("LIMIT", f"Reached target application batch limit of {max_applications}.")
                 break
             
-            status = self.apply_single_job(page, job)
+            page = self.browser_mgr.new_page()
+            try:
+                status = self.apply_single_job(page, job)
+            except Exception as app_err:
+                log_step("ERROR", f"Fatal exception applying to job: {app_err}")
+                status = "FAILED"
+            finally:
+                try:
+                    if not page.is_closed():
+                        page.close()
+                except Exception:
+                    pass
             self.stats["total"] += 1
             
             company = job.get("company", "Unknown")

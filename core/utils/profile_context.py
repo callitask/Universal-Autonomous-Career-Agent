@@ -14,6 +14,7 @@ import os
 import sys
 import time
 import json
+import re
 import argparse
 import tempfile
 from pathlib import Path
@@ -22,11 +23,45 @@ from typing import Dict, Any, Optional, Union
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def canonical_job_url(url: str) -> str:
+    """
+    Normalizes job URLs by stripping query parameters, session IDs (e.g. ?src=...&sid=...),
+    tracking tokens, URL fragments, and trailing slashes.
+    Ensures persistent matching across search sweeps and agent restarts.
+    """
+    if not url:
+        return ""
+    clean = str(url).strip()
+    clean = clean.split("?")[0].split("#")[0].rstrip("/")
+    return clean.lower()
+
+
+def extract_platform_job_id(url: str, platform: str = "") -> Optional[str]:
+    """
+    Extracts immutable numeric platform job ID for deduplication across query/slug changes.
+    Naukri: Trailing 10-14 digit identifier in slug (e.g. -040926031442) -> 'naukri:040926031442'
+    LinkedIn: /jobs/view/<id> or currentJobId=<id> -> 'linkedin:<id>'
+    """
+    if not url:
+        return None
+    url_str = str(url).strip().lower()
+    if "naukri.com" in url_str or platform.lower() == "naukri":
+        m = re.search(r'-(\d{10,14})(?:[/?#]|$)', url_str)
+        if m:
+            return f"naukri:{m.group(1)}"
+    if "linkedin.com" in url_str or platform.lower() == "linkedin":
+        m = re.search(r'(?:/jobs/view/|currentjobid=)(\d+)', url_str)
+        if m:
+            return f"linkedin:{m.group(1)}"
+    return None
+
+
 class ProcessedLedger(dict):
     """
     High-performance hybrid ledger mapping URL/composite key -> structured metadata.
     Subclasses dict for O(1) key lookups, structured inspection, and JSON serialization,
     while offering backward-compatible set APIs (.add, .union, .intersection, .difference).
+    Automatically indexes canonical URLs and platform job IDs for zero-duplicate guarantees.
     """
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -49,7 +84,16 @@ class ProcessedLedger(dict):
         if not item:
             return False
         clean_k = str(item).lower().strip()
-        return super().__contains__(clean_k)
+        if super().__contains__(clean_k):
+            return True
+        if clean_k.startswith("http://") or clean_k.startswith("https://"):
+            can_url = canonical_job_url(clean_k)
+            if can_url and super().__contains__(can_url):
+                return True
+            job_id = extract_platform_job_id(clean_k)
+            if job_id and super().__contains__(job_id):
+                return True
+        return False
 
     def __getitem__(self, item: Any) -> Any:
         return super().__getitem__(str(item).lower().strip())
@@ -60,6 +104,25 @@ class ProcessedLedger(dict):
 
     def get(self, item: Any, default: Any = None) -> Any:
         return super().get(str(item).lower().strip(), default)
+
+    def is_processed(self, url: str = None, company: str = None, title: str = None, platform: str = "") -> bool:
+        """Convenience method to check URL, canonical URL, platform job ID, or composite key."""
+        if url:
+            clean_u = str(url).strip().lower()
+            if clean_u in self:
+                return True
+            can = canonical_job_url(clean_u)
+            if can in self:
+                return True
+            jid = extract_platform_job_id(clean_u, platform)
+            if jid and jid in self:
+                return True
+        if company and title:
+            clean_c = re.sub(r'[^a-z0-9]', '', str(company or '').lower())
+            clean_t = re.sub(r'[^a-z0-9]', '', str(title or '').lower())
+            if f"{clean_c}::{clean_t}" in self:
+                return True
+        return False
 
     def add(
         self,
@@ -84,6 +147,15 @@ class ProcessedLedger(dict):
             super().__setitem__(clean_key, existing)
         else:
             super().__setitem__(clean_key, meta)
+
+        # Index canonical URL and platform job ID if item is a URL
+        if clean_key.startswith("http://") or clean_key.startswith("https://"):
+            can_url = canonical_job_url(clean_key)
+            if can_url and can_url != clean_key:
+                super().__setitem__(can_url, meta)
+            job_id = extract_platform_job_id(clean_key)
+            if job_id:
+                super().__setitem__(job_id, meta)
 
     def union(self, *others) -> "ProcessedLedger":
         res = ProcessedLedger(self)

@@ -1001,12 +1001,13 @@ INSTRUCTIONS:
         control_type: Optional[str] = None,
         max_characters: Optional[int] = None,
         task_type: str = "QUESTIONNAIRE",
-        payload_extra: Optional[Dict[str, Any]] = None
+        payload_extra: Optional[Dict[str, Any]] = None,
+        **kwargs
     ) -> str:
         """
         Universal File-Based IPC Handshake Protocol optimized strictly for Antigravity 2.0.
-        Never freezes on terminal stdin (Guardrail H6). Endlessly polls pending_question.json
-        until Antigravity 2.0 fills the answer key.
+        Never freezes on terminal stdin (Guardrail H6). Polls pending_question.json with active
+        heartbeat monitoring and timeout halt detection.
         Supports QUESTIONNAIRE, JOB_EVALUATION, PROFILE_SYNTHESIS, and RESUME_TAILORING tasks.
         """
         output_dir = getattr(self.profile_context, "output_dir", Path("."))
@@ -1048,8 +1049,20 @@ INSTRUCTIONS:
         print("-" * 70, flush=True)
         print(">> AG Brain: Please write the answer to the 'answer' key in pending_question.json.", flush=True)
 
+        start_time = time.time()
+        timeout_seconds = float(kwargs.get("timeout_seconds", 75.0))
+        last_heartbeat = start_time
+
         while True:
             time.sleep(0.5)
+            now = time.time()
+            elapsed = now - start_time
+
+            # Periodic heartbeat every 10 seconds
+            if now - last_heartbeat >= 10.0:
+                print(f"[AG 2.0 IPC HEARTBEAT] Awaiting response to '{question[:45]}...' (elapsed: {int(elapsed)}s / {int(timeout_seconds)}s)...", flush=True)
+                last_heartbeat = now
+
             if ipc_file.exists():
                 try:
                     with open(ipc_file, "r", encoding="utf-8") as f:
@@ -1069,6 +1082,18 @@ INSTRUCTIONS:
                 except Exception:
                     # File is being written to by AG, pass to next poll tick
                     pass
+
+            # Timeout and Halt Detection
+            if elapsed >= timeout_seconds:
+                print(f"\n[HALT DETECTED] IPC question timed out after {int(elapsed)}s: '{question}'. Aborting wait safely.", flush=True)
+                try:
+                    if ipc_file.exists():
+                        ipc_file.unlink()
+                except Exception:
+                    pass
+                if task_type == "JOB_EVALUATION":
+                    return json.dumps({"score": 0, "reasoning": "IPC evaluation timed out"})
+                return ""
 
     def arbitrate_card_fit(
         self,

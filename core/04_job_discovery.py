@@ -41,7 +41,7 @@ logger = logging.getLogger("04_job_discovery")
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from core.utils.profile_context import ProfileContext
+from core.utils.profile_context import ProfileContext, canonical_job_url, extract_platform_job_id
 from core.ai_client import AIClient
 
 BATCH_SIZE = 1
@@ -56,10 +56,41 @@ def make_composite_key(company: str, title: str) -> str:
     return f"{clean_c}::{clean_t}"
 
 
+def save_external_job_record(profile_dir: Path, job: dict, redirect_url: str = "") -> None:
+    """Atomically records external redirect jobs to saved_external_jobs.json without duplication."""
+    ext_file = profile_dir / "output" / "saved_external_jobs.json"
+    records = []
+    if ext_file.exists():
+        try:
+            records = json.loads(ext_file.read_text(encoding="utf-8"))
+            if not isinstance(records, list):
+                records = []
+        except Exception:
+            records = []
+    orig_url = job.get("url", "")
+    exists = any(r.get("original_url") == orig_url or r.get("url") == orig_url for r in records)
+    if not exists:
+        records.append({
+            "job_title": job.get("title", ""),
+            "company": job.get("company", ""),
+            "platform": job.get("platform", "naukri"),
+            "original_url": orig_url,
+            "redirect_url": redirect_url or orig_url,
+            "saved_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        })
+        try:
+            tmp_ext = ext_file.with_name(ext_file.name + ".tmp")
+            tmp_ext.write_text(json.dumps(records, indent=2), encoding="utf-8")
+            os.replace(tmp_ext, ext_file)
+        except Exception:
+            pass
+
+
 def get_already_processed_urls(profile_dir: Path) -> set:
     """
     Safely parses tracker CSV and external jobs files for deduplication.
-    Stores Job URLs and composite (Company + Title) keys. Never stores raw solitary titles.
+    Stores Job URLs, canonical clean URLs, platform job IDs, and composite (Company + Title) keys.
+    Never stores raw solitary titles.
     """
     processed = set()
     for file_name in ["applications_tracker.csv", "saved_external_jobs.json"]:
@@ -69,9 +100,16 @@ def get_already_processed_urls(profile_dir: Path) -> set:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    # 1. Canonical Job URL
+                    # 1. Canonical Job URL and Platform Job ID
                     if "Job URL" in row and row["Job URL"]:
-                        processed.add(row["Job URL"].strip().lower())
+                        raw_u = row["Job URL"].strip().lower()
+                        processed.add(raw_u)
+                        can_u = canonical_job_url(raw_u)
+                        if can_u:
+                            processed.add(can_u)
+                        jid = extract_platform_job_id(raw_u)
+                        if jid:
+                            processed.add(jid)
                     
                     # 2. Composite Company + Title hash
                     comp = row.get("Company", "")
@@ -82,16 +120,37 @@ def get_already_processed_urls(profile_dir: Path) -> set:
                     # 3. DIRECTIVE 7.2 Fallback: Scan all row values for URL patterns
                     for val in row.values():
                         if val and isinstance(val, str) and ("http://" in val or "https://" in val):
-                            processed.add(val.strip().lower())
+                            val_clean = val.strip().lower()
+                            processed.add(val_clean)
+                            can_v = canonical_job_url(val_clean)
+                            if can_v:
+                                processed.add(can_v)
+                            jid_v = extract_platform_job_id(val_clean)
+                            if jid_v:
+                                processed.add(jid_v)
                             
         elif file_path.exists() and file_path.suffix == ".json":
             try:
                 data = json.loads(file_path.read_text(encoding="utf-8"))
                 for item in data:
                     if item.get("url"): 
-                        processed.add(item["url"].strip().lower())
+                        raw_u = item["url"].strip().lower()
+                        processed.add(raw_u)
+                        can_u = canonical_job_url(raw_u)
+                        if can_u:
+                            processed.add(can_u)
+                        jid = extract_platform_job_id(raw_u)
+                        if jid:
+                            processed.add(jid)
                     if item.get("original_url"):
-                        processed.add(item["original_url"].strip().lower())
+                        raw_u = item["original_url"].strip().lower()
+                        processed.add(raw_u)
+                        can_u = canonical_job_url(raw_u)
+                        if can_u:
+                            processed.add(can_u)
+                        jid = extract_platform_job_id(raw_u)
+                        if jid:
+                            processed.add(jid)
                     comp = item.get("company", "")
                     title = item.get("job_title", item.get("title", ""))
                     if comp and title:
@@ -287,8 +346,15 @@ def run_batched_discovery(profile_path: str):
     clean_persistent = set()
     for k in persistent_items:
         str_k = str(k).lower().strip()
-        if str_k.startswith("http://") or str_k.startswith("https://") or "::" in str_k:
+        if str_k.startswith("http://") or str_k.startswith("https://") or "::" in str_k or str_k.startswith("naukri:") or str_k.startswith("linkedin:"):
             clean_persistent.add(str_k)
+            if str_k.startswith("http://") or str_k.startswith("https://"):
+                can = canonical_job_url(str_k)
+                if can:
+                    clean_persistent.add(can)
+                jid = extract_platform_job_id(str_k)
+                if jid:
+                    clean_persistent.add(jid)
 
     processed_ledger = clean_persistent | legacy_processed
     ai = AIClient(ctx)
@@ -427,10 +493,12 @@ def run_batched_discovery(profile_path: str):
                                     url = "https://www.naukri.com" + url
                                     
                                 if url:
+                                    can_url = canonical_job_url(url)
                                     jobs_to_scan.append({
                                         "title": title,
                                         "company": company,
-                                        "url": url,
+                                        "url": can_url if can_url else url,
+                                        "raw_url": url,
                                         "card_skills": skill_tags,
                                         "exp_text": exp_text
                                     })
@@ -441,14 +509,24 @@ def run_batched_discovery(profile_path: str):
                             cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
                             page = discovery_page
                             url = job["url"]
+                            raw_url = job.get("raw_url", url)
                             title = job["title"]
                             company = job["company"]
                             card_skills = job.get("card_skills", [])
                             exp_text = job.get("exp_text", "")
                             
-                            # Safe Two-Tier Deduplication: Check URL and Composite (Company + Title) key
+                            # Safe Multi-Tier Deduplication: Check Raw URL, Canonical URL, Platform Job ID, and Composite key
                             composite_key = make_composite_key(company, title)
-                            if url.lower() in processed_ledger or composite_key in processed_ledger:
+                            can_url = canonical_job_url(url)
+                            job_id = extract_platform_job_id(raw_url, platform) or extract_platform_job_id(url, platform)
+
+                            if (
+                                url.lower() in processed_ledger
+                                or raw_url.lower() in processed_ledger
+                                or can_url in processed_ledger
+                                or (job_id and job_id in processed_ledger)
+                                or composite_key in processed_ledger
+                            ):
                                 continue
                                 
                             if not is_title_allowed(
@@ -463,69 +541,188 @@ def run_batched_discovery(profile_path: str):
                             ):
                                 print(f"  -> Rejecting Irrelevant Job: {title} @ {company} [DOMAIN GATED]", flush=True)
                                 processed_ledger.add(url.lower())
+                                processed_ledger.add(can_url)
+                                if job_id: processed_ledger.add(job_id)
                                 processed_ledger.add(composite_key)
-                                ctx.add_to_processed_ledger(url.lower(), status="domain_gated", metadata={"title": title, "company": company})
+                                ctx.add_to_processed_ledger(can_url, status="domain_gated", metadata={"title": title, "company": company})
                                 ctx.add_to_processed_ledger(composite_key, status="composite_gated")
                                 continue
                                 
                             print(f"  -> Deep Scanning: {title} @ {company}...", flush=True)
-                            try:
-                                page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                            except Exception as parse_error:
-                                time.sleep(1)
-                                try:
-                                    page.goto("about:blank")
-                                    page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                                except Exception as e2:
-                                    print(f"     [ERROR READING FULL DESCRIPTION] Details: {str(e2)}", flush=True)
-                                    continue
-                                    
-                            is_external = page.locator("button:has-text('Apply on company website'), a:has-text('Apply on company website'), button:has-text('Apply on Company Site'), #company-site-button").count() > 0
+                            nav_url = can_url if can_url else url
                             
-                            if is_external:
-                                print("     [EXTERNAL APPLY REJECTED]", flush=True)
-                                processed_ledger.add(url.lower())
-                                processed_ledger.add(composite_key)
-                                ctx.add_to_processed_ledger(url.lower(), status="external_apply", metadata={"title": title, "company": company})
-                                ctx.add_to_processed_ledger(composite_key, status="composite_external")
-                                continue
-                                
+                            detail_page = context.new_page()
+                            tracked_pages.add(detail_page)
+                            scan_success = False
                             full_desc = ""
                             extracted_skills = []
-                            
-                            if platform == "naukri":
-                                desc_selector = ".styles_JDC__dang-inner-html__h0K4t, .dang-inner-html, .job-desc, section.job-desc, .styles_Jd__text__bWMxs"
-                                for _ in range(8):
-                                    if page.locator(desc_selector).count() > 0 and len(page.locator(desc_selector).first.inner_text().strip()) > 50:
-                                        break
+                            other_details_text = ""
+                            page_job_id = None
+                            page_can_url = ""
+
+                            try:
+                                try:
+                                    detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
+                                    detail_page.wait_for_timeout(1500)
+                                    # Anti-Blank Page Protection: verify body has rendered
+                                    if detail_page.locator("body").count() > 0 and len(detail_page.inner_text("body").strip()) < 50:
+                                        detail_page.wait_for_timeout(1000)
+                                        if len(detail_page.inner_text("body").strip()) < 50:
+                                            detail_page.reload(wait_until="domcontentloaded", timeout=25000)
+                                            detail_page.wait_for_timeout(1500)
+                                except Exception as parse_error:
                                     time.sleep(1)
-                                desc_el = page.locator(desc_selector).first
-                                skills_el = page.locator(".styles_key-skill__GIPn_ a span, .styles_chip__7YCfG span, a.styles_chip__7YqPJ, .tags a, .job-tags a").all()
-                                details_el = page.locator("div[class*='other-details'], div.other-details, div[class*='jds-details'], section[class*='job-desc-container'] [class*='details']").first
-                                other_details_text = details_el.inner_text().strip() if details_el.count() else ""
-                            else:
-                                desc_selector = "div.jobs-description__content, div.description__text"
-                                for _ in range(8):
-                                    if page.locator(desc_selector).count() > 0:
-                                        break
-                                    time.sleep(1)
-                                desc_el = page.locator(desc_selector).first
-                                skills_el = []
-                                other_details_text = ""
+                                    try:
+                                        detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
+                                        detail_page.wait_for_timeout(1500)
+                                    except Exception as e2:
+                                        print(f"     [ERROR READING FULL DESCRIPTION] Details: {str(e2)}", flush=True)
+                                        continue
+
+                                # Re-verify opened page URL against ledger in case of redirects
+                                page_can_url = canonical_job_url(detail_page.url)
+                                page_job_id = extract_platform_job_id(detail_page.url, platform)
+                                if (
+                                    page_can_url in processed_ledger
+                                    or (page_job_id and page_job_id in processed_ledger)
+                                ):
+                                    print(f"     [ALREADY PROCESSED (REDIRECTED: {page_can_url})] Skipping.", flush=True)
+                                    continue
+
+                                # PRE-TAILORING NATIVE 1-CLICK APPLY VERIFICATION (Eliminates Token Waste)
+                                if platform == "naukri":
+                                    # Wait for apply button or already applied banner to render in DOM
+                                    for _ in range(8):
+                                        if (
+                                            detail_page.locator("button#apply-button, button.apply-button, button:has-text('Apply on Naukri'), button:has-text('Apply'), div.apply-button-container button, .styles_jds-apply-button__WbS2i button").count() > 0
+                                            or detail_page.locator("button:has-text('Apply on company website'), a:has-text('Apply on company website'), button:has-text('Apply on Company Site'), a:has-text('Apply on Company Site'), #company-site-button").count() > 0
+                                            or detail_page.locator("button:has-text('Already Applied'), span:has-text('Already Applied'), div:has-text('You have already applied'), button:has-text('Applied')").count() > 0
+                                        ):
+                                            break
+                                        time.sleep(0.5)
+
+                                    # 1. Already Applied Check
+                                    is_already_applied = detail_page.locator("button:has-text('Already Applied'), span:has-text('Already Applied'), div:has-text('You have already applied'), button:has-text('Applied')").count() > 0
+                                    if is_already_applied:
+                                        print("     [ALREADY APPLIED ON NAUKRI - SKIPPING]", flush=True)
+                                        processed_ledger.add(url.lower())
+                                        processed_ledger.add(can_url)
+                                        if job_id: processed_ledger.add(job_id)
+                                        if page_job_id: processed_ledger.add(page_job_id)
+                                        processed_ledger.add(composite_key)
+                                        ctx.add_to_processed_ledger(can_url, status="already_applied", metadata={"title": title, "company": company})
+                                        ctx.add_to_processed_ledger(composite_key, status="composite_already_applied")
+                                        continue
+
+                                    # 2. External Apply Check
+                                    is_external = detail_page.locator("button:has-text('Apply on company website'), a:has-text('Apply on company website'), button:has-text('Apply on Company Site'), a:has-text('Apply on Company Site'), #company-site-button").count() > 0
+                                    if is_external:
+                                        print("     [EXTERNAL APPLY GATED - ZERO TOKEN TAILORING]", flush=True)
+                                        processed_ledger.add(url.lower())
+                                        processed_ledger.add(can_url)
+                                        if job_id: processed_ledger.add(job_id)
+                                        if page_job_id: processed_ledger.add(page_job_id)
+                                        processed_ledger.add(composite_key)
+                                        ctx.add_to_processed_ledger(can_url, status="external_apply", metadata={"title": title, "company": company})
+                                        ctx.add_to_processed_ledger(composite_key, status="composite_external")
+                                        save_external_job_record(profile_dir, {"title": title, "company": company, "platform": platform, "url": can_url}, detail_page.url)
+                                        continue
+
+                                    # 3. Native Apply Check
+                                    has_native_apply = detail_page.locator("button#apply-button, button.apply-button, button:has-text('Apply on Naukri'), button:has-text('Apply'), div.apply-button-container button, .styles_jds-apply-button__WbS2i button").count() > 0
+                                    if not has_native_apply:
+                                        print("     [NO NATIVE APPLY BUTTON FOUND ON NAUKRI - SKIPPING]", flush=True)
+                                        processed_ledger.add(url.lower())
+                                        processed_ledger.add(can_url)
+                                        if job_id: processed_ledger.add(job_id)
+                                        if page_job_id: processed_ledger.add(page_job_id)
+                                        processed_ledger.add(composite_key)
+                                        ctx.add_to_processed_ledger(can_url, status="no_native_apply", metadata={"title": title, "company": company})
+                                        continue
+
+                                elif platform == "linkedin":
+                                    for _ in range(8):
+                                        if (
+                                            detail_page.locator("button:has-text('Easy Apply'), button.jobs-apply-button:has-text('Easy Apply')").count() > 0
+                                            or detail_page.locator(".jobs-s-apply__applied-date, span:has-text('Applied'), button:has-text('Applied')").count() > 0
+                                            or detail_page.locator("button:has-text('Apply')").count() > 0
+                                        ):
+                                            break
+                                        time.sleep(0.5)
+
+                                    # 1. Already Applied Check
+                                    is_already_applied = detail_page.locator(".jobs-s-apply__applied-date, span:has-text('Applied'), button:has-text('Applied')").count() > 0
+                                    if is_already_applied:
+                                        print("     [ALREADY APPLIED ON LINKEDIN - SKIPPING]", flush=True)
+                                        processed_ledger.add(url.lower())
+                                        processed_ledger.add(can_url)
+                                        if job_id: processed_ledger.add(job_id)
+                                        if page_job_id: processed_ledger.add(page_job_id)
+                                        processed_ledger.add(composite_key)
+                                        ctx.add_to_processed_ledger(can_url, status="already_applied", metadata={"title": title, "company": company})
+                                        ctx.add_to_processed_ledger(composite_key, status="composite_already_applied")
+                                        continue
+
+                                    # 2. Native Easy Apply Check
+                                    has_easy_apply = detail_page.locator("button:has-text('Easy Apply'), button.jobs-apply-button:has-text('Easy Apply')").count() > 0
+                                    if not has_easy_apply:
+                                        print("     [EXTERNAL APPLY ON LINKEDIN - ZERO TOKEN TAILORING]", flush=True)
+                                        processed_ledger.add(url.lower())
+                                        processed_ledger.add(can_url)
+                                        if job_id: processed_ledger.add(job_id)
+                                        if page_job_id: processed_ledger.add(page_job_id)
+                                        processed_ledger.add(composite_key)
+                                        ctx.add_to_processed_ledger(can_url, status="external_apply", metadata={"title": title, "company": company})
+                                        ctx.add_to_processed_ledger(composite_key, status="composite_external")
+                                        save_external_job_record(profile_dir, {"title": title, "company": company, "platform": platform, "url": can_url}, detail_page.url)
+                                        continue
+                                    
+                                if platform == "naukri":
+                                    desc_selector = ".styles_JDC__dang-inner-html__h0K4t, .dang-inner-html, .job-desc, section.job-desc, .styles_Jd__text__bWMxs"
+                                    for _ in range(8):
+                                        if detail_page.locator(desc_selector).count() > 0 and len(detail_page.locator(desc_selector).first.inner_text().strip()) > 50:
+                                            break
+                                        time.sleep(1)
+                                    desc_el = detail_page.locator(desc_selector).first
+                                    skills_el = detail_page.locator(".styles_key-skill__GIPn_ a span, .styles_chip__7YCfG span, a.styles_chip__7YqPJ, .tags a, .job-tags a").all()
+                                    details_el = detail_page.locator("div[class*='other-details'], div.other-details, div[class*='jds-details'], section[class*='job-desc-container'] [class*='details']").first
+                                    other_details_text = details_el.inner_text().strip() if details_el.count() else ""
+                                else:
+                                    desc_selector = "div.jobs-description__content, div.description__text"
+                                    for _ in range(8):
+                                        if detail_page.locator(desc_selector).count() > 0:
+                                            break
+                                        time.sleep(1)
+                                    desc_el = detail_page.locator(desc_selector).first
+                                    skills_el = []
+                                    other_details_text = ""
+                                    
+                                full_desc = desc_el.inner_text().strip() if desc_el.count() else ""
+                                extracted_skills = [sk.inner_text().strip() for sk in skills_el if sk.inner_text().strip()]
                                 
-                            full_desc = desc_el.inner_text().strip() if desc_el.count() else ""
-                            extracted_skills = [sk.inner_text().strip() for sk in skills_el if sk.inner_text().strip()]
-                            
-                            if other_details_text:
-                                full_desc += f"\n\nJob Specifications:\n{other_details_text}"
-                            if extracted_skills:
-                                full_desc += f"\n\nRequired Skills: {', '.join(extracted_skills)}"
-                                
-                            if not full_desc:
-                                print("     [FAILED - NO DESCRIPTION FOUND ON PAGE]", flush=True)
-                                processed_ledger.add(url.lower())
-                                processed_ledger.add(composite_key)
-                                ctx.add_to_processed_ledger(url.lower(), status="no_description", metadata={"title": title, "company": company})
+                                if other_details_text:
+                                    full_desc += f"\n\nJob Specifications:\n{other_details_text}"
+                                if extracted_skills:
+                                    full_desc += f"\n\nRequired Skills: {', '.join(extracted_skills)}"
+
+                                scan_success = True
+                            finally:
+                                try:
+                                    if not detail_page.is_closed():
+                                        detail_page.close()
+                                except Exception:
+                                    pass
+                                tracked_pages.discard(detail_page)
+
+                            if not scan_success or not full_desc:
+                                if not full_desc and scan_success:
+                                    print("     [FAILED - NO DESCRIPTION FOUND ON PAGE]", flush=True)
+                                    processed_ledger.add(url.lower())
+                                    processed_ledger.add(can_url)
+                                    if job_id: processed_ledger.add(job_id)
+                                    if page_job_id: processed_ledger.add(page_job_id)
+                                    processed_ledger.add(composite_key)
+                                    ctx.add_to_processed_ledger(can_url, status="no_description", metadata={"title": title, "company": company})
                                 continue
                                 
                             eval_res = ai.evaluate_job_match(title, full_desc, config, resume_text)
@@ -546,7 +743,7 @@ def run_batched_discovery(profile_path: str):
                                     "title": title,
                                     "company": company,
                                     "location": primary_loc,
-                                    "url": url,
+                                    "url": can_url if can_url else url,
                                     "platform": platform,
                                     "score": score,
                                     "extracted_skills": extracted_skills,
@@ -558,7 +755,7 @@ def run_batched_discovery(profile_path: str):
                                     "title": title,
                                     "company": company,
                                     "location": primary_loc,
-                                    "url": url,
+                                    "url": can_url if can_url else url,
                                     "platform": platform,
                                     "score": score,
                                     "jd_path": str(jd_file_path.resolve()),
@@ -566,8 +763,11 @@ def run_batched_discovery(profile_path: str):
                                 }
                                 current_batch.append(job_entry)
                                 processed_ledger.add(url.lower())
+                                processed_ledger.add(can_url)
+                                if job_id: processed_ledger.add(job_id)
+                                if page_job_id: processed_ledger.add(page_job_id)
                                 processed_ledger.add(composite_key)
-                                ctx.add_to_processed_ledger(url.lower(), status="qualified", metadata={"title": title, "company": company, "score": score})
+                                ctx.add_to_processed_ledger(can_url, status="qualified", metadata={"title": title, "company": company, "score": score})
                                 ctx.add_to_processed_ledger(composite_key, status="composite_qualified")
                                 
                                 if len(current_batch) >= BATCH_SIZE:
@@ -577,8 +777,11 @@ def run_batched_discovery(profile_path: str):
                             else:
                                 print(f"     [FAILED. Score: {score}%]", flush=True)
                                 processed_ledger.add(url.lower())
+                                processed_ledger.add(can_url)
+                                if job_id: processed_ledger.add(job_id)
+                                if page_job_id: processed_ledger.add(page_job_id)
                                 processed_ledger.add(composite_key)
-                                ctx.add_to_processed_ledger(url.lower(), status="low_score", metadata={"title": title, "company": company, "score": score})
+                                ctx.add_to_processed_ledger(can_url, status="low_score", metadata={"title": title, "company": company, "score": score})
                                 
                             if applied_count >= max_applies:
                                 break

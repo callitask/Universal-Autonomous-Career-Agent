@@ -53,12 +53,8 @@ class BrowserManager:
         return self.context
 
     def new_page(self) -> Page:
-        """Returns an active page by reusing open tabs or creating a new focused page."""
+        """Creates and returns a fresh, dedicated browser page in the CDP context."""
         context = self.get_context()
-        if context.pages:
-            page = context.pages[0]
-            page.bring_to_front()
-            return page
         page = context.new_page()
         page.bring_to_front()
         return page
