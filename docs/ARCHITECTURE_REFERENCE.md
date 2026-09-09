@@ -254,7 +254,7 @@ In `02_profile_sync_naukri.py`, duplicate evaluation strictly enforces a 3-way m
 **Profile Resolution Hierarchy:**
 1. Explicit `profile_path` parameter
 2. CLI `--profile <path>` argument
-3. Auto-discover: first subdirectory in `profiles/`
+3. Auto-discover: first valid candidate subdirectory in `profiles/` with `candidate_config.json` (strictly excluding `default_user`, which serves as the immutable template blueprint)
 
 **Atomic Save Protocol:**
 ```python
