@@ -17,6 +17,23 @@ logger = logging.getLogger("continuous_career_agent")
 CORE_DIR = Path(__file__).resolve().parent
 BASE_DIR = CORE_DIR.parent
 
+import urllib.request
+
+sys.path.insert(0, str(BASE_DIR))
+from core.utils.profile_context import ProfileContext
+
+def check_cdp_status(cdp_url: str):
+    try:
+        urllib.request.urlopen(f"{cdp_url.rstrip('/')}/json/version", timeout=2)
+        logger.info(f"  [PRE-FLIGHT] Chrome CDP reachable at {cdp_url}")
+        return True
+    except Exception as e:
+        logger.warning(
+            f"  [PRE-FLIGHT NOTICE] Chrome CDP not responding at {cdp_url}. "
+            f"Please ensure Chrome is launched with '--remote-debugging-port=9222'. Detail: {e}"
+        )
+        return False
+
 def run_step(step_name, script_name, profile_arg):
     logger.info(f"---> [DAEMON] Initiating: {step_name}...")
     try:
@@ -31,19 +48,31 @@ def run_step(step_name, script_name, profile_arg):
 
 def main():
     parser = argparse.ArgumentParser(description="Continuous Universal Career Agent")
-    parser.add_argument("--profile", required=True, help="Profile path (e.g., profiles/bharat_pandey)")
+    parser.add_argument("--profile", default=None, help="Profile path (e.g., profiles/<profile_name>)")
     parser.add_argument("--analyze", action="store_true", help="Run AI Profile Analyzer to synthesize cognitive profile from resume")
     parser.add_argument("--sync-profile", action="store_true", help="Sync Naukri & LinkedIn profile info once")
     parser.add_argument("--delay", type=int, default=30, help="Seconds to sleep between full batch cycles")
     args = parser.parse_args()
 
-    profile_arg = args.profile
+    # Dynamic Profile Resolution
+    ctx = ProfileContext(args.profile, BASE_DIR)
+    profile_arg = str(ctx.profile_path)
     cycle = 1
 
     logger.info("=========================================================")
     logger.info("  [DAEMON] CONTINUOUS UNIVERSAL CAREER AGENT ENGAGED")
-    logger.info(f"  [ACTIVE PROFILE]  {profile_arg}")
+    logger.info(f"  [ACTIVE PROFILE]  {ctx.profile_path.name}")
     logger.info("=========================================================")
+
+    # Guardrail P1: Pre-flight Codebase Purity Verification
+    try:
+        ctx.verify_codebase_purity()
+    except Exception as purity_err:
+        logger.error(f"[SECURITY HALT] {purity_err}")
+        sys.exit(1)
+
+    # Pre-flight Chrome CDP Check
+    check_cdp_status(ctx.cdp_url)
 
     if args.analyze:
         run_step("Cognitive Profile Analysis & Synthesis", "01_ai_analyzer.py", profile_arg)

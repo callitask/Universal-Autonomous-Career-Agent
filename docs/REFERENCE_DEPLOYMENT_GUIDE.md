@@ -45,7 +45,9 @@ Edit `profiles/<CandidateName>/candidate_config.json`:
     "keywords": ["<Keyword1>", "<Keyword2>"],
     "negative_keywords": ["Sales", "Intern"],
     "locations": ["<City1>", "<City2>"],
-    "platforms": ["Naukri", "LinkedIn"]
+    "platforms": ["Naukri", "LinkedIn"],
+    "work_mode": "hybrid",
+    "direct_employers_only": false
   },
   "ats_answers": {
     "notice_period": "<N> Days",
@@ -67,14 +69,14 @@ Edit `profiles/<CandidateName>/candidate_config.json`:
 
 ### Step 4: Run the Autonomous Daemon
 ```bash
-cd core/
-python continuous_career_agent.py --profile ../profiles/<CandidateName>
+python core/continuous_career_agent.py --profile profiles/<CandidateName>
 ```
+*(Note: `--profile` is optional; if omitted, the agent automatically discovers the active profile in `profiles/`, conducts pre-flight CDP diagnostics, and runs Guardrail P1 codebase purity checks).*
 
 **Pipeline per cycle:**
-1. `04_job_discovery.py` -> Scrapes LinkedIn & Naukri, qualifies roles against candidate resume using Two-Stage Cognitive Evaluation ($\ge 60\%$ bar), writes `Job_Description.md` and `job_details.json` to application directory.
+1. `04_job_discovery.py` -> Scrapes LinkedIn & Naukri with dynamic URL parameters (`wfhType`, `companyJobs`), qualifies roles against candidate resume using Two-Stage Cognitive Evaluation ($\ge 60\%$ bar), writes `Job_Description.md` and `job_details.json` to application directory.
 2. `generate_factual_tailored.py` -> Reads actual `Job_Description.md` file from disk, extracts technical tokens, and compiles ATS-optimized PDFs per role.
-3. `05_apply_jobs.py` -> Applies with form solving, chatbot interaction, 3x stuck loop protection, and verification.
+3. `05_apply_jobs.py` -> Applies with form solving, chatbot interaction (targeting `.ssrc__label` chips and scoped `.sendMsg` container), 3x stuck loop protection, and verification.
 4. 30-minute deep-sleep -> Account preservation pacing.
 
 ---
@@ -103,11 +105,11 @@ Only **Tier 3** verification elevates status to `VERIFIED_SUCCESS`.
 ## 4. Mandatory Field Safety Protocol
 
 When a form field is marked `*` or `required` and the answer is not found in:
-1. `CANDIDATE_TRUTHS` dictionary (hardcoded)
-2. `auto_learned_truths` in `01_CANDIDATE_CONFIG.json` (O(1) cache)
-3. Gemini RAG fallback (API-based contextual answer)
+1. `auto_learned_truths` in `candidate_config.json` ($O(1)$ exact-match cache)
+2. `candidate_config.json` structured fields (`candidate`, `ats_answers`, `taxonomy_skills`)
+3. `AIClient` grounded resume reasoning (Gemini API or Antigravity 2.0 File IPC)
 
-...the engine executes a **graceful abort**: `Escape` → `Discard` → logs `REQUIRES_MANUAL_INTERVENTION` with the exact question text for human review. **Zero guessed data is ever submitted.**
+...the engine executes a **graceful abort**: `Escape` → `Discard` → logs `REQUIRES_MANUAL_INTERVENTION` with the exact question text for human review. **Zero guessed or invented data is ever submitted.**
 
 ---
 

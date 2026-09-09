@@ -1,0 +1,288 @@
+{
+  "profile_page": {
+    "headline_widget": [
+      {
+        "selector": ".resumeHeadline",
+        "count": 1,
+        "visible": true,
+        "tagName": "DIV",
+        "className": "resumeHeadline",
+        "text_sample": "Resume headlineeditOneTheme Hi, I am Anshika Garg, a recent "
+      },
+      {
+        "selector": ".widgetHead:has-text('Resume Headline')",
+        "count": 1,
+        "visible": true,
+        "tagName": "DIV",
+        "className": "widgetHead",
+        "text_sample": "Resume headlineeditOneTheme"
+      },
+      {
+        "selector": ".resumeHeadline .widgetHead",
+        "count": 1,
+        "visible": true,
+        "tagName": "DIV",
+        "className": "widgetHead",
+        "text_sample": "Resume headlineeditOneTheme"
+      }
+    ],
+    "headline_text": [
+      {
+        "selector": ".resumeHeadline .typ-14Medium",
+        "count": 1,
+        "visible": true,
+        "tagName": "DIV",
+        "className": "prefill typ-14Medium",
+        "text_sample": "Hi, I am Anshika Garg, a recent graduate with a B.Com. (Hons"
+      }
+    ],
+    "headline_edit": [
+      {
+        "selector": ".resumeHeadline span.edit",
+        "count": 1,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "edit icon",
+        "text_sample": "editOneTheme"
+      }
+    ],
+    "summary_widget": [
+      {
+        "selector": "span:has-text('Profile summary')",
+        "count": 2,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "lazilyLoad ",
+        "text_sample": "94% Approval Pending Anshika Garg editOneTheme Profile last "
+      }
+    ],
+    "summary_text": [],
+    "summary_edit": [],
+    "skills_widget": [
+      {
+        "selector": ".keySkills",
+        "count": 1,
+        "visible": true,
+        "tagName": "DIV",
+        "className": "keySkills",
+        "text_sample": "Key skillseditOneTheme resource managementdata analyticsms o"
+      },
+      {
+        "selector": "div[class*='keySkills']",
+        "count": 2,
+        "visible": true,
+        "tagName": "DIV",
+        "className": "keySkills",
+        "text_sample": "Key skillseditOneTheme resource managementdata analyticsms o"
+      }
+    ],
+    "skill_chips": [
+      {
+        "selector": ".keySkills .chip",
+        "count": 18,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "chip typ-14Medium",
+        "text_sample": "resource management"
+      },
+      {
+        "selector": ".keySkills span.chip",
+        "count": 18,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "chip typ-14Medium",
+        "text_sample": "resource management"
+      },
+      {
+        "selector": ".chip",
+        "count": 18,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "chip typ-14Medium",
+        "text_sample": "resource management"
+      }
+    ],
+    "skill_add_btn": [],
+    "emp_cards": [],
+    "emp_card_designation": [],
+    "emp_card_company": [],
+    "emp_card_desc": [],
+    "emp_card_edit": []
+  },
+  "search_page": {
+    "job_tuple_container": [
+      {
+        "selector": "div.srp-jobtuple-wrapper",
+        "count": 20,
+        "visible": true,
+        "tagName": "DIV",
+        "className": "srp-jobtuple-wrapper",
+        "text_sample": "Walk-In Any Fresher's/Expr-Data Analyst/Reporting Associate "
+      },
+      {
+        "selector": "div.cust-job-tuple",
+        "count": 21,
+        "visible": true,
+        "tagName": "DIV",
+        "className": "cust-job-tuple layout-wrapper lay-2 sjw__tuple ",
+        "text_sample": "Walk-In Any Fresher's/Expr-Data Analyst/Reporting Associate "
+      }
+    ],
+    "job_title": [
+      {
+        "selector": "a.title",
+        "count": 21,
+        "visible": true,
+        "tagName": "A",
+        "className": "title ",
+        "text_sample": "Walk-In Any Fresher's/Expr-Data Analyst/Reporting Associate "
+      }
+    ],
+    "company_name": [
+      {
+        "selector": "a.comp-name",
+        "count": 20,
+        "visible": true,
+        "tagName": "A",
+        "className": " comp-name ",
+        "text_sample": "IT Services and Consulting"
+      },
+      {
+        "selector": ".comp-name",
+        "count": 21,
+        "visible": true,
+        "tagName": "A",
+        "className": " comp-name ",
+        "text_sample": "IT Services and Consulting"
+      }
+    ],
+    "experience": [
+      {
+        "selector": "span.expwdth",
+        "count": 18,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "expwdth",
+        "text_sample": "1-5 Yrs"
+      },
+      {
+        "selector": "span[class*='exp']",
+        "count": 61,
+        "visible": false,
+        "tagName": "SPAN",
+        "className": "ni-gnb-icn ni-gnb-icn-expand-more",
+        "text_sample": ""
+      }
+    ],
+    "salary": [
+      {
+        "selector": "span.sal",
+        "count": 7,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "ni-job-tuple-icon ni-job-tuple-icon-srp-rupee sal",
+        "text_sample": "2.5-5 Lacs PA"
+      },
+      {
+        "selector": "span[class*='sal']",
+        "count": 14,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "sal-wrap ver-line",
+        "text_sample": "2.5-5 Lacs PA"
+      }
+    ],
+    "location": [
+      {
+        "selector": "span.locWdth",
+        "count": 19,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "locWdth",
+        "text_sample": "Bengaluru"
+      },
+      {
+        "selector": "span[class*='loc']",
+        "count": 63,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "loc-wrap ver-line",
+        "text_sample": "Delhi / NCR, Navi Mumbai, Bengaluru, Kolkata, Hyderabad, Pun"
+      }
+    ],
+    "job_desc_snippet": [
+      {
+        "selector": ".job-desc",
+        "count": 20,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "job-desc ni-job-tuple-icon ni-job-tuple-icon-srp-description",
+        "text_sample": "Python, Power BI / Tableau, SQL, Web Scraping, jupiter Walk-"
+      }
+    ],
+    "tags_skills": [
+      {
+        "selector": "ul.tags-gt li",
+        "count": 160,
+        "visible": true,
+        "tagName": "LI",
+        "className": "dot-gt tag-li ",
+        "text_sample": "Advanced Excel"
+      },
+      {
+        "selector": "span[class*='tag']",
+        "count": 23,
+        "visible": true,
+        "tagName": "SPAN",
+        "className": "ni-job-tuple-icon ni-job-tuple-icon-srpSaveUnfilled un-saved save-job-tag",
+        "text_sample": "Save"
+      }
+    ],
+    "pagination_next": [
+      {
+        "selector": "a:has-text('Next')",
+        "count": 1,
+        "visible": true,
+        "tagName": "A",
+        "className": "styles_btn-secondary__2AsIP",
+        "text_sample": "Next"
+      }
+    ]
+  },
+  "job_detail_page": {
+    "apply_button": [],
+    "job_title_jd": [
+      {
+        "selector": "h1[class*='title']",
+        "count": 1,
+        "visible": true,
+        "tagName": "H1",
+        "className": "styles_jd-header-title__rZwM1",
+        "text_sample": "Walk-In Any Fresher's/Expr-Data Analyst/Reporting Associate "
+      },
+      {
+        "selector": "h1",
+        "count": 1,
+        "visible": true,
+        "tagName": "H1",
+        "className": "styles_jd-header-title__rZwM1",
+        "text_sample": "Walk-In Any Fresher's/Expr-Data Analyst/Reporting Associate "
+      }
+    ],
+    "company_jd": [
+      {
+        "selector": "a[class*='company']",
+        "count": 2,
+        "visible": true,
+        "tagName": "A",
+        "className": "nI-gNb-header__logo nI-gNb-company-logo",
+        "text_sample": ""
+      }
+    ],
+    "job_description_body": [],
+    "keyskills_section": [],
+    "keyskills_chips": [],
+    "chatbot_drawer": [],
+    "chatbot_container": []
+  }
+}

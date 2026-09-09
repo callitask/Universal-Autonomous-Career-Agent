@@ -322,8 +322,7 @@ def process_batch(batch: list, profile_dir: Path, platform: str):
         print("  [PIPELINE] 2/3: Fast-Injecting Tailored Resume to Naukri...", flush=True)
         subprocess.run([sys.executable, str(BASE_DIR / "core" / "02b_naukri_fast_resume_upload.py"), "--profile", str(profile_dir)])
     elif platform.lower() == "linkedin":
-        print("  [PIPELINE] 2/3: Synchronizing Profile with LinkedIn...", flush=True)
-        subprocess.run([sys.executable, str(BASE_DIR / "core" / "03_profile_sync_linkedin.py"), "--profile", str(profile_dir)])
+        print("  [PIPELINE] 2/3: Preparing LinkedIn Easy Apply Modal Application...", flush=True)
         
     print("  [PIPELINE] 3/3: Executing Application Engine...", flush=True)
     subprocess.run([sys.executable, str(BASE_DIR / "core" / "05_apply_jobs.py"), "--profile", str(profile_dir)])
@@ -374,6 +373,45 @@ def run_batched_discovery(profile_path: str):
     all_positive_targets = list(keywords) + list(recommended)
     if current_title and current_title not in all_positive_targets:
         all_positive_targets.append(current_title)
+
+    # Dynamic Multi-Strategy Matrix: Role-Only, Company-Only, and Role + Company
+    raw_target_companies = target.get("target_companies", [])
+    target_companies = [c.strip() for c in raw_target_companies if c and str(c).strip()]
+    if not target_companies:
+        cog_prof = ctx.load_cognitive_profile()
+        target_companies = [c.strip() for c in (cog_prof.get("top_target_companies") or []) if c and str(c).strip()]
+
+    search_tasks = []
+    # 1. Strategy A: Role Only (Broad Domain Sweep)
+    for kw in keywords:
+        search_tasks.append({
+            "strategy": "ROLE_ONLY",
+            "query": kw,
+            "role": kw,
+            "company": ""
+        })
+
+    # 2. Strategy B: Target Company Only (Company Infiltration)
+    for comp in target_companies:
+        search_tasks.append({
+            "strategy": "COMPANY_ONLY",
+            "query": comp,
+            "role": "",
+            "company": comp
+        })
+
+    # 3. Strategy C: Role AND Company Combined (Precision Match)
+    if target_companies:
+        for kw in keywords[:3]:
+            for comp in target_companies[:3]:
+                search_tasks.append({
+                    "strategy": "ROLE_AND_COMPANY",
+                    "query": f"{kw} {comp}",
+                    "role": kw,
+                    "company": comp
+                })
+
+    print(f"[DISCOVERY CONTROLLER] Multi-Strategy Search Matrix: {len(search_tasks)} tasks (Roles: {len(keywords)}, Companies: {len(target_companies)})", flush=True)
     
     negative_keywords = target.get("negative_keywords", [])
     locations = target.get("locations", [])
@@ -389,6 +427,19 @@ def run_batched_discovery(profile_path: str):
         if len(nums) >= 2:
             ctc_filter = f"{nums[0]}to{nums[1]}"
             
+    # Dynamic Candidate Preferences: Work Mode (WFH/Remote) & Direct Employers
+    wfh_pref = str(target.get("work_mode") or target.get("wfh_type") or "").lower().strip()
+    wfh_param = ""
+    if "remote" in wfh_pref or "wfh" in wfh_pref:
+        wfh_param = "&wfhType=3"
+    elif "hybrid" in wfh_pref:
+        wfh_param = "&wfhType=2"
+    elif "office" in wfh_pref or "onsite" in wfh_pref:
+        wfh_param = "&wfhType=0"
+
+    direct_employers_only = target.get("direct_employers_only", False) or target.get("company_jobs_only", False)
+    company_jobs_param = "&companyJobs=true" if direct_employers_only else ""
+
     applied_count = 0
     current_batch = []
     current_platform_exec = ""
@@ -415,24 +466,45 @@ def run_batched_discovery(profile_path: str):
                 primary_loc = raw_loc.split(",")[0].strip()
                 print(f" >>> LOCKING TARGET LOCATION: {primary_loc.upper()} <<<", flush=True)
                 
-                for kw in keywords:
+                for task in search_tasks:
+                    strategy = task["strategy"]
+                    query_text = task["query"]
+                    comp_text = task.get("company", "")
+
                     for page_num in range(1, MAX_PAGES_PER_SEARCH + 1):
                         cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
                         page = discovery_page
                         
                         if platform == "naukri":
-                            query_kw = re.sub(r'[^a-z0-9]+', '-', kw.lower()).strip('-')
-                            query_loc = re.sub(r'[^a-z0-9]+', '-', primary_loc.lower()).strip('-')
-                            base_url = f"https://www.naukri.com/{query_kw}-jobs-in-{query_loc}"
-                            if page_num > 1:
-                                base_url += f"-{page_num}"
-                            query_url = f"{base_url}?experience={int(float(exp_years or 0))}&jobAge={job_age_days}"
-                            if ctc_filter:
-                                query_url += f"&ctcFilter={ctc_filter}"
+                            if strategy == "ROLE_ONLY":
+                                query_slug = re.sub(r'[^a-z0-9]+', '-', query_text.lower()).strip('-')
+                                loc_slug = re.sub(r'[^a-z0-9]+', '-', primary_loc.lower()).strip('-')
+                                base_url = f"https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}"
+                                if page_num > 1:
+                                    base_url += f"-{page_num}"
+                                query_url = f"{base_url}?experience={int(float(exp_years or 0))}&jobAge={job_age_days}{wfh_param}{company_jobs_param}"
+                                if ctc_filter:
+                                    query_url += f"&ctcFilter={ctc_filter}"
+                            elif strategy == "COMPANY_ONLY":
+                                encoded_comp = urllib.parse.quote(comp_text)
+                                encoded_loc = urllib.parse.quote(primary_loc)
+                                query_url = f"https://www.naukri.com/jobs?k={encoded_comp}&l={encoded_loc}&experience={int(float(exp_years or 0))}&jobAge={job_age_days}{wfh_param}{company_jobs_param}"
+                                if page_num > 1:
+                                    query_url += f"&pageNo={page_num}"
+                                if ctc_filter:
+                                    query_url += f"&ctcFilter={ctc_filter}"
+                            else: # ROLE_AND_COMPANY
+                                encoded_query = urllib.parse.quote(query_text)
+                                encoded_loc = urllib.parse.quote(primary_loc)
+                                query_url = f"https://www.naukri.com/jobs?k={encoded_query}&l={encoded_loc}&experience={int(float(exp_years or 0))}&jobAge={job_age_days}{wfh_param}{company_jobs_param}"
+                                if page_num > 1:
+                                    query_url += f"&pageNo={page_num}"
+                                if ctc_filter:
+                                    query_url += f"&ctcFilter={ctc_filter}"
                             card_selector = "div.srp-jobtuple-wrapper, article.jobTuple, div.cust-job-tuple"
                             
                         elif platform == "linkedin":
-                            query_kw = urllib.parse.quote(kw)
+                            query_kw = urllib.parse.quote(query_text)
                             query_loc = urllib.parse.quote(primary_loc)
                             start_param = (page_num - 1) * 25
                             query_url = f"https://www.linkedin.com/jobs/search/?keywords={query_kw}&location={query_loc}&f_AL=true&f_TPR=r259200&start={start_param}"
@@ -440,7 +512,7 @@ def run_batched_discovery(profile_path: str):
                         else:
                             continue
                             
-                        print(f"Searching: '{kw}' | Page {page_num}...", flush=True)
+                        print(f"[{strategy}] Searching: '{query_text}' | Page {page_num}...", flush=True)
                         try:
                             page.goto(query_url, wait_until="domcontentloaded", timeout=20000)
                             if platform == "naukri":
@@ -845,6 +917,14 @@ def run_batched_discovery(profile_path: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile", required=True)
+    parser.add_argument("--profile", default=None, help="Path to profile directory (optional, auto-discovers)")
     args = parser.parse_args()
-    run_batched_discovery(args.profile)
+    
+    # Dynamic profile fallback
+    if not args.profile:
+        resolved_ctx = ProfileContext(None, BASE_DIR)
+        profile_path = str(resolved_ctx.profile_path)
+    else:
+        profile_path = args.profile
+        
+    run_batched_discovery(profile_path)

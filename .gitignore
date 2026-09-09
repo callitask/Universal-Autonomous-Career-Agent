@@ -41,11 +41,21 @@ venv.bak/
 test-results/
 .playwright-artifacts/
 
-# 4. Logs and Databases
+# 4. Logs, Audit Dumps, and Databases
 *.log
 *.sqlite3
+output_*.json
+*_dom_audit.json
+dom_audit_*.json
+*.tmp
+*.bak
+*.swp
 
-# 5. OS Generated Files
+# 5. Agent & IDE Caches / Scratch Directories
+scratch/
+.gemini/
+
+# 6. OS Generated Files
 .DS_Store
 .DS_Store?
 ._*

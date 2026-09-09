@@ -18,12 +18,16 @@ CRITICAL INSTRUCTIONS:
    - DIRECTIVE 3: Antigravity 2.0 Dual-Brain Architecture — AG 2.0 is the primary brain. AI failures must gracefully fall back to File-Based IPC (pending_question.json). NEVER use terminal stdin (input() or readline()), as it freezes the background daemon.
    - DIRECTIVE 4: Method signatures and contracts are immutable. evaluate_job_match() executes deterministic factual scoring first in Zero-API mode and strictly gates Antigravity 2.0 IPC evaluation to the borderline window (40% <= score <= 65%). High-fit (>= 60%) qualifies immediately; out-of-domain drops at Stage 1 (0%); clear rejections (< 40%) resolve without IPC. MatchResult supports full tuple unpacking, attribute access, and dict methods.
    - DIRECTIVE 5: Naukri and LinkedIn handlers are strictly decoupled. Modals require container-isolated scrolling and React synthetic event dispatch for contenteditable elements. Guardrail H1 strictly prohibits blind options[0] or valid_opts[0] fallbacks in LinkedInApplyHandler, requiring IPC resolution and automated modal dismissal with 'Discard application' confirmation on failure or max steps.
-   - DIRECTIVE 7: Canonical CSV tracker schema, deduplication logic, and status codes are strictly enforced. ctx.load_processed_ledger() returns ProcessedLedger (a hybrid dictionary with set API parity) supporting O(1) deduplication and structured metadata dicts (status, company, title, score, timestamp).
-   - DIRECTIVE 8: There are 12 specific critical bug guardrails (C1, C2, C3, C4, C6, C9, H1, H2, H3, H4, H5, H6) that were fixed — you must NEVER reintroduce them. Specifically, C9 mandates immediate abort on platform rejection banners or premature drawer closure.
+    - DIRECTIVE 7: Canonical CSV tracker schema, deduplication logic, and status codes are strictly enforced. ctx.load_processed_ledger() returns ProcessedLedger (a hybrid dictionary with set API parity) supporting O(1) deduplication and structured metadata dicts (status, company, title, score, timestamp).
+    - DIRECTIVE 8: Known bug prevention guardrails (P1, C1-C4, C6, C9, C10, C11, H1-H6, D1-D3) that were fixed — you must NEVER reintroduce them:
+      * P1: Codebase Purity Enforcer (zero candidate data or profile paths in core/*.py verified via ctx.verify_codebase_purity()).
+      * C9: Immediate abort on platform rejection banners or premature drawer closure.
+      * C10: Chatbot submit element scoping (.sendMsgbtn_container .send .sendMsg div, never un-scoped button).
+      * C11: Lazy-loaded container mounting trap (window.scrollTo(0, 1200) before inspecting Naukri profile cards).
 
 4. After reading, confirm you understand by listing:
-   - The 8 directive names (including Directive 2 Clause 8 developer boundaries)
-   - The 12 bug guardrail IDs (C1, C2, C3, C4, C6, C9, H1, H2, H3, H4, H5, H6) and what each prevents
+   - The 8 directive names (including Directive 2 Clause 8 developer boundaries and Clause 9 Guardrail P1)
+   - The bug guardrail IDs (P1, C1-C4, C6, C9-C11, H1-H6, D1-D3) and what each prevents
    - The canonical CSV tracker header schema
    - The method signature, borderline IPC gating window (40-65%), and hybrid MatchResult contract for evaluate_job_match()
 
@@ -44,19 +48,21 @@ CRITICAL INSTRUCTIONS:
    - Section 2: The exact subprocess execution chain (continuous_career_agent -> 04_job_discovery -> generate_factual_tailored -> 02b upload -> 05_apply_jobs).
    - Section 3: Dual-Brain, IPC & Ledger contracts:
      * AIClient dynamically synthesizes profiles/<profile>/output/cognitive_profile.json (zero hardcoding).
+     * 02_profile_sync_naukri.py executes a 5-step selective profile sync engine, comparing live cards against ground-truth resumes and generating individual JSON evaluation cards in output/profile_sync/naukri_cards/.
      * Multi-cycle designation search (Cycle 1 exact, Cycle 2 adjacent, Cycle 3 senior/specialist).
      * Multi-session persistent ledger deduplication via ctx.load_processed_ledger() -> ProcessedLedger (hybrid dict with O(1) lookup and set API parity) and ctx.add_to_processed_ledger() storing structured metadata (status, company, title, score, timestamp).
      * Two-stage cognitive evaluation with Stage 2 deterministic factual scoring executing first and IPC gated strictly to 40-65% borderline roles.
      * LinkedInApplyHandler native modal automation with Guardrail H1 remediation, zero blind fallbacks, IPC option arbitration, and automated discard_and_close_modal() cleanup.
      * Chatbot screening questions route to pending_question.json and log to ques_ans_chatbot.json.
-   - Section 4: All data schemas (candidate_config.json, cognitive_profile.json, search_manifest.json, tracker CSV, processed_ledger.json, pending_question.json, ques_ans_chatbot.json).
-   - Section 5: Naukri chatbot drawer DOM anatomy — container-isolated scrolling (.chatbot_MessageContainer), radio/chip discovery, and C9 premature drawer closure / platform rejection detection.
+   - Section 4: All data schemas (candidate_config.json, cognitive_profile.json, search_manifest.json, tracker CSV, processed_ledger.json, pending_question.json, ques_ans_chatbot.json, naukri_cards/*.json, naukri_sync_report.json).
+   - Section 5: Naukri chatbot drawer DOM anatomy — container-isolated scrolling (.chatbot_MessageContainer), radio/checkbox label targets (label.ssrc__label), scoped submit div (.sendMsgbtn_container .send .sendMsg), and C9 premature drawer closure / platform rejection detection.
    - Section 6: Anti-detection timing parameters (30ms typing, 2500ms post-answer, domcontentloaded navigation, non-blocking profile sync).
-   - Section 7 & 8: Failure mode matrix and guardrails H1-H6.
+   - Section 7 & 8: Failure mode matrix and guardrails P1, H1-H6, C10, C11.
 
 4. After reading, confirm you understand by listing:
    - The full pipeline execution sequence.
    - The IPC and ledger contract (which JSON files connect which scripts, and the ProcessedLedger metadata schema).
+   - The 5-step selective profile sync workflow and evaluation card contract.
    - The ChatbotResolver and LinkedInApplyHandler modal handling protocols (including discard_and_close_modal).
    - The multi-cycle search keyword progression and deduplication chain in 04_job_discovery.py.
    - Guardrail C9's detection criteria and exit states.

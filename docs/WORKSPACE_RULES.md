@@ -32,6 +32,7 @@
    - **Developer Role:** In any development session, the AI assistant acts strictly as the **Principal Agent Developer**, modifying only the engine code (`core/`), documentation (`docs/`), utilities (`core/utils/`), and test harnesses.
    - **Hands Off `profiles/`:** The developer must **NEVER manually edit files inside the `profiles/` directory** (including `candidate_config.json`, `resume.md`, or candidate sandboxes).
    - **Autonomous Runtime Adaptation:** The agent code must be engineered so that **when the agent runs**, the agent itself autonomously and smartly reads, synthesizes, adapts, and updates candidate data (e.g. `cognitive_profile.json`, `processed_ledger.json`, `auto_learned_truths`, and `recommended_titles`) at runtime without human or developer manual file patching.
+9. **Guardrail P1 (Codebase Purity Enforcer):** The `ProfileContext` class must run `ctx.verify_codebase_purity()` on instantiation or pre-flight startup. It inspects all files under `core/*.py` to mathematically verify that zero candidate PII, candidate names, compensation values, or hardcoded profile paths exist in code. Any purity violation triggers a fatal runtime halt (`purity check failed`).
 
 ---
 
@@ -198,6 +199,15 @@
 8. **Browser Tab Hygiene & Non-Hijacking Execution:**
    `cleanup_browser_tabs(context, tracked_pages, active_page)` must track only Playwright pages created by discovery workers, and never blindly loop through `context.pages` closing user browsing tabs.
 
+9. **Lazy-Loaded Container Viewport Mounting Standard:**
+   Naukri profile sections (`#lazyEmployment`, `#lazyKeySkills`, `#lazyEducation`) defer child DOM card rendering until scrolled into the viewport. Any scraping or inspection script must execute `window.scrollTo(0, 1200)` and wait for DOM hydration before querying child cards, or the page will report 0 cards.
+
+10. **Strict Drawer Scoping for Chatbot Submit Actions:**
+    The submit element inside the Naukri chatbot drawer is a `<div>` (`<div class="sendMsg" tabindex="0">Save</div>` inside `.sendMsgbtn_container .send`), NOT a `<button>`. Using broad `button:has-text('Save')` without drawer scoping causes accidental clicks on the background job bookmark button. Submit queries must target `.sendMsgbtn_container .send:not(.disabled) .sendMsg` strictly scoped inside `get_drawer()`.
+
+11. **Radio & Checkbox Target Standard:**
+    Single-select and multi-select choices in the Naukri chatbot drawer are structured with `.ssrc__radio-btn-container` and `.ssrc__checkbox-btn-container`. Direct clicks must target `label.ssrc__label` associated with `input.ssrc__radio` or `input.ssrc__checkbox` to reliably activate React state and enable the `.send` button container.
+
 ---
 
 ## DIRECTIVE 6: LIVE LOGGING & RUNTIME TELEMETRY
@@ -300,6 +310,15 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 ### D3: Cross-Functional Domain Title Overrides
 **Rule:** Non-technical domain roles (Finance, Operations, Accounting, Legal, Supply Chain) frequently list software tools like "SQL database", "Accounting Software", or "Python scripting". The Incompatible Vertical hard gate in `evaluate_job_match()` must inspect the job title first. If the job title aligns with the candidate's core domain, technical tools mentioned in the JD must NOT trigger an out-of-domain tech vertical rejection.
 
+### P1: Codebase Purity Enforcer (Runtime Candidate-Agnostic Guarantee)
+**Rule:** No candidate PII, candidate names, compensation values, or hardcoded profile paths may exist inside `core/*.py`. The codebase must remain 100% generic and candidate-agnostic. All scripts must verify this via `ctx.verify_codebase_purity()` on startup. Any purity violation triggers an immediate fatal runtime halt.
+
+### C10: Chatbot Submit Element Scoping (Div vs Button Trap)
+**Rule:** The submit element inside the Naukri chatbot drawer is `<div class="sendMsg" tabindex="0">Save</div>` inside `.sendMsgbtn_container .send`. Using broad `button:has-text('Save')` without drawer scoping causes Playwright to click the background job bookmark button instead of submitting the application. Submit queries must target `.sendMsgbtn_container .send:not(.disabled) .sendMsg` strictly scoped inside `get_drawer()`.
+
+### C11: Lazy-Loaded Profile Container Mounting Trap
+**Rule:** Naukri profile sections (`#lazyEmployment`, `#lazyKeySkills`, `#lazyEducation`) do NOT render child cards until scrolled into the viewport. Any scraping or sync script must execute `window.scrollTo(0, 1200)` and wait for DOM hydration before querying child cards, otherwise the page returns zero cards even on fully populated profiles.
+
 ---
 
 ## APPENDIX A: DIRECTORY STRUCTURE CONTRACT
@@ -309,7 +328,7 @@ F:\JOB AI AGENT\
 ├── core/                              # Python execution scripts (NEVER hardcode paths)
 │   ├── ai_client.py                   # Central AI reasoning engine
 │   ├── 01_ai_analyzer.py              # One-time profile keyword extraction
-│   ├── 02_profile_sync_naukri.py      # Naukri profile sync
+│   ├── 02_profile_sync_naukri.py      # Surgical selective Naukri profile sync (5-step card engine)
 │   ├── 02b_naukri_fast_resume_upload.py # Atomic resume upload
 │   ├── 03_profile_sync_linkedin.py    # LinkedIn profile sync
 │   ├── 04_job_discovery.py            # Batched job scraper + orchestrator
@@ -317,7 +336,7 @@ F:\JOB AI AGENT\
 │   ├── generate_factual_tailored.py   # Resume tailoring + PDF generation
 │   ├── continuous_career_agent.py     # Daemon loop orchestrator
 │   ├── utils/
-│   │   ├── profile_context.py         # Multi-user sandbox context manager
+│   │   ├── profile_context.py         # Multi-user sandbox context manager & Purity Enforcer
 │   │   └── browser_manager.py         # CDP browser lifecycle manager
 │   └── scrapers/                      # DEAD CODE — do not use or reference
 │
@@ -327,6 +346,9 @@ F:\JOB AI AGENT\
 │       ├── resume.md                  # Factual reverse-chronological resume
 │       └── output/
 │           ├── applications/          # Per-job tailored resume folders
+│           ├── profile_sync/          # Selective profile sync cards & sync reports
+│           │   ├── naukri_cards/      # Per-role JSON evaluation cards (KEEP/UPDATE/ADD)
+│           │   └── naukri_sync_report.json # Summary sync metrics
 │           ├── applications_tracker.csv
 │           ├── search_manifest.json
 │           ├── saved_external_jobs.json

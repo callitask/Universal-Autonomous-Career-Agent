@@ -839,6 +839,97 @@ Score from 0 to 100 in strict JSON:
             missing_skills=missing_skills[:5]
         )
 
+    def evaluate_profile_experience(
+        self,
+        designation: str,
+        company: str,
+        live_desc: str,
+        source_desc: str
+    ) -> Dict[str, Any]:
+        """
+        Cognitive comparison of live platform profile description vs source resume/config description.
+        Determines whether the live portal description is already high quality / optimal (KEEP_EXISTING),
+        or if source data has richer metrics/details and needs an update (UPDATE_REQUIRED).
+        Returns structured decision and the optimal description.
+        """
+        clean_live = str(live_desc or "").strip()
+        clean_source = str(source_desc or "").strip()
+
+        # If live has no description at all, update is required
+        if not clean_live:
+            optimal = self.generate_text(
+                prompt=f"Format this work experience into clean, professional, ATS-optimized bullet points using '-':\nRole: {designation} at {company}\nDescription: {clean_source}",
+                default_fallback=clean_source
+            )
+            return {
+                "action_decision": "UPDATE_REQUIRED",
+                "decision_reasoning": "Live portal description is empty. Generated optimal ATS bullets from candidate source.",
+                "optimal_description": optimal or clean_source,
+                "diff_detected": True
+            }
+
+        prompt = f"""You are an elite ATS Profile Evaluator and Executive Resume Writer.
+Compare the existing LIVE portal job description with the candidate's SOURCE resume description for this role.
+
+Role: {designation} at {company}
+
+LIVE PORTAL DESCRIPTION:
+\"\"\"{clean_live}\"\"\"
+
+SOURCE RESUME / CONFIG DESCRIPTION:
+\"\"\"{clean_source}\"\"\"
+
+EVALUATION CRITERIA:
+1. Does the LIVE description already contain high quality, grammatically sound, quantifiable bullet points with specific metrics (e.g. %, $, volume, headcount)?
+2. If the LIVE description is already comprehensive, professional, and well-written, we should RETAIN it to avoid unnecessary profile churn.
+3. If the LIVE description is vague, unstructured, missing key metrics, or if the SOURCE description contains significantly better factual impact bullets, we should UPDATE it with an optimal version.
+
+Return STRICTLY a JSON object with this exact schema:
+{{
+  "action_decision": "KEEP_EXISTING" or "UPDATE_REQUIRED",
+  "decision_reasoning": "<concise factual reasoning explaining why live description is kept or updated>",
+  "optimal_description": "<the best description to display on the portal, formatted with '-' bullets, strictly preserving all factual numbers and technologies>"
+}}"""
+
+        try:
+            raw = self.generate_text(prompt=prompt, task_type="PROFILE_EVALUATION")
+            if raw:
+                json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+                if json_match:
+                    res = json.loads(json_match.group(0))
+                    decision = res.get("action_decision", "KEEP_EXISTING")
+                    if decision not in ["KEEP_EXISTING", "UPDATE_REQUIRED"]:
+                        decision = "KEEP_EXISTING"
+                    optimal = res.get("optimal_description", clean_live if decision == "KEEP_EXISTING" else clean_source)
+                    return {
+                        "action_decision": decision,
+                        "decision_reasoning": res.get("decision_reasoning", "Evaluated by AI Brain."),
+                        "optimal_description": optimal,
+                        "diff_detected": (decision == "UPDATE_REQUIRED")
+                    }
+        except Exception as e:
+            print(f"[AI CLIENT] Notice during profile experience evaluation: {e}", flush=True)
+
+        # Resilient heuristic fallback: check bullet structure and metrics
+        live_bullets = [b for b in clean_live.split("\n") if b.strip().startswith("-") or b.strip().startswith("•")]
+        live_metrics = len(re.findall(r'\b\d+(?:[.,]\d+)?%?|\$\d+', clean_live))
+        source_metrics = len(re.findall(r'\b\d+(?:[.,]\d+)?%?|\$\d+', clean_source))
+
+        if len(live_bullets) >= 3 and live_metrics >= max(2, source_metrics):
+            return {
+                "action_decision": "KEEP_EXISTING",
+                "decision_reasoning": f"Live description already has {len(live_bullets)} structured bullets and {live_metrics} quantified metrics. Quality is optimal.",
+                "optimal_description": clean_live,
+                "diff_detected": False
+            }
+        else:
+            return {
+                "action_decision": "UPDATE_REQUIRED",
+                "decision_reasoning": "Live description lacks structured bullet points or key quantifiable metrics present in source. Enhancing.",
+                "optimal_description": clean_source,
+                "diff_detected": True
+            }
+
     def answer_screening_question(
         self,
         question: str,
@@ -862,9 +953,11 @@ Score from 0 to 100 in strict JSON:
         q_clean = question.strip()
         q_lower = q_clean.lower()
 
-        # Step 1: Strict EXACT MATCH check from previous agent answers (Directive 3.5)
+        # Step 1: Strict EXACT MATCH and safe normalized punctuation check
+        q_norm = re.sub(r'[\s:?._-]+$', '', q_lower).strip()
         for k, v in learned.items():
-            if k.strip().lower() == q_lower:
+            k_clean = k.strip().lower()
+            if k_clean == q_lower or re.sub(r'[\s:?._-]+$', '', k_clean).strip() == q_norm:
                 val = str(v).strip()
                 if options:
                     matched_opt = self._best_option_match(val, options)
@@ -873,7 +966,8 @@ Score from 0 to 100 in strict JSON:
                 return val
 
         for k, v in ats.items():
-            if k.strip().lower() == q_lower:
+            k_clean = k.strip().lower()
+            if k_clean == q_lower or re.sub(r'[\s:?._-]+$', '', k_clean).strip() == q_norm:
                 val = str(v).strip()
                 if options:
                     matched_opt = self._best_option_match(val, options)
@@ -886,12 +980,23 @@ Score from 0 to 100 in strict JSON:
         if not resume_md and self.profile_context and hasattr(self.profile_context, "resume_text"):
             resume_md = self.profile_context.resume_text
 
+        p_content = profile.get("profile_content", {})
+        taxonomy = profile.get("taxonomy_skills", {})
+        factual_db = {
+            "personal_and_career_parameters": cand,
+            "education": p_content.get("education", []),
+            "employment_history": p_content.get("employment", {}),
+            "certifications": p_content.get("certifications", []),
+            "key_skills": p_content.get("key_skills", []),
+            "taxonomy_skills": taxonomy
+        }
+
         prompt = f"""You are answering an official recruiter screening questionnaire on behalf of the candidate.
-CANDIDATE PROFILE DATA (FACTUAL SOURCE OF TRUTH):
-{json.dumps(cand, indent=2)}
+CANDIDATE FACTUAL DATABASE (GROUND TRUTH):
+{json.dumps(factual_db, indent=2)}
 
 CANDIDATE MASTER RESUME:
-{resume_md[:3500]}
+{resume_md[:4000]}
 
 RECRUITER QUESTION:
 "{q_clean}"
@@ -902,15 +1007,19 @@ CONTROL TYPE:
 AVAILABLE CHOICES (IF APPLICABLE):
 {json.dumps(options, indent=2) if options else 'None (Provide direct concise factual text or numeric value. Maximum 250 characters.)'}
 
-INSTRUCTIONS:
-1. Examine the candidate resume and profile data carefully for the specific skill, tool, process, or domain requested.
-2. If choices/options are provided, your answer MUST match one of the available choices EXACTLY verbatim.
-3. If the question asks for years of experience in a specific skill or process:
+CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
+1. ZERO UNGROUNDED ASSUMPTIONS: You must NEVER assume, invent, hallucinate, or extrapolate facts about the candidate. Every fact MUST originate directly from the Candidate Factual Database or Master Resume.
+2. If the question asks whether the candidate possesses a specific skill, tool, degree, or certification that is NOT mentioned in the profile:
+   - For choices: choose 'No', 'None', '0', or the lowest truthful option.
+   - For text/numeric: answer 'No' or '0'.
+   - NEVER assume the candidate knows a technology just because it is commonly used in their domain.
+3. If choices/options are provided, your answer MUST match one of the available choices EXACTLY verbatim.
+4. If the question asks for years of experience in a specific skill or process:
    - Calculate how many years the candidate actually practiced that specific skill based on their employment history.
-   - If the candidate DOES NOT have experience in that specific skill/process in their resume, answer '0'.
+   - If the candidate DOES NOT have experience in that specific skill/process, answer '0'.
    - DO NOT default to their total career experience unless the question explicitly asks for overall/total experience.
-4. Provide a strictly truthful, factual answer based ONLY on the provided candidate context. Keep answers under 250 characters. Do not invent or guess.
-5. Output STRICTLY the final answer string with zero conversational preamble."""
+5. Provide a strictly truthful, factual answer based ONLY on the provided candidate context. Keep answers under 250 characters.
+6. Output STRICTLY the final answer string with zero conversational preamble."""
 
         # Dispatch to File IPC for AG 2.0 to resolve
         answer = self._fallback_antigravity_ipc(

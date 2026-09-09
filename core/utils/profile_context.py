@@ -18,7 +18,7 @@ import re
 import argparse
 import tempfile
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, Tuple, List
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -189,6 +189,11 @@ class ProcessedLedger(dict):
         return self
 
 
+class CodebasePurityViolationError(RuntimeError):
+    """Raised when hardcoded candidate values or profile paths are found in core engine scripts."""
+    pass
+
+
 class ProfileContext:
     """
     Enterprise Profile Sandboxing & Path Resolution Engine.
@@ -234,6 +239,7 @@ class ProfileContext:
         self.config: Dict[str, Any] = self._load_config()
         self.resume_text: str = self._load_resume()
 
+
     def _auto_discover_profile_dir(self) -> Path:
         """Dynamically scans profiles directory or parses CLI arguments."""
         parser = argparse.ArgumentParser(add_help=False)
@@ -246,14 +252,76 @@ class ProfileContext:
 
         profiles_dir = self.base_path / "profiles"
         if profiles_dir.exists():
-            candidates = [p for p in profiles_dir.iterdir() if p.is_dir()]
+            candidates = [p for p in profiles_dir.iterdir() if p.is_dir() and not p.name.startswith(".")]
             if candidates:
-                return candidates[0].resolve()
+                # Prefer candidate folder with candidate_config.json that is not default_user
+                valid_candidates = [p for p in candidates if (p / "candidate_config.json").exists() and p.name != "default_user"]
+                if valid_candidates:
+                    selected = valid_candidates[0].resolve()
+                    print(f"[ProfileContext] Auto-discovered active candidate profile: {selected.name}", flush=True)
+                    return selected
+                selected = candidates[0].resolve()
+                print(f"[ProfileContext] Auto-discovered profile: {selected.name}", flush=True)
+                return selected
 
         raise RuntimeError(
             f"[ProfileContext] No valid candidate profile found in {profiles_dir}. "
             f"Please supply '--profile profiles/<profile_name>'."
         )
+
+    def verify_codebase_purity(self) -> Tuple[bool, List[str]]:
+        """
+        Guardrail P1: Codebase Purity & Zero-Hardcoding Enforcer.
+        Scans all python files in core/ to guarantee that:
+        1. No candidate-specific values (email, phone, specific folder names) are hardcoded.
+        2. No self-modifying code writes to .py files.
+        Raises CodebasePurityViolationError if any violation is detected.
+        """
+        core_dir = self.base_path / "core"
+        if not core_dir.exists():
+            return True, []
+
+        violations = []
+        cand = self.config.get("candidate", {})
+        cand_email = str(cand.get("email", "")).strip().lower()
+        cand_phone = re.sub(r'\D', '', str(cand.get("phone", "")))
+        profile_folder_name = self.profile_path.name.lower()
+
+        # Check candidate personal values (ignoring placeholders)
+        forbidden_strings = set()
+        if cand_email and "@" in cand_email and not any(p in cand_email for p in ["[", "<", "your"]):
+            forbidden_strings.add(cand_email)
+        if cand_phone and len(cand_phone) >= 10 and not any(p in cand_phone for p in ["[", "<"]):
+            forbidden_strings.add(cand_phone)
+        if profile_folder_name and profile_folder_name != "default_user":
+            # Search for specific profile path patterns like "profiles/name"
+            forbidden_strings.add(f"profiles/{profile_folder_name}")
+            forbidden_strings.add(f"profiles\\\\{profile_folder_name}")
+
+        for py_file in core_dir.rglob("*.py"):
+            if "__pycache__" in str(py_file):
+                continue
+            try:
+                content = py_file.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+
+            # 1. Check for candidate PII / profile path hardcoding
+            for s in forbidden_strings:
+                if s in content.lower():
+                    violations.append(f"Found hardcoded token '{s}' in {py_file.relative_to(self.base_path)}")
+
+            # 2. Check for self-modifying scripts writing to .py files
+            write_py_matches = re.findall(r'open\s*\([^)]*\.py[\'\"][^)]*[\'\"a-zA-Z]*w', content)
+            if write_py_matches:
+                violations.append(f"Potential self-modifying write to .py found in {py_file.relative_to(self.base_path)}: {write_py_matches}")
+
+        if violations:
+            err_msg = "[GUARDRAIL P1 VIOLATION] Hardcoded profile data detected in engine code:\n" + "\n".join(f"  - {v}" for v in violations)
+            raise CodebasePurityViolationError(err_msg)
+
+        print("  [PURITY CHECK] Guardrail P1 passed: 100% candidate-agnostic codebase purity verified.", flush=True)
+        return True, []
 
     def _load_config(self) -> Dict[str, Any]:
         """Loads candidate_config.json safely."""

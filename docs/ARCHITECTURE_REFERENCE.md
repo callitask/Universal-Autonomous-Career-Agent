@@ -48,121 +48,127 @@ continuous_career_agent.py (daemon loop)
        └── time.sleep(delay)  →  Next Cycle
 ```
 
-**IPC Contract:** Scripts communicate via filesystem artifacts:
-- `search_manifest.json` — Discovery → Tailoring → Application (enriched with `jd_path` and `description`)
-- `applications_tracker.csv` — Application → Deduplication (canonical 9-column schema)
-- `saved_external_jobs.json` — External redirect storage
-- `candidate_config.json` — Self-learning truth cache (read/write by all scripts)
-- `pending_question.json` — Async File-Based IPC handshake between the Application Engine and AG 2.0 (replaces terminal stdin blocking)
-- `ques_ans_chatbot.json` — Per-job Q&A audit log stored alongside tailored resumes
-- `Job_Description.md` — Raw scraped JD markdown saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
-- `job_details.json` — Structured job metadata saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
-
----
-
-## 3. MODULE-BY-MODULE REFERENCE
-
-### 3.1 `ai_client.py` — Central AI Reasoning Engine
-
-**Classes:**
-- `MatchResult(tuple)` — Hybrid result supporting tuple unpacking (`score, reasoning, matching, missing = result`), attribute access (`result.score`), and dict-style lookups (`result['score']`, `result.get('score', 0)`).
-- `AIClient` — Gemini Flash + Antigravity 2.0 File-Based IPC dual-brain.
-
-**Key Methods:**
-| Method | Purpose | Fallback Chain |
-|:---|:---|:---|
-| `generate_text(...)` | General LLM text generation (profile summary, bullets) | Operational Gemini client → `pending_question.json` File-Based IPC |
-| `synthesize_cognitive_profile(...)` | Runtime Cognitive Profile Model synthesis | Gemini LLM → Deterministic Taxonomy Engine → saves to `cognitive_profile.json` |
-| `get_active_search_cycle()` | Returns current batch of 5–8 designations | Loads `cognitive_profile.json` → returns active cycle |
-| `advance_search_cycle()` | Advances designation batch across discovery sweeps | Increments `active_cycle_index` % cycles → saves `cognitive_profile.json` |
-| `evaluate_job_match(...)` | Two-Stage Cognitive Qualification Engine (0-100) | Stage 1 Gatekeeper (C6 negative, domain stem, exp band, dynamic incompatible verticals) → Stage 2 Precision (Gemini JSON / IPC 40-65 / Heuristics with min 2 core skills, $\ge 60\%$ threshold) |
-| `arbitrate_card_fit(...)` | Tier 2B Cognitive Card Arbitration (SRP) | Evaluates unfamiliar roles, dynamic acronyms, and card skills $\rightarrow$ Gemini / Heuristics against `cognitive_profile.json` |
-| `analyze_and_expand_designations(...)` | Tier 4 Autonomous Starvation Recovery | Analyzes `resume.md` + experience + seen market titles $\rightarrow$ Auto-enriches `candidate_config.json` |
-| `answer_screening_question(...)` | Resolves chatbot questions | Exact cache (`auto_learned_truths`) → Gemini API → File IPC polling |
-| `_best_option_match(...)` | Maps freeform answer to UI choices | Exact → word-boundary (`\b`) → numeric → boolean → `None` (H1/H2 compliant) |
-| `_persist_learned_truth(...)` | Caches verified answers to config | Atomic via `ProfileContext.save_config()` (`.tmp` + `os.replace`) |
-| `_fallback_antigravity_ipc(...)` | AG 2.0 Handshake Hook | Writes `pending_question.json` and polls until AG 2.0 fills the `"answer"` key |
-
-**Critical Design Decisions:**
-- **Autonomous Cognitive Profile Synthesis:** At runtime, `AIClient.synthesize_cognitive_profile()` inspects the active candidate's `resume.md` and configuration, derives their domain (e.g. Finance & Accounting, Software Engineering, etc.), core vs. generic soft skills, domain acronyms, out-of-domain incompatible verticals, and multi-cycle designation queues (Cycle 1 core, Cycle 2 seniority/lateral, Cycle 3 specialized/functional) stored in `profiles/<profile>/output/cognitive_profile.json`.
-- **Zero-Hardcoding Contract:** Zero vertical dictionaries, domain words, or soft skill sets exist in Python source code. All evaluation gates in `evaluate_job_match()` and `arbitrate_card_fit()` read dynamically from `cognitive_profile.json`.
-- **Two-Stage Cognitive Qualification Engine:** Stage 1 Deterministic Gatekeeper enforces C6 absolute negative keywords, domain root-stem token gating (excluding hierarchy stopwords), an **Incompatible Industry/Vertical Hard Gate** (rejecting verticals flagged incompatible by the cognitive profile), and an experience band filter (>3yr gap auto-rejects). Stage 2 Precision scoring enforces a strict 60% qualification bar and requires $\ge 2$ distinct **CORE functional domain skills** (excluding soft skills like "analytical" or "problem solving").
-- **Tier 2B Cognitive Card Arbitration:** Evaluates unfamiliar roles, dynamic domain abbreviations, and visible skill chips while strictly rejecting incompatible verticals; does not contaminate candidate configuration with card titles.
-- **Tier 4 Autonomous Starvation Recovery:** If 0 jobs are found in a sweep, the Brain analyzes all seen market titles, compares with `resume.md` and candidate's total experience, and expands `candidate_config.json` with high-yield senior designations within the candidate's domain.
-- **Zero Terminal Blocking:** Removed `sys.stdin.readline()`. The background daemon will never freeze waiting for terminal input.
-- **AG 2.0 File IPC Polling:** Non-blocking polling of `pending_question.json`. Once an answer is detected, it proceeds instantly and unlinks the file.
-- **Strict Exact-Match Caching Only:** When checking `auto_learned_truths`, uses strict `key.strip().lower() == question.strip().lower()`.
-- **Character Limits:** Automatically trims free-text IPC answers to 250 characters to prevent form-field overflow.
-
----
-
-### 3.2 `04_job_discovery.py` — Batched Discovery Engine
-
-**Execution Flow:**
-1. Connect to Chrome via CDP at `candidate.cdp_url`
-2. Load persistent dedup ledger (`processed_ledger.json`) + CSV + external JSON; initialize `session_seen_titles = set()`
-3. Retrieve active cycle of 5–8 designations via `ai.get_active_search_cycle()`
-4. For each (platform × location × keyword in active_cycle × page):
-   a. Navigate to search results page (SRP) with recency filter (`&jobAge=3` or `&f_TPR=r259200`)
-   b. Extract up to 15 job cards per page, including `title`, `company`, `url`, `exp_text` (e.g. "5-10 Yrs"), and `card_skills` tags
-   c. Record all discovered titles in `session_seen_titles`
-   d. Multi-Pass Gating (`is_title_allowed`):
-      - C6 Negative Check (Absolute drop: `Sales`, `Intern`, `Director`)
-      - Direct Keyword / Stem Match (Immediate Pass)
-      - Card Skills Match (Immediate Pass if card tags match candidate taxonomy)
-      - Tier 2B Cognitive Brain Arbitration (`ai.arbitrate_card_fit`): Evaluates role, dynamic acronyms, and candidate skills against `cognitive_profile.json`
-      - If rejected: immediately persist to `processed_ledger.json` (`status="domain_gated"`)
-   e. Deep scan detail page: check for external apply $\rightarrow$ gate and record to `saved_external_jobs.json` and `processed_ledger.json` if present
-   f. Extract full JD text + specifications + required skill tags
-   g. Two-Stage AI score evaluation $\rightarrow$ qualify only if `score >= 60`; persist low scores to `processed_ledger.json`
-   h. Dynamically sanitize application folder: `profiles/<profile>/output/applications/<Company>_<Role>/`
-   i. Immediately write `Job_Description.md` and `job_details.json` to the application folder
-   j. Append enriched job entry (`jd_path`, `description`) to `search_manifest.json`
-   k. Persist qualified URL & title to `processed_ledger.json`
-   l. When batch reaches BATCH_SIZE=1: trigger tailoring → upload → apply pipeline
-5. Resume discovery sweep
-6. Advance search cycle via `ai.advance_search_cycle()` for next sweep
-7. **Tier 4 Autonomous Starvation Auto-Healing:**
-   If `applied_count == 0` after the full sweep, triggers `ai.analyze_and_expand_designations()` using `session_seen_titles` and candidate's total experience, atomically updating `candidate_config.json` with senior market designations.
-
-**Non-Hijacking Tab Cleanup:**
-`cleanup_browser_tabs(context, tracked_pages, active_page)` tracks only Playwright pages created by discovery workers, safely closing non-active worker tabs while strictly protecting unrelated user browsing tabs.
-
-**Naukri URL Pattern:**
-```
-https://www.naukri.com/{keyword-slug}-jobs-in-{location-slug}[-{page}]?experience={N}&jobAge={age}[&ctcFilter={lo}to{hi}]
-```
-
-**LinkedIn URL Pattern:**
-```
-https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_AL=true&f_TPR=r259200&start={N*25}
-```
-
-**Deduplication Sources:**
-- `processed_ledger.json` → Multi-session persistent deduplication ledger via `ctx.load_processed_ledger()` and `ctx.add_to_processed_ledger()` storing structured metadata dicts (`status`, `company`, `title`, `score`, `timestamp`) with $O(1)$ set/dict lookup speed and case-insensitive/trimmed normalization.
-- `applications_tracker.csv` → `"Job URL"` column via `csv.DictReader`
-- `saved_external_jobs.json` → `url` and `title` fields
-
----
-
-### 3.3 `05_apply_jobs.py` — Application Engine
-
-**Two Main Classes:**
-
-#### `ChatbotResolver` — DOM Chatbot Reverse-Engineering
-- **Question Extraction:** Iterates `li.botItem .botMsg` elements in reverse, filtering greetings containing candidate name.
-- **Control Detection Priority:** `FILE_UPLOAD` → `DATE_INPUT` → `RADIO_CHIP` (chips, toggle pills, custom radios, excluding `.chipMsg`) → `DROPDOWN` → `CONTENTEDITABLE` → `UNKNOWN`.
-- **Contenteditable React Protocol:** Click → Ctrl+A → Backspace → `page.keyboard.insert_text(answer)` → native `document.execCommand('insertText')` → manual `dispatchEvent` (Input/Change/Keydown/Keyup) → forcefully remove `.disabled` class and `disabled` attribute from Send/Submit button.
-- **Chip Selection:** Escapes single quotes via `replace("'", "\\'")` (H3 Guardrail), clicks matching chip/label natively and via Playwright locators, and triggers Save/Next button.
-- **Platform Rejection Banner Detection (Guardrail C9):** Checks for platform rejection banners (*"Oops! Your application was not accepted due to incomplete information..."*, *"application was not accepted"*) and aborts immediately (`FAILED_PLATFORM_REJECTED`) instead of looping 25 times.
-- **Premature Drawer Closure Detection (Guardrail C9):** Detects unmounted or dismissed chatbot drawers (`not resolver.is_drawer_open()`), verifies completion, and aborts immediately (`DRAWER_CLOSED`) rather than hanging.
-- **Bug 4 Fix & Unknown Control Fallback:** Checks visibility of `contenteditable` input before attempting typing; if no visible input exists, extracts all visible interactive labels/chips and routes to `pending_question.json` IPC to prevent blind typing loops into detached DOM nodes.
-- **3x Stuck Question Loop Breaker:** If active question repeats $\ge 3$ times without progress, immediately aborts the loop, logs `REQUIRES_MANUAL_INTERVENTION`, and writes `[ABORTED_STUCK_3X]` into `ques_ans_chatbot.json`.
-- **Per-Job Audit Logging:** Every question asked, the control type detected, and the resolved answer are appended to `profiles/<profile>/output/applications/<Company>_<Role>/ques_ans_chatbot.json`.
-
-#### `LinkedInApplyHandler` — Native LinkedIn Easy Apply Modal Automation
-- **Modal Detection & Container Scoping:** Identifies `div.jobs-easy-apply-modal` or `div[data-test-modal]` without interfering with background search pages.
-- **Dynamic Field Resolution:**
+51: **IPC Contract:** Scripts communicate via filesystem artifacts:
+52: - `search_manifest.json` — Discovery → Tailoring → Application (enriched with `jd_path` and `description`)
+53: - `applications_tracker.csv` — Application → Deduplication (canonical 9-column schema)
+54: - `saved_external_jobs.json` — External redirect storage
+55: - `candidate_config.json` — Self-learning truth cache (read/write by all scripts)
+56: - `pending_question.json` — Async File-Based IPC handshake between the Application Engine and AG 2.0 (replaces terminal stdin blocking)
+57: - `ques_ans_chatbot.json` — Per-job Q&A audit log stored alongside tailored resumes
+58: - `Job_Description.md` — Raw scraped JD markdown saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
+59: - `job_details.json` — Structured job metadata saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
+60: - `output/profile_sync/naukri_cards/` — Per-role evaluation cards (`KEEP_EXISTING` / `UPDATE_REQUIRED` / `ADD_NEW`)
+61: - `output/profile_sync/naukri_sync_report.json` — Profile sync execution summary metrics
+62: 
+63: ---
+64: 
+65: ## 3. MODULE-BY-MODULE REFERENCE
+66: 
+67: ### 3.1 `ai_client.py` — Central AI Reasoning Engine
+68: 
+69: **Classes:**
+70: - `MatchResult(tuple)` — Hybrid result supporting tuple unpacking (`score, reasoning, matching, missing = result`), attribute access (`result.score`), and dict-style lookups (`result['score']`, `result.get('score', 0)`).
+71: - `AIClient` — Gemini Flash + Antigravity 2.0 File-Based IPC dual-brain.
+72: 
+73: **Key Methods:**
+74: | Method | Purpose | Fallback Chain |
+75: |:---|:---|:---|
+76: | `generate_text(...)` | General LLM text generation (profile summary, bullets) | Operational Gemini client → `pending_question.json` File-Based IPC |
+77: | `synthesize_cognitive_profile(...)` | Runtime Cognitive Profile Model synthesis | Gemini LLM → Deterministic Taxonomy Engine → saves to `cognitive_profile.json` |
+78: | `get_active_search_cycle()` | Returns current batch of 5–8 designations | Loads `cognitive_profile.json` → returns active cycle |
+79: | `advance_search_cycle()` | Advances designation batch across discovery sweeps | Increments `active_cycle_index` % cycles → saves `cognitive_profile.json` |
+80: | `evaluate_job_match(...)` | Two-Stage Cognitive Qualification Engine (0-100) | Stage 1 Gatekeeper (C6 negative, domain stem, exp band, dynamic incompatible verticals) → Stage 2 Precision (Gemini JSON / IPC 40-65 / Heuristics with min 2 core skills, $\ge 60\%$ threshold) |
+81: | `arbitrate_card_fit(...)` | Tier 2B Cognitive Card Arbitration (SRP) | Evaluates unfamiliar roles, dynamic acronyms, and card skills $\rightarrow$ Gemini / Heuristics against `cognitive_profile.json` |
+82: | `analyze_and_expand_designations(...)` | Tier 4 Autonomous Starvation Recovery | Analyzes `resume.md` + experience + seen market titles $\rightarrow$ Auto-enriches `candidate_config.json` |
+83: | `evaluate_profile_experience(...)` | Compares live card description with source of truth | Gemini / Heuristics → returns action decision & optimal text |
+84: | `answer_screening_question(...)` | Resolves chatbot questions | Exact cache (`auto_learned_truths`) → Gemini API → File IPC polling |
+85: | `_best_option_match(...)` | Maps freeform answer to UI choices | Exact → word-boundary (`\b`) → numeric → boolean → `None` (H1/H2 compliant) |
+86: | `_persist_learned_truth(...)` | Caches verified answers to config | Atomic via `ProfileContext.save_config()` (`.tmp` + `os.replace`) |
+87: | `_fallback_antigravity_ipc(...)` | AG 2.0 Handshake Hook | Writes `pending_question.json` and polls until AG 2.0 fills the `"answer"` key |
+88: 
+89: **Critical Design Decisions:**
+90: - **Autonomous Cognitive Profile Synthesis:** At runtime, `AIClient.synthesize_cognitive_profile()` inspects the active candidate's `resume.md` and configuration, derives their domain (e.g. Finance & Accounting, Software Engineering, etc.), core vs. generic soft skills, domain acronyms, out-of-domain incompatible verticals, and multi-cycle designation queues (Cycle 1 core, Cycle 2 seniority/lateral, Cycle 3 specialized/functional) stored in `profiles/<profile>/output/cognitive_profile.json`.
+91: - **Zero-Hardcoding Contract & Guardrail P1:** Zero vertical dictionaries, domain words, or soft skill sets exist in Python source code. All evaluation gates in `evaluate_job_match()` and `arbitrate_card_fit()` read dynamically from `cognitive_profile.json`.
+92: - **Two-Stage Cognitive Qualification Engine:** Stage 1 Deterministic Gatekeeper enforces C6 absolute negative keywords, domain root-stem token gating (excluding hierarchy stopwords), an **Incompatible Industry/Vertical Hard Gate** (rejecting verticals flagged incompatible by the cognitive profile), and an experience band filter (>3yr gap auto-rejects). Stage 2 Precision scoring enforces a strict 60% qualification bar and requires $\ge 2$ distinct **CORE functional domain skills** (excluding soft skills like "analytical" or "problem solving").
+93: - **Tier 2B Cognitive Card Arbitration:** Evaluates unfamiliar roles, dynamic domain abbreviations, and visible skill chips while strictly rejecting incompatible verticals; does not contaminate candidate configuration with card titles.
+94: - **Tier 4 Autonomous Starvation Recovery:** If 0 jobs are found in a sweep, the Brain analyzes all seen market titles, compares with `resume.md` and candidate's total experience, and expands `candidate_config.json` with high-yield senior designations within the candidate's domain.
+95: - **Zero Terminal Blocking:** Removed `sys.stdin.readline()`. The background daemon will never freeze waiting for terminal input.
+96: - **AG 2.0 File IPC Polling:** Non-blocking polling of `pending_question.json`. Once an answer is detected, it proceeds instantly and unlinks the file.
+97: - **Strict Exact-Match Caching Only:** When checking `auto_learned_truths`, uses strict `key.strip().lower() == question.strip().lower()`.
+98: - **Character Limits:** Automatically trims free-text IPC answers to 250 characters to prevent form-field overflow.
+99: 
+100: ---
+101: 
+102: ### 3.1b `02_profile_sync_naukri.py` — Surgical Selective Profile Sync Engine
+103: 
+104: **The 5-Step Cognitive Selective Workflow:**
+105: 1. **Step A (Ground-Truth Ingestion):** Ingests candidate employment history from `resume.md` and `candidate_config.json` (`profile_content.employment`).
+106: 2. **Step B (Non-Destructive Live DOM Inspection):** Connects via CDP, navigates to `https://www.naukri.com/mnjuser/profile`, executes mandatory `window.scrollTo(0, 1200)` to mount `#lazyEmployment` and `#lazyKeySkills`, and scrapes live headline, summary, key skills, and employment cards.
+107: 3. **Step C (AI Evaluation & Decision Making):** For each candidate experience, compares live portal description against ground-truth resume via `ai_client.evaluate_profile_experience()`. Returns:
+108:    - `KEEP_EXISTING`: Live card is already comprehensive and well-written. Left untouched.
+109:    - `UPDATE_REQUIRED`: Outdated description or missing ATS keywords. Prepared for surgical update.
+110:    - `ADD_NEW`: Role does not exist on live profile. Prepared for addition.
+111: 4. **Step D (JSON Evaluation Card Generation):** Saves an individual JSON card for each evaluated role into `profiles/<profile>/output/profile_sync/naukri_cards/<Company>_<Role>.json` documenting live content, optimal content, action decision, and reasoning. Produces `naukri_sync_report.json` with aggregate metrics.
+112: 5. **Step E (Surgical Selective Execution):** Updates only roles flagged `UPDATE_REQUIRED` or `ADD_NEW` using empirical form selectors (`#designationSugg`, `#jobDescription`, `#companySugg`, `#submitEmployment`), leaving `KEEP_EXISTING` cards completely untouched. Syncs resume headline, summary, and uploads tailored PDF.
+113: 
+114: ---
+115: 
+116: ### 3.2 `04_job_discovery.py` — Batched Discovery Engine
+117: 
+118: **Execution Flow:**
+119: 1. Connect to Chrome via CDP at `candidate.cdp_url`
+120: 2. Verify codebase purity via `ctx.verify_codebase_purity()`
+121: 3. Load persistent dedup ledger (`processed_ledger.json`) + CSV + external JSON; initialize `session_seen_titles = set()`
+122: 4. Retrieve active cycle of 5–8 designations via `ai.get_active_search_cycle()`
+123: 5. Map candidate preferences into dynamic URL parameters:
+124:    - `wfhType=3` (Remote/WFH), `wfhType=2` (Hybrid), `wfhType=0` (Onsite/Office)
+125:    - `companyJobs=true` (Direct Employers only)
+126: 6. Multi-Strategy Search Matrix:
+127:    - Strategy A: Role Only (Broad domain sweep)
+128:    - Strategy B: Company Only (Direct company infiltration)
+129:    - Strategy C: Role AND Company Combined (Precision match)
+130: 7. For each (strategy × location × task × page):
+131:    a. Navigate to search results page (SRP) with recency filter (`&jobAge=3` or `&f_TPR=r259200`) and URL parameters
+132:    b. Extract up to 15 job cards per page (`title`, `company`, `url`, `exp_text`, `card_skills`)
+133:    c. Multi-Pass Gating (`is_title_allowed`):
+134:       - C6 Negative Check (Absolute drop)
+135:       - Direct Keyword / Stem Match
+136:       - Card Skills Match
+137:       - Tier 2B Cognitive Brain Arbitration (`ai.arbitrate_card_fit`)
+138:    d. Deep scan detail page: check for native vs external apply
+139:    e. Two-Stage AI score evaluation $\rightarrow$ qualify only if `score >= 60`
+140:    f. Write `Job_Description.md` and `job_details.json` to application folder
+141:    g. Append enriched job entry to `search_manifest.json`
+142:    h. When batch reaches BATCH_SIZE=1: trigger tailoring → upload → apply pipeline
+143: 8. Resume discovery sweep & advance search cycle via `ai.advance_search_cycle()`
+144: 
+145: **Naukri URL Pattern:**
+146: ```
+147: https://www.naukri.com/{keyword-slug}-jobs-in-{location-slug}[-{page}]?experience={N}&jobAge={age}&wfhType={mode}&companyJobs={bool}[&ctcFilter={lo}to{hi}]
+148: ```
+149: 
+150: ---
+151: 
+152: ### 3.3 `05_apply_jobs.py` — Application Engine
+153: 
+154: **Two Main Classes:**
+155: 
+156: #### `ChatbotResolver` — DOM Chatbot Reverse-Engineering
+157: - **Question Extraction:** Iterates `li.botItem .botMsg` elements in reverse, filtering greetings containing candidate name.
+158: - **Control Detection Priority:** `FILE_UPLOAD` → `DATE_INPUT` → `RADIO_CHIP` (chips, toggle pills, custom radios, excluding `.chipMsg`) → `DROPDOWN` → `CONTENTEDITABLE` → `UNKNOWN`.
+159: - **Contenteditable React Protocol:** Click → Ctrl+A → Backspace → `page.keyboard.insert_text(answer)` → native `document.execCommand('insertText')` → manual `dispatchEvent` (Input/Change/Keydown/Keyup) → forcefully remove `.disabled` class and `disabled` attribute from Send/Submit button.
+160: - **Empirical Radio Selection:** Targets exact Naukri radio/checkbox label containers (`label.ssrc__label`, `input.ssrc__radio`, `input.ssrc__checkbox`) to reliably trigger React event listeners and enable the submission container.
+161: - **Chatbot Drawer Submit Scoping:** Submissions target `.sendMsgbtn_container .send:not(.disabled) .sendMsg` strictly scoped within `get_drawer()`, preventing background page bookmark click interference.
+162: - **Platform Rejection Banner Detection (Guardrail C9):** Checks for platform rejection banners and aborts immediately (`FAILED_PLATFORM_REJECTED`).
+163: - **Premature Drawer Closure Detection (Guardrail C9):** Detects unmounted or dismissed chatbot drawers (`not resolver.is_drawer_open()`), verifies completion, and aborts immediately (`DRAWER_CLOSED`).
+164: - **3x Stuck Question Loop Breaker (Guardrail C7):** Aborts on 3 repeated questions without progress.
+165: - **Adaptive Answer Formatter:** Automatically formats repeated screening answers (e.g. `9` -> `9 years` or `30` -> `30 Days`) based on question semantics to pass frontend portal validation.
+166: 
+167: #### `LinkedInApplyHandler` — Native LinkedIn Easy Apply Modal Automation
+168: - **Modal Detection & Container Scoping:** Identifies `div.jobs-easy-apply-modal` without background interference.
+169: - **Dynamic Field Resolution:** Resolves phones, text inputs, radio groups, dropdowns, and uploads tailored ATS PDF resumes.
+170: - **Modal Stepping & State Progression:** Advances through "Next", "Review", and commits via "Submit application".
+171: - **Safe Dismissal:** Calls `discard_and_close_modal()` on unresolvable fields without leaving dangling modals.
   - Phone inputs: `input[id*='phoneNumber']`, auto-populated from `candidate.phone`.
   - Text/Numeric inputs: Question text extracted from preceding `label` or `legend` $\rightarrow$ resolved via `AIClient.answer_screening_question()`.
   - Radio groups & single-selects: Options mapped via `_best_option_match()` and clicked.
@@ -363,25 +369,76 @@ Date,Company,Role,Location,Platform,Status,FolderPath
 }
 ```
 
+### 4.8 `naukri_cards/<Company>_<Role>.json` Schema (Selective Evaluation Card)
+```json
+{
+  "platform": "naukri",
+  "company": "Company Name",
+  "designation": "Role Title",
+  "naukri_card_keyword": "Keyword",
+  "action_decision": "KEEP_EXISTING | UPDATE_REQUIRED | ADD_NEW",
+  "decision_reasoning": "Reasoning explaining ATS keyword alignment or role completeness",
+  "live_content": {
+    "designation": "Role Title",
+    "company": "Company Name",
+    "tenure": "2022 - Present",
+    "description": "Live scraped profile card text..."
+  },
+  "source_content": {
+    "designation": "Role Title",
+    "company": "Company Name",
+    "description": "Ground truth resume text..."
+  },
+  "optimal_content": {
+    "designation": "Role Title",
+    "company": "Company Name",
+    "description": "Selected ATS-optimal text..."
+  },
+  "diff_detected": true,
+  "evaluated_at": "2026-09-09 10:30:00"
+}
+```
+
+### 4.9 `naukri_sync_report.json` Schema (Profile Sync Aggregate Report)
+```json
+{
+  "timestamp": "2026-09-09 10:30:00",
+  "total_evaluated": 3,
+  "retained_optimal": 2,
+  "updated": 1,
+  "added_new": 0,
+  "cards": [ /* array of evaluated card objects */ ]
+}
+```
+
 ---
 
 ## 5. NAUKRI CHATBOT DRAWER DOM ANATOMY
 
 ```
-.chatbot_DrawerContentWrapper (or div[class*='chatbot_Drawer'])
+.chatbot_DrawerContentWrapper (or div[class*='chatbot_Drawer'], div[class*='_chatbotContainer'])
 ├── .chatbot_MessageContainer (scrollable message list)
-│   ├── li.botItem .botMsg          ← Recruiter questions
-│   ├── li.userItem .userMsg        ← Candidate responses
+│   ├── li.botItem .botMsg                     ← Recruiter questions
+│   ├── li.userItem .userMsg                   ← Candidate responses
 │   └── ...
-├── div.textArea[contenteditable]   ← Free-text input
-├── div.radioItem / div.choiceChip  ← Choice chips (NOT div[class*='chip'])
-├── input[type='date']              ← Date inputs
-├── input[type='file']              ← Resume upload
-├── select                          ← HTML dropdown
-└── .sendMsgbtn_container .sendMsg  ← Submit button
+├── div.textArea[contenteditable]              ← Free-text input container
+├── .singleselect-radiobutton-container        ← Single-select radio wrapper
+│   └── .ssrc__radio-btn-container
+│       ├── input.ssrc__radio                  ← Native radio input
+│       └── label.ssrc__label                  ← Explicit click target for option selection
+├── .multiselect-checkbox-container            ← Multi-select checkbox wrapper
+│   └── .ssrc__checkbox-btn-container
+│       ├── input.ssrc__checkbox               ← Native checkbox input
+│       └── label.ssrc__label                  ← Explicit click target for multi-select
+├── div.radioItem / div.choiceChip             ← Custom choice chips (excluding .chipMsg)
+├── input[type='date']                         ← Date inputs
+├── input[type='file']                         ← Resume upload (input#attachCV)
+├── select                                     ← HTML dropdown
+└── .sendMsgbtn_container
+    └── .send:not(.disabled) .sendMsg          ← Scoped submit button (tabindex="0" div)
 ```
 
-**Selector Fragility:** Naukri uses CSS Modules with build-hash suffixes (e.g., `__h0K4t`, `__WbS2i`). These change on every Naukri deployment. Always provide fallback selectors without hashes.
+**Selector Fragility:** Naukri uses CSS Modules with build-hash suffixes (e.g., `__h0K4t`, `__WbS2i`). These change on every Naukri deployment. Always provide robust un-hashed fallback selectors scoped to container parents.
 
 ---
 
@@ -403,9 +460,12 @@ Date,Company,Role,Location,Platform,Status,FolderPath
 
 | Failure Scenario | Current Behavior | Expected Behavior |
 |:---|:---|:---|
+| Candidate data in core/*.py | Fatal halt via `verify_codebase_purity()` | ✅ Correct (Guardrail P1) |
+| Lazy-loaded DOM not mounted | Pre-inspection `window.scrollTo(0, 1200)` hydrates cards | ✅ Correct (Guardrail C11) |
+| Chatbot submit clicked background | Strictly scoped to `.sendMsgbtn_container .send .sendMsg` | ✅ Correct (Guardrail C10) |
 | Gemini API key missing | Dispatches to `pending_question.json` File-Based IPC | ✅ Correct (H6 compliant) |
 | Gemini API rate limited | Dispatches to `pending_question.json` File-Based IPC | ✅ Correct (H6 compliant) |
-| CDP Chrome not running | Logs error, exits gracefully | ✅ Correct |
+| CDP Chrome not running | Pre-flight check detects port 9222 down, logs instructions | ✅ Correct |
 | Naukri selector hash changed | Uses robust un-hashed fallback selectors | ✅ Handled |
 | Chatbot drawer never opens | Returns FAILED | ✅ Correct (C1 compliant) |
 | Unknown form control type | Scans interactive chips or dispatches to File IPC | ✅ Correct (Bug 4 fix) |

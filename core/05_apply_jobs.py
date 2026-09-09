@@ -82,6 +82,21 @@ class ChatbotResolver:
         self.first_name = getattr(ctx, "first_name", None) or (self.candidate_name.split()[0] if self.candidate_name else "")
         self.resume_text = getattr(ctx, "resume_text", "")
 
+    def get_drawer(self):
+        """Returns the active Playwright locator for the chatbot drawer container."""
+        drawer_selectors = [
+            ".chatbot_DrawerContentWrapper",
+            "div[class*='chatbot_Drawer']",
+            "div[class*='_chatbotContainer']",
+            "div[class*='chatbot_MessageContainer']",
+            "div[id*='Messages']"
+        ]
+        for sel in drawer_selectors:
+            loc = self.page.locator(sel).first
+            if loc.count() > 0 and loc.is_visible():
+                return loc
+        return self.page.locator(".chatbot_DrawerContentWrapper").first
+
     def is_drawer_open(self) -> bool:
         drawer_selectors = [
             ".chatbot_DrawerContentWrapper",
@@ -97,10 +112,11 @@ class ChatbotResolver:
         return False
 
     def scroll_drawer_to_bottom(self) -> None:
+        """Scrolls strictly the inner message container of the drawer, never window or document."""
         scroll_script = """
         () => {
             const container = document.querySelector(
-                '.chatbot_MessageContainer, .chatbot_DrawerContentWrapper, div[class*="MessageContainer"], div[id*="Messages"]'
+                '.chatbot_MessageContainer, div[class*="MessageContainer"], div[id*="Messages"]'
             );
             if (container) {
                 container.scrollTop = container.scrollHeight;
@@ -301,7 +317,70 @@ class ChatbotResolver:
         log_step("AI BRAIN", f"Resolved Factual Answer: '{cleaned_ans}'")
         return cleaned_ans
 
+    def adapt_answer_format(self, question: str, previous_ans: str, attempt: int) -> str:
+        """
+        Adaptive Retry Formatter (C7 & H6):
+        When a question is repeated (stuck_count >= 1), the previous answer was likely
+        rejected by portal frontend validation (e.g. '9' vs '9 years', or '30' vs '30 Days').
+        Adapts format according to question semantics and retry attempt count.
+        """
+        if not previous_ans:
+            return previous_ans
+
+        q_lower = question.lower()
+        ans_clean = str(previous_ans).strip()
+        num_match = re.match(r'^(\d+(?:\.\d+)?)$', ans_clean)
+
+        # A. Experience-related questions
+        if any(w in q_lower for w in ["experience", "exp", "years", "working", "work ex"]):
+            if num_match:
+                val = num_match.group(1)
+                int_val = int(float(val)) if float(val).is_integer() else val
+                if attempt == 1:
+                    return f"{int_val} years"
+                elif attempt >= 2:
+                    return f"{int_val} Yrs"
+            elif any(w in ans_clean.lower() for w in ["years", "yr", "yrs"]):
+                m = re.search(r'\d+(?:\.\d+)?', ans_clean)
+                if m:
+                    return m.group(0)
+
+        # B. Notice period questions
+        elif any(w in q_lower for w in ["notice", "np", "serving", "lwd", "last working"]):
+            if num_match:
+                val = num_match.group(1)
+                if attempt == 1:
+                    return f"{val} Days"
+                elif attempt >= 2:
+                    return f"{val} days"
+            elif "days" in ans_clean.lower() or "day" in ans_clean.lower():
+                m = re.search(r'\d+', ans_clean)
+                if m:
+                    return m.group(0)
+
+        # C. Salary / CTC questions
+        elif any(w in q_lower for w in ["ctc", "salary", "compensation", "package", "lakhs", "inr"]):
+            if num_match:
+                val = float(num_match.group(1))
+                if attempt == 1:
+                    return f"{int(val) if val.is_integer() else val} LPA"
+                elif attempt >= 2:
+                    return f"{int(val * 100000)}"
+            elif "lpa" in ans_clean.lower():
+                m = re.search(r'\d+(?:\.\d+)?', ans_clean)
+                if m:
+                    return m.group(0)
+
+        # D. Generic unit stripping if words and digits both present
+        if re.search(r'[a-zA-Z]', ans_clean) and re.search(r'\d', ans_clean):
+            m = re.search(r'\d+(?:\.\d+)?', ans_clean)
+            if m:
+                return m.group(0)
+
+        return ans_clean
+
     def _get_input_field(self):
+        drawer = self.get_drawer()
         selectors = [
             "div.textArea[contenteditable='true']",
             "div[id*='userInput']",
@@ -313,7 +392,7 @@ class ChatbotResolver:
             "input.chatbot_Input"
         ]
         for sel in selectors:
-            loc = self.page.locator(sel).first
+            loc = drawer.locator(sel).first
             try:
                 if loc.is_visible(timeout=400):
                     return loc
@@ -343,7 +422,9 @@ class ChatbotResolver:
 
             js_dispatch = """
             (ans) => {
-                const el = document.querySelector(
+                const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"], div[class*="chatbot_Drawer"]');
+                const root = drawer || document;
+                const el = root.querySelector(
                     'div.textArea[contenteditable="true"], div[id*="userInput"], .textAreaWrapper div[contenteditable="true"]'
                 );
                 if (el) {
@@ -357,17 +438,20 @@ class ChatbotResolver:
                     el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
                 }
                 
-                const btn = document.querySelector('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .sendMsg');
-                if (btn) {
-                    btn.classList.remove('disabled');
-                    btn.removeAttribute('disabled');
-                } else {
-                    const btns = document.querySelectorAll('button');
-                    for (let b of btns) {
-                        if ((b.innerText || '').toLowerCase().includes('save')) {
-                            b.classList.remove('disabled');
-                            b.removeAttribute('disabled');
-                            break;
+                if (drawer) {
+                    const btn = drawer.querySelector('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .sendMsg');
+                    if (btn) {
+                        btn.classList.remove('disabled');
+                        btn.removeAttribute('disabled');
+                    } else {
+                        const btns = drawer.querySelectorAll('button');
+                        for (let b of btns) {
+                            let t = (b.innerText || '').toLowerCase();
+                            if (t.includes('save') || t.includes('send') || t.includes('submit')) {
+                                b.classList.remove('disabled');
+                                b.removeAttribute('disabled');
+                                break;
+                            }
                         }
                     }
                 }
@@ -377,19 +461,22 @@ class ChatbotResolver:
             self.page.evaluate(js_dispatch, str(answer))
             human_jitter(150, 300)
 
+            drawer = self.get_drawer()
             send_btn_selectors = [
                 ".sendMsgbtn_container .sendMsg",
                 "div[id*='sendMsg'] .sendMsg",
                 ".sendMsgbtn_container div.send .sendMsg",
                 "span.chatBot-send",
                 "span[class*='send']",
+                "button[class*='send']",
+                "button[class*='save']",
                 "button:has-text('Save')",
                 "button:has-text('Submit')"
             ]
             
             clicked = False
             for btn_sel in send_btn_selectors:
-                btn_loc = self.page.locator(btn_sel).first
+                btn_loc = drawer.locator(btn_sel).first
                 if btn_loc.count() > 0 and btn_loc.is_visible():
                     btn_loc.click(force=True)
                     clicked = True
@@ -406,71 +493,196 @@ class ChatbotResolver:
 
     def execute_chip_selection(self, matched_option: str) -> bool:
         self.scroll_drawer_to_bottom()
-        clean_target = str(matched_option).strip()
+        drawer = self.get_drawer()
         
-        clicked = self.page.evaluate("""(targetText) => {
-            const cleanTarget = targetText.toLowerCase().trim();
-            const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
-            
-            const labels = drawer.querySelectorAll('label');
-            for (let lbl of labels) {
-                if (lbl.closest('.chipMsg') || lbl.classList.contains('chipMsg')) continue;
-                if (lbl.innerText.toLowerCase().trim() === cleanTarget) {
-                    lbl.click();
-                    const radioId = lbl.getAttribute('for');
-                    if (radioId) {
-                        const radioInput = document.getElementById(radioId);
-                        if (radioInput) {
-                            radioInput.checked = true;
-                            radioInput.dispatchEvent(new Event('change', {bubbles: true}));
-                        }
-                    }
-                    return true;
-                }
-            }
-            
-            const elements = drawer.querySelectorAll('span, div, button, label, a');
-            for (let el of elements) {
-                if (el.closest('.chipMsg') || el.classList.contains('chipMsg')) continue;
-                if (el.children.length > 2) continue;
-                let text = (el.innerText || '').toLowerCase().trim();
+        # Support multi-select options (e.g. "Python, SQL" or "Immediate, Serving Notice")
+        raw_options = [o.strip() for o in re.split(r'[,;]+', str(matched_option)) if o.strip()]
+        if not raw_options:
+            raw_options = [str(matched_option).strip()]
+
+        any_clicked = False
+
+        for clean_target in raw_options:
+            clicked = self.page.evaluate("""(targetText) => {
+                const cleanTarget = targetText.toLowerCase().trim();
+                const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"], div[class*="chatbot_Drawer"]');
+                if (!drawer) return false;
                 
-                if (text === cleanTarget) {
-                    el.click();
-                    return true;
+                // Priority 0: Exact Naukri radio and checkbox labels (.ssrc__label, .ssrc__radio, .ssrc__checkbox)
+                const ssrcLabels = drawer.querySelectorAll(
+                    '.singleselect-radiobutton-container label, .multiselect-checkbox-container label, ' +
+                    '.ssrc__radio-btn-container label, .ssrc__checkbox-btn-container label, label.ssrc__label'
+                );
+                for (let lbl of ssrcLabels) {
+                    const txt = (lbl.innerText || '').toLowerCase().trim();
+                    if (txt === cleanTarget || txt.includes(cleanTarget) || cleanTarget.includes(txt)) {
+                        lbl.click();
+                        const inputId = lbl.getAttribute('for');
+                        if (inputId) {
+                            const inputEl = drawer.querySelector(`#${inputId}`);
+                            if (inputEl) {
+                                inputEl.checked = true;
+                                inputEl.dispatchEvent(new Event('change', {bubbles: true}));
+                                inputEl.dispatchEvent(new Event('input', {bubbles: true}));
+                            }
+                        }
+                        return true;
+                    }
                 }
-            }
-            return false;
-        }""", clean_target)
 
-        if not clicked:
-            try:
-                escaped_text = clean_target.replace("'", "\\'")
-                drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
-                chip_loc = drawer.locator(
-                    f"button:has-text('{escaped_text}'), label:has-text('{escaped_text}'), "
-                    f"div.clickableChip:has-text('{escaped_text}'), div.choiceChip:has-text('{escaped_text}'), "
-                    f"div.radioItem:has-text('{escaped_text}'), span:has-text('{escaped_text}')"
-                ).first
-                if chip_loc.count() > 0 and chip_loc.is_visible():
-                    chip_loc.click(force=True)
-                    clicked = True
-            except Exception:
-                pass
+                // 1. Check general labels and their associated inputs inside drawer
+                const labels = drawer.querySelectorAll('label');
+                for (let lbl of labels) {
+                    if (lbl.closest('.chipMsg') || lbl.classList.contains('chipMsg')) continue;
+                    const txt = (lbl.innerText || '').toLowerCase().trim();
+                    if (txt === cleanTarget || txt.includes(cleanTarget) || cleanTarget.includes(txt)) {
+                        lbl.click();
+                        const inputId = lbl.getAttribute('for');
+                        if (inputId) {
+                            const inputEl = drawer.querySelector(`#${inputId}`);
+                            if (inputEl) {
+                                if (inputEl.type === 'checkbox') {
+                                    if (!inputEl.checked) {
+                                        inputEl.checked = true;
+                                        inputEl.dispatchEvent(new Event('change', {bubbles: true}));
+                                        inputEl.dispatchEvent(new Event('input', {bubbles: true}));
+                                    }
+                                } else if (inputEl.type === 'radio') {
+                                    inputEl.checked = true;
+                                    inputEl.dispatchEvent(new Event('change', {bubbles: true}));
+                                    inputEl.dispatchEvent(new Event('input', {bubbles: true}));
+                                }
+                            }
+                        }
+                        return true;
+                    }
+                }
 
-        if clicked:
-            self.page.wait_for_timeout(600)
-            self.page.evaluate("""() => {
-                const btns = document.querySelectorAll('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .footerWrapper button, button');
-                for (let btn of btns) {
+                // 2. Direct inputs with adjacent text inside drawer
+                const inputs = drawer.querySelectorAll('input[type="checkbox"], input[type="radio"], input.ssrc__radio, input.ssrc__checkbox');
+                for (let inp of inputs) {
+                    if (inp.closest('.chipMsg')) continue;
+                    let labelText = "";
+                    if (inp.id) {
+                        const l = drawer.querySelector(`label[for="${inp.id}"]`);
+                        if (l) labelText = (l.innerText || '').toLowerCase().trim();
+                    }
+                    if (!labelText && inp.nextElementSibling) {
+                        labelText = (inp.nextElementSibling.innerText || '').toLowerCase().trim();
+                    }
+                    if (labelText && (labelText === cleanTarget || labelText.includes(cleanTarget) || cleanTarget.includes(labelText))) {
+                        inp.click();
+                        inp.checked = true;
+                        inp.dispatchEvent(new Event('change', {bubbles: true}));
+                        inp.dispatchEvent(new Event('input', {bubbles: true}));
+                        return true;
+                    }
+                }
+                
+                // 3. Custom chip elements inside drawer
+                const elements = drawer.querySelectorAll(
+                    'div.choiceChip, div.clickableChip, div.radioItem, div.optionItem, ' +
+                    'div[class*="chipItem"], span[class*="chip"], button[class*="chip"], ' +
+                    'div.customRadio, div.togglePill, button.toggle, div.yesNoToggle, ' +
+                    'ul.ChoiceList li, span, div, button'
+                );
+                for (let el of elements) {
+                    if (el.closest('.chipMsg') || el.classList.contains('chipMsg')) continue;
+                    if (el.children.length > 2) continue;
+                    let text = (el.innerText || '').toLowerCase().trim();
+                    
+                    if (text === cleanTarget || (text && cleanTarget && text === cleanTarget)) {
+                        el.click();
+                        return true;
+                    }
+                }
+                return false;
+            }""", clean_target)
+
+            if not clicked:
+                try:
+                    escaped_text = clean_target.replace("'", "\\'")
+                    chip_loc = drawer.locator(
+                        f"label.ssrc__label:has-text('{escaped_text}'), label:has-text('{escaped_text}'), "
+                        f"button:has-text('{escaped_text}'), div.clickableChip:has-text('{escaped_text}'), "
+                        f"div.choiceChip:has-text('{escaped_text}'), div.radioItem:has-text('{escaped_text}'), span:has-text('{escaped_text}')"
+                    ).first
+                    if chip_loc.count() > 0 and chip_loc.is_visible():
+                        chip_loc.click(force=True)
+                        clicked = True
+                except Exception:
+                    pass
+
+            if clicked:
+                any_clicked = True
+                self.page.wait_for_timeout(300)
+
+        if any_clicked:
+            self.page.wait_for_timeout(500)
+            
+            # Commit drawer selection: Find Save/Submit/Next button STRICTLY inside drawer
+            submit_clicked = self.page.evaluate("""() => {
+                const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"], div[class*="chatbot_Drawer"]');
+                if (!drawer) return false;
+                
+                // Priority 1: .sendMsg element inside drawer (checking parent .send is not disabled)
+                const sendBtn = drawer.querySelector('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .sendMsg');
+                if (sendBtn) {
+                    const parentSend = sendBtn.closest('.send') || sendBtn.parentElement;
+                    const isParentDisabled = parentSend && parentSend.classList.contains('disabled');
+                    if (!isParentDisabled && !sendBtn.classList.contains('disabled')) {
+                        sendBtn.click();
+                        return true;
+                    }
+                }
+
+                // Priority 2: Action buttons strictly inside drawer footer
+                const drawerBtns = drawer.querySelectorAll(
+                    '.footerWrapper button, .chatbot_Footer button, div[class*="Footer"] button, ' +
+                    'button[class*="save"], button[class*="submit"], button[class*="next"]'
+                );
+                for (let btn of drawerBtns) {
+                    if (!drawer.contains(btn)) continue;
                     let t = (btn.innerText || '').toLowerCase();
-                    if (t.includes('save') || t.includes('next') || t.includes('submit')) {
+                    if (t.includes('save') || t.includes('submit') || t.includes('next') || t.includes('continue')) {
+                        btn.click();
+                        return true;
+                    }
+                }
+
+                // Priority 3: Any enabled button strictly inside drawer with save/submit/next
+                const allDrawerBtns = drawer.querySelectorAll('button');
+                for (let btn of allDrawerBtns) {
+                    if (!drawer.contains(btn)) continue;
+                    let t = (btn.innerText || '').toLowerCase();
+                    if (t.includes('save') || t.includes('submit') || t.includes('next')) {
                         btn.click();
                         return true;
                     }
                 }
                 return false;
             }""")
+
+            if not submit_clicked:
+                drawer_save_selectors = [
+                    ".sendMsgbtn_container .sendMsg",
+                    "div[id*='sendMsg'] .sendMsg",
+                    "button[class*='save']",
+                    "button[class*='submit']",
+                    "button:has-text('Save')",
+                    "button:has-text('Submit')",
+                    "button:has-text('Next')"
+                ]
+                for s_sel in drawer_save_selectors:
+                    btn = drawer.locator(s_sel).first
+                    try:
+                        if btn.count() > 0 and btn.is_visible():
+                            btn.click(force=True)
+                            submit_clicked = True
+                            break
+                    except Exception:
+                        pass
+
             self.page.wait_for_timeout(800)
             return True
 
@@ -478,7 +690,7 @@ class ChatbotResolver:
         return False
 
     def execute_file_upload(self, tailored_pdf_path: Optional[str] = None) -> bool:
-        drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer'], div.jobs-easy-apply-modal").first
+        drawer = self.get_drawer()
         file_input = drawer.locator("input[type='file'], input.chatbot_Uploader, input[id*='Uploader']").first
         
         if file_input.count() == 0:
@@ -825,8 +1037,9 @@ class LinkedInApplyHandler:
 # ==============================================================================
 
 class ApplicationEngine:
-    def __init__(self, profile_path: str):
-        self.ctx = ProfileContext(profile_path)
+    def __init__(self, profile_path: Optional[str] = None):
+        self.ctx = ProfileContext(profile_path, PROJECT_ROOT)
+        self.ctx.verify_codebase_purity()
         self.browser_mgr = BrowserManager()
         self.ai = AIClient(self.ctx)
         self.stats = {
@@ -1074,6 +1287,7 @@ class ApplicationEngine:
                 qa_history = []
 
         last_processed_q = ""
+        last_submitted_answer = ""
         stuck_count = 0
         consecutive_silent_ticks = 0
 
@@ -1195,6 +1409,14 @@ class ApplicationEngine:
             control_type = resolver.detect_ui_control()
             log_step("CONTROL TYPE", f"{control_type}")
 
+            # Adaptive Retry: Check if chips are now present or if previous attempt failed format
+            if stuck_count >= 1:
+                log_step("ADAPTIVE RETRY", f"Attempting format adaptation for repeat question (attempt {stuck_count})")
+                retry_chips = resolver.get_radio_options()
+                if retry_chips and control_type != "RADIO_CHIP":
+                    log_step("ADAPTIVE RETRY", f"Choice chips discovered on retry: {retry_chips}")
+                    control_type = "RADIO_CHIP"
+
             ans = ""
             if control_type == "RADIO_CHIP":
                 try:
@@ -1213,11 +1435,18 @@ class ApplicationEngine:
                     if not selection_ok:
                         log_step("WARNING", "Native click failed. Attempting contenteditable fallback...")
                         resolver.execute_contenteditable_input(ans)
+                    last_submitted_answer = ans
 
             if control_type == "CONTENTEDITABLE":
-                ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
+                raw_ans = resolver.resolve_answer(active_q, control_type="CONTENTEDITABLE")
+                if stuck_count >= 1:
+                    ans = resolver.adapt_answer_format(active_q, raw_ans or last_submitted_answer, stuck_count)
+                    log_step("ADAPTIVE RETRY", f"Adapted answer format: '{raw_ans}' -> '{ans}'")
+                else:
+                    ans = raw_ans
                 log_step("ACTION", f"Submitting text response: \"{ans}\"")
                 resolver.execute_contenteditable_input(ans)
+                last_submitted_answer = ans
 
             elif control_type == "FILE_UPLOAD":
                 log_step("ACTION", "Resume File Upload requested by screening drawer.")
@@ -1225,7 +1454,7 @@ class ApplicationEngine:
                 ans = "[UPLOADED_RESUME_PDF]"
 
             elif control_type == "DROPDOWN":
-                drawer = page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
+                drawer = resolver.get_drawer()
                 select_el = drawer.locator("select").first
                 if select_el.count() > 0:
                     options = select_el.locator("option").all_inner_texts()
@@ -1237,7 +1466,7 @@ class ApplicationEngine:
                     resolver.execute_contenteditable_input(ans)
 
             elif control_type == "DATE_INPUT":
-                drawer = page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
+                drawer = resolver.get_drawer()
                 date_el = drawer.locator("input[type='date'], input.datePicker, input[class*='datePicker'], input[class*='date-picker']").first
                 ans = resolver.resolve_answer(active_q, control_type="DATE_INPUT")
                 log_step("ACTION", f"Submitting date value: '{ans}'")
@@ -1257,7 +1486,8 @@ class ApplicationEngine:
                     resolver.execute_contenteditable_input(ans)
                 else:
                     visible_interactive = page.evaluate("""() => {
-                        const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"]') || document;
+                        const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"], div[class*="chatbot_Drawer"]');
+                        if (!drawer) return [];
                         const elements = drawer.querySelectorAll('button, label, [class*="chip"], [class*="radio"], [class*="toggle"], div.choiceChip, div.clickableChip');
                         const items = [];
                         for (let el of elements) {
@@ -1395,21 +1625,11 @@ class ApplicationEngine:
 
 def main():
     parser = argparse.ArgumentParser(description="Autonomous Job Application Engine")
-    parser.add_argument("--profile", type=str, default=None, help="Path to candidate profile directory")
+    parser.add_argument("--profile", type=str, default=None, help="Path to candidate profile directory (auto-discovered if omitted)")
     parser.add_argument("--max", type=int, default=10, help="Maximum number of applications to submit in this run")
     args = parser.parse_args()
 
-    resolved_profile = args.profile
-    if not resolved_profile:
-        profiles_dir = PROJECT_ROOT / "profiles"
-        available_profiles = [p for p in profiles_dir.iterdir() if p.is_dir()]
-        if available_profiles:
-            resolved_profile = str(available_profiles[0])
-        else:
-            print("[ERROR] No profile directory found in profiles/.", flush=True)
-            sys.exit(1)
-
-    engine = ApplicationEngine(resolved_profile)
+    engine = ApplicationEngine(args.profile)
     engine.run(max_applications=args.max)
 
 
