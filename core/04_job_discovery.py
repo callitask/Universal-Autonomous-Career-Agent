@@ -330,6 +330,78 @@ def process_batch(batch: list, profile_dir: Path, platform: str):
     print(f"\n  ---> Resuming Discovery Sweep...\n", flush=True)
 
 
+def execute_naukri_header_search(page, keyword: str, exp_years: Optional[float] = None, location: str = "") -> bool:
+    """
+    Empirical 3-Field Header Search Bar Automation Protocol (Rule C15):
+    Automates job search via the global header across all Naukri pages.
+    1. Expands collapsed search bar via button.nI-gNb-sb__expand.
+    2. Enters keyword/role/company into .nI-gNb-sb__keywords input.suggestor-input.
+    3. Selects experience level from input#experienceDD -> ul.dropdown li[value='a{exp}'].
+    4. Enters location into .nI-gNb-sb__location input.suggestor-input.
+    5. Clicks search button button.nI-gNb-sb__icon-wrapper.
+    """
+    try:
+        # Step 1: Expand search bar if collapsed
+        expand_btn = page.locator("button.nI-gNb-sb__expand, [aria-label='Search jobs here']").first
+        if expand_btn.count() > 0 and expand_btn.is_visible():
+            expand_btn.click()
+            page.wait_for_timeout(800)
+
+        # Step 2: Keywords / Designation / Companies
+        kw_input = page.locator(".nI-gNb-sb__keywords input.suggestor-input, input[placeholder*='keyword']").first
+        if kw_input.count() > 0 and kw_input.is_visible():
+            kw_input.click()
+            mod_key = "Meta+A" if sys.platform == "darwin" else "Control+A"
+            page.keyboard.press(mod_key)
+            page.keyboard.press("Backspace")
+            kw_input.type(str(keyword), delay=35)
+            page.wait_for_timeout(600)
+            
+            top_sugg = page.locator(".drop-layer .tuple-wrap div.opt").first
+            if top_sugg.count() > 0 and top_sugg.is_visible():
+                top_sugg.click()
+            page.wait_for_timeout(400)
+
+        # Step 3: Experience Dropdown
+        if exp_years is not None:
+            exp_input = page.locator("#experienceDD").first
+            if exp_input.count() > 0 and exp_input.is_visible():
+                exp_input.click()
+                page.wait_for_timeout(500)
+                int_exp = int(float(exp_years))
+                target_val = f"a{min(max(int_exp, 0), 30)}"
+                opt = page.locator(f"ul.dropdown li[value='{target_val}'], li[title*='{int_exp} year']").first
+                if opt.count() > 0 and opt.is_visible():
+                    opt.click()
+                page.wait_for_timeout(400)
+
+        # Step 4: Location
+        if location:
+            loc_input = page.locator(".nI-gNb-sb__location input.suggestor-input, input[placeholder*='location']").first
+            if loc_input.count() > 0 and loc_input.is_visible():
+                loc_input.click()
+                mod_key = "Meta+A" if sys.platform == "darwin" else "Control+A"
+                page.keyboard.press(mod_key)
+                page.keyboard.press("Backspace")
+                loc_input.type(str(location), delay=35)
+                page.wait_for_timeout(600)
+                
+                top_loc_sugg = page.locator(".drop-layer .tuple-wrap div.opt").first
+                if top_loc_sugg.count() > 0 and top_loc_sugg.is_visible():
+                    top_loc_sugg.click()
+                page.wait_for_timeout(400)
+
+        # Step 5: Click Search Button
+        search_btn = page.locator("button.nI-gNb-sb__icon-wrapper, .nI-gNb-sb__search-btn, button:has-text('Search')").first
+        if search_btn.count() > 0 and search_btn.is_visible():
+            search_btn.click()
+            page.wait_for_timeout(3500)
+            return True
+    except Exception as e:
+        logger.warning(f"Notice during header search automation: {e}")
+    return False
+
+
 def run_batched_discovery(profile_path: str):
     profile_dir = Path(profile_path).resolve()
     ctx = ProfileContext(profile_dir, BASE_DIR)

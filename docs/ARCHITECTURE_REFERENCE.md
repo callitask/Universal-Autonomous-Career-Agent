@@ -170,29 +170,37 @@ continuous_career_agent.py (daemon loop)
 ```
 https://www.naukri.com/{keyword-slug}-jobs-in-{location-slug}[-{page}]?experience={N}&jobAge={age}&wfhType={mode}&companyJobs={bool}[&ctcFilter={lo}to{hi}]
 ```
-149: 
-150: ---
-151: 
-152: ### 3.3 `05_apply_jobs.py` — Application Engine
-153: 
-154: **Two Main Classes:**
-155: 
-156: #### `ChatbotResolver` — DOM Chatbot Reverse-Engineering
-157: - **Question Extraction:** Iterates `li.botItem .botMsg` elements in reverse, filtering greetings containing candidate name.
-158: - **Control Detection Priority:** `FILE_UPLOAD` → `DATE_INPUT` → `RADIO_CHIP` (chips, toggle pills, custom radios, excluding `.chipMsg`) → `DROPDOWN` → `CONTENTEDITABLE` → `UNKNOWN`.
-159: - **Contenteditable React Protocol:** Click → Ctrl+A → Backspace → `page.keyboard.insert_text(answer)` → native `document.execCommand('insertText')` → manual `dispatchEvent` (Input/Change/Keydown/Keyup) → forcefully remove `.disabled` class and `disabled` attribute from Send/Submit button.
-160: - **Empirical Radio Selection:** Targets exact Naukri radio/checkbox label containers (`label.ssrc__label`, `input.ssrc__radio`, `input.ssrc__checkbox`) to reliably trigger React event listeners and enable the submission container.
-161: - **Chatbot Drawer Submit Scoping:** Submissions target `.sendMsgbtn_container .send:not(.disabled) .sendMsg` strictly scoped within `get_drawer()`, preventing background page bookmark click interference.
-162: - **Platform Rejection Banner Detection (Guardrail C9):** Checks for platform rejection banners and aborts immediately (`FAILED_PLATFORM_REJECTED`).
-163: - **Premature Drawer Closure Detection (Guardrail C9):** Detects unmounted or dismissed chatbot drawers (`not resolver.is_drawer_open()`), verifies completion, and aborts immediately (`DRAWER_CLOSED`).
-164: - **3x Stuck Question Loop Breaker (Guardrail C7):** Aborts on 3 repeated questions without progress.
-165: - **Adaptive Answer Formatter:** Automatically formats repeated screening answers (e.g. `9` -> `9 years` or `30` -> `30 Days`) based on question semantics to pass frontend portal validation.
-166: 
-167: #### `LinkedInApplyHandler` — Native LinkedIn Easy Apply Modal Automation
-168: - **Modal Detection & Container Scoping:** Identifies `div.jobs-easy-apply-modal` without background interference.
-169: - **Dynamic Field Resolution:** Resolves phones, text inputs, radio groups, dropdowns, and uploads tailored ATS PDF resumes.
-170: - **Modal Stepping & State Progression:** Advances through "Next", "Review", and commits via "Submit application".
-171: - **Safe Dismissal:** Calls `discard_and_close_modal()` on unresolvable fields without leaving dangling modals.
+
+**Naukri 3-Field Header Search Bar Protocol (UI Automation):**
+When navigating via in-browser UI form interaction (`execute_naukri_header_search()`):
+1. **Collapsed Trigger:** Detects and clicks `button.nI-gNb-sb__expand[aria-label="Search jobs here"]` to toggle `.nI-gNb-sb__main--expand`.
+2. **Field 1 (Keywords/Roles/Companies):** Enters search term into `.nI-gNb-sb__keywords input.suggestor-input` (`placeholder="Enter keyword / designation / companies"`). Supports single designations, company names (e.g., `"American Express"`), and comma-separated combinations (`"Financial Analyst, Python"`).
+3. **Field 2 (Experience Dropdown):** Clicks `input#experienceDD` to open `ul.dropdown`. Selects `li[value='a{exp}']` (`a0` for fresher, `a1` for 1 yr, up to `a30` for 30 yrs).
+4. **Field 3 (Location):** Enters location into `.nI-gNb-sb__location input.suggestor-input` (`placeholder="Enter location"`), selecting from `.drop-layer .tuple-wrap div.opt`.
+5. **Search Submission:** Clicks `button.nI-gNb-sb__icon-wrapper` (`aria-label="Search"`). Generates unified canonical URL with `nignbevent_src=jobsearchDeskGNB`.
+
+---
+
+### 3.3 `05_apply_jobs.py` — Application Engine
+
+**Two Main Classes:**
+
+#### `ChatbotResolver` — DOM Chatbot Reverse-Engineering
+- **Question Extraction:** Iterates `li.botItem .botMsg` elements in reverse, filtering greetings containing candidate name.
+- **Control Detection Priority:** `FILE_UPLOAD` → `DATE_INPUT` → `RADIO_CHIP` (chips, toggle pills, custom radios, excluding `.chipMsg`) → `DROPDOWN` → `CONTENTEDITABLE` → `UNKNOWN`.
+- **Contenteditable React Protocol:** Click → Ctrl+A → Backspace → `page.keyboard.insert_text(answer)` → native `document.execCommand('insertText')` → manual `dispatchEvent` (Input/Change/Keydown/Keyup) → forcefully remove `.disabled` class and `disabled` attribute from Send/Submit button.
+- **Empirical Radio Selection:** Targets exact Naukri radio/checkbox label containers (`label.ssrc__label`, `input.ssrc__radio`, `input.ssrc__checkbox`) to reliably trigger React event listeners and enable the submission container.
+- **Chatbot Drawer Submit Scoping:** Submissions target `.sendMsgbtn_container .send:not(.disabled) .sendMsg` strictly scoped within `get_drawer()`, preventing background page bookmark click interference.
+- **Platform Rejection Banner Detection (Guardrail C9):** Checks for platform rejection banners and aborts immediately (`FAILED_PLATFORM_REJECTED`).
+- **Premature Drawer Closure Detection (Guardrail C9):** Detects unmounted or dismissed chatbot drawers (`not resolver.is_drawer_open()`), verifies completion, and aborts immediately (`DRAWER_CLOSED`).
+- **3x Stuck Question Loop Breaker (Guardrail C7):** Aborts on 3 repeated questions without progress.
+- **Adaptive Answer Formatter:** Automatically formats repeated screening answers (e.g. `9` -> `9 years` or `30` -> `30 Days`) based on question semantics to pass frontend portal validation.
+
+#### `LinkedInApplyHandler` — Native LinkedIn Easy Apply Modal Automation
+- **Modal Detection & Container Scoping:** Identifies `div.jobs-easy-apply-modal` without background interference.
+- **Dynamic Field Resolution:** Resolves phones, text inputs, radio groups, dropdowns, and uploads tailored ATS PDF resumes.
+- **Modal Stepping & State Progression:** Advances through "Next", "Review", and commits via "Submit application".
+- **Safe Dismissal:** Calls `discard_and_close_modal()` on unresolvable fields without leaving dangling modals.
   - Phone inputs: `input[id*='phoneNumber']`, auto-populated from `candidate.phone`.
   - Text/Numeric inputs: Question text extracted from preceding `label` or `legend` $\rightarrow$ resolved via `AIClient.answer_screening_question()`.
   - Radio groups & single-selects: Options mapped via `_best_option_match()` and clicked.

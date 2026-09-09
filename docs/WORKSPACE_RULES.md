@@ -343,6 +343,14 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 ### C14: Profile Form Empirical Target Protocol
 **Rule:** Direct profile automation on Naukri (`02_profile_sync_naukri.py`) must strictly target verified component IDs and classes (`textarea#resumeHeadlineTxt`, `.suggester-input input`, `form#employmentForm`, `textarea#jobDescription`, `button#submitEmployment`, `a.cancel-btn`). Scripts must never attempt typing into unmounted or generic `.edit` icons, which triggers UI race conditions or closes open forms.
 
+### C15: Naukri 3-Field Header Search Bar Protocol
+**Rule:** When executing search automation via the Naukri global header (`04_job_discovery.py`), the agent must target empirical 3-field components:
+1. **Collapsed State Expansion:** Must detect `button.nI-gNb-sb__expand[aria-label="Search jobs here"]` and click to expand the search bar container into `.nI-gNb-sb__main--expand` before interacting with inputs.
+2. **Field 1 (Keywords / Roles / Companies):** Target `.nI-gNb-sb__keywords input.suggestor-input` (`placeholder="Enter keyword / designation / companies"`). Supports single designations, company names, and comma-separated multi-keyword combinations.
+3. **Field 2 (Experience Dropdown):** Click `input#experienceDD` (`placeholder="Select experience"`) to open `ul.dropdown`. Target option by value attribute `li[value='a{exp}']` (`a0` for fresher, `a1` for 1 yr, up to `a30` for 30 yrs).
+4. **Field 3 (Location):** Target `.nI-gNb-sb__location input.suggestor-input` (`placeholder="Enter location"`), optionally selecting canonical suggestion chips from `.drop-layer .tuple-wrap div.opt`.
+5. **Search Action:** Click `button.nI-gNb-sb__icon-wrapper` (`aria-label="Search"`). Never click un-scoped generic icons.
+
 ---
 
 ## APPENDIX A: DIRECTORY STRUCTURE CONTRACT
