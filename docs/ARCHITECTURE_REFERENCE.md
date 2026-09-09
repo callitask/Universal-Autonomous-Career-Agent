@@ -174,10 +174,20 @@ https://www.naukri.com/{keyword-slug}-jobs-in-{location-slug}[-{page}]?experienc
 **Naukri 3-Field Header Search Bar Protocol (UI Automation):**
 When navigating via in-browser UI form interaction (`execute_naukri_header_search()`):
 1. **Collapsed Trigger:** Detects and clicks `button.nI-gNb-sb__expand[aria-label="Search jobs here"]` to toggle `.nI-gNb-sb__main--expand`.
-2. **Field 1 (Keywords/Roles/Companies):** Enters search term into `.nI-gNb-sb__keywords input.suggestor-input` (`placeholder="Enter keyword / designation / companies"`). Supports single designations, company names (e.g., `"American Express"`), and comma-separated combinations (`"Financial Analyst, Python"`).
-3. **Field 2 (Experience Dropdown):** Clicks `input#experienceDD` to open `ul.dropdown`. Selects `li[value='a{exp}']` (`a0` for fresher, `a1` for 1 yr, up to `a30` for 30 yrs).
-4. **Field 3 (Location):** Enters location into `.nI-gNb-sb__location input.suggestor-input` (`placeholder="Enter location"`), selecting from `.drop-layer .tuple-wrap div.opt`.
-5. **Search Submission:** Clicks `button.nI-gNb-sb__icon-wrapper` (`aria-label="Search"`). Generates unified canonical URL with `nignbevent_src=jobsearchDeskGNB`.
+2. **Campus vs Standard Switching:**
+   - On **Standard Naukri**: Field 1 is Keywords, Field 2 is Experience (`#experienceDD`), Field 3 is Location.
+   - On **Naukri Campus** (`is_naukri_campus()`): Field 1 is Job Type (`input#jobType` with options `Job` [`ajob`] or `Internship` [`ainternship`]), Field 2 is Keywords, Field 3 is Location.
+   - For internships, applies parameters: `qinternshipFlag=true`, `qproductJobSource=2`, and `naukriCampus=true`.
+3. **Field 1 / Keywords:** Enters search term into `.nI-gNb-sb__keywords input.suggestor-input` (`placeholder="Enter keyword / designation / companies"`). Supports single designations, company names (e.g., `"American Express"`), and comma-separated combinations (`"Financial Analyst, Python"`).
+4. **Field 2 / Experience (Standard):** Clicks `input#experienceDD` to open `ul.dropdown`. Selects `li[value='a{exp}']` (`a0` for fresher, `a1` for 1 yr, up to `a30` for 30 yrs).
+5. **Field 3 / Location:** Enters location into `.nI-gNb-sb__location input.suggestor-input` (`placeholder="Enter location"`), selecting from `.drop-layer .tuple-wrap div.opt`.
+6. **Search Submission:** Clicks `button.nI-gNb-sb__icon-wrapper` (`aria-label="Search"`). Generates unified canonical URL with `nignbevent_src=jobsearchDeskGNB`.
+
+**Campus Multi-Attribute Duplicate Prevention Protocol (Rule C16):**
+In `02_profile_sync_naukri.py`, duplicate evaluation strictly enforces a 3-way match:
+- `Company + Designation + Years/Tenure`.
+- If candidate worked at the same company in the same role across different years (e.g. 2022 vs 2024), it is strictly recognized as a separate legitimate stint (`ADD_NEW` / independent card evaluation) and must not be overwritten or skipped.
+- When `#internshipDetails_Modal` is open on Naukri Campus, scrolling is container-isolated to `document.querySelector('#internshipDetails_Modal').scrollTop` to prevent background page scroll leaks.
 
 ---
 

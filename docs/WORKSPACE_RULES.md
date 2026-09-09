@@ -351,6 +351,13 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 4. **Field 3 (Location):** Target `.nI-gNb-sb__location input.suggestor-input` (`placeholder="Enter location"`), optionally selecting canonical suggestion chips from `.drop-layer .tuple-wrap div.opt`.
 5. **Search Action:** Click `button.nI-gNb-sb__icon-wrapper` (`aria-label="Search"`). Never click un-scoped generic icons.
 
+### C16: Campus Internship Modal Isolated Scrolling & Multi-Attribute Duplicate Prevention Protocol
+**Rule:** When operating on student/campus profiles (`naukricampus`):
+1. **Campus Search Bar Adaptation:** If `input#jobType` is detected, the agent must toggle between `"Job"` (`li[value='ajob']`) and `"Internship"` (`li[value='ainternship']`) based on candidate target configuration, applying `qinternshipFlag=true` and `qproductJobSource=2`.
+2. **Campus Profile Inspection:** The profile sync engine must scrape both `#lazyEmployment .emp-list` and `.internship-details.internshipDetails .card-container[id*='internshipDetails-']`.
+3. **Strict Container-Isolated Scrolling:** When `div#internshipDetails_Modal` is open, scripts must NEVER execute `window.scrollTo()` (which scrolls the background page behind the modal). All scroll commands must target `document.querySelector('#internshipDetails_Modal').scrollTop` or element-level scrolling.
+4. **Multi-Attribute Duplicate Prevention:** A candidate experience entry is considered a duplicate if and only if **Company**, **Designation**, AND **Years/Tenure** all match. If Company and Designation match but Years are different (e.g., worked in 2022 and again in 2024), the entry is strictly recognized as a separate legitimate stint (`ADD_NEW` / independent card evaluation) and must NEVER be overwritten or skipped.
+
 ---
 
 ## APPENDIX A: DIRECTORY STRUCTURE CONTRACT

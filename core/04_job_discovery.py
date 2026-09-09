@@ -330,27 +330,61 @@ def process_batch(batch: list, profile_dir: Path, platform: str):
     print(f"\n  ---> Resuming Discovery Sweep...\n", flush=True)
 
 
-def execute_naukri_header_search(page, keyword: str, exp_years: Optional[float] = None, location: str = "") -> bool:
+def is_naukri_campus(page) -> bool:
     """
-    Empirical 3-Field Header Search Bar Automation Protocol (Rule C15):
-    Automates job search via the global header across all Naukri pages.
+    Returns True if the active session/page belongs to Naukri Campus (Rule C16).
+    Checks logo href, campus branding assets, or jobType input.
+    """
+    try:
+        return page.evaluate("""() => {
+            const logo = document.querySelector('a.nI-gNb-header__logo[href*="campus"], img[src*="nc_new_logo"]');
+            const jobTypeInput = document.querySelector('input#jobType');
+            const internshipSec = document.querySelector('.internship-details, .internshipDetails');
+            return !!(logo || jobTypeInput || internshipSec);
+        }""")
+    except Exception:
+        return False
+
+
+def execute_naukri_header_search(
+    page,
+    keyword: str,
+    exp_years: Optional[float] = None,
+    location: str = "",
+    job_type: str = "Job"
+) -> bool:
+    """
+    Empirical Header Search Bar Automation Protocol (Rules C15 & C16):
+    Supports both Standard Professional Naukri and Naukri Campus.
     1. Expands collapsed search bar via button.nI-gNb-sb__expand.
-    2. Enters keyword/role/company into .nI-gNb-sb__keywords input.suggestor-input.
-    3. Selects experience level from input#experienceDD -> ul.dropdown li[value='a{exp}'].
-    4. Enters location into .nI-gNb-sb__location input.suggestor-input.
-    5. Clicks search button button.nI-gNb-sb__icon-wrapper.
+    2. If on Naukri Campus: selects 'Job' vs 'Internship' from input#jobType.
+    3. Enters keyword/role/company into .nI-gNb-sb__keywords input.suggestor-input.
+    4. If on Standard Naukri: selects experience level from input#experienceDD.
+    5. Enters location into .nI-gNb-sb__location input.suggestor-input.
+    6. Clicks search button button.nI-gNb-sb__icon-wrapper.
     """
     try:
         # Step 1: Expand search bar if collapsed
         expand_btn = page.locator("button.nI-gNb-sb__expand, [aria-label='Search jobs here']").first
         if expand_btn.count() > 0 and expand_btn.is_visible():
-            expand_btn.click()
+            expand_btn.click(force=True)
             page.wait_for_timeout(800)
 
-        # Step 2: Keywords / Designation / Companies
+        # Step 2: Handle Naukri Campus Job Type Dropdown (input#jobType)
+        job_type_input = page.locator("input#jobType").first
+        if job_type_input.count() > 0 and job_type_input.is_visible():
+            job_type_input.click(force=True)
+            page.wait_for_timeout(400)
+            target_title = "Internship" if "intern" in str(job_type or keyword).lower() else "Job"
+            opt = page.locator(f"ul.dropdown li[title='{target_title}']").first
+            if opt.count() > 0 and opt.is_visible():
+                opt.click(force=True)
+            page.wait_for_timeout(400)
+
+        # Step 3: Keywords / Designation / Companies
         kw_input = page.locator(".nI-gNb-sb__keywords input.suggestor-input, input[placeholder*='keyword']").first
         if kw_input.count() > 0 and kw_input.is_visible():
-            kw_input.click()
+            kw_input.click(force=True)
             mod_key = "Meta+A" if sys.platform == "darwin" else "Control+A"
             page.keyboard.press(mod_key)
             page.keyboard.press("Backspace")
@@ -359,27 +393,27 @@ def execute_naukri_header_search(page, keyword: str, exp_years: Optional[float] 
             
             top_sugg = page.locator(".drop-layer .tuple-wrap div.opt").first
             if top_sugg.count() > 0 and top_sugg.is_visible():
-                top_sugg.click()
+                top_sugg.click(force=True)
             page.wait_for_timeout(400)
 
-        # Step 3: Experience Dropdown
+        # Step 4: Experience Dropdown (Standard Naukri only)
         if exp_years is not None:
             exp_input = page.locator("#experienceDD").first
             if exp_input.count() > 0 and exp_input.is_visible():
-                exp_input.click()
+                exp_input.click(force=True)
                 page.wait_for_timeout(500)
                 int_exp = int(float(exp_years))
                 target_val = f"a{min(max(int_exp, 0), 30)}"
                 opt = page.locator(f"ul.dropdown li[value='{target_val}'], li[title*='{int_exp} year']").first
                 if opt.count() > 0 and opt.is_visible():
-                    opt.click()
+                    opt.click(force=True)
                 page.wait_for_timeout(400)
 
-        # Step 4: Location
+        # Step 5: Location
         if location:
             loc_input = page.locator(".nI-gNb-sb__location input.suggestor-input, input[placeholder*='location']").first
             if loc_input.count() > 0 and loc_input.is_visible():
-                loc_input.click()
+                loc_input.click(force=True)
                 mod_key = "Meta+A" if sys.platform == "darwin" else "Control+A"
                 page.keyboard.press(mod_key)
                 page.keyboard.press("Backspace")
@@ -388,13 +422,13 @@ def execute_naukri_header_search(page, keyword: str, exp_years: Optional[float] 
                 
                 top_loc_sugg = page.locator(".drop-layer .tuple-wrap div.opt").first
                 if top_loc_sugg.count() > 0 and top_loc_sugg.is_visible():
-                    top_loc_sugg.click()
+                    top_loc_sugg.click(force=True)
                 page.wait_for_timeout(400)
 
-        # Step 5: Click Search Button
+        # Step 6: Click Search Button
         search_btn = page.locator("button.nI-gNb-sb__icon-wrapper, .nI-gNb-sb__search-btn, button:has-text('Search')").first
         if search_btn.count() > 0 and search_btn.is_visible():
-            search_btn.click()
+            search_btn.click(force=True)
             page.wait_for_timeout(3500)
             return True
     except Exception as e:

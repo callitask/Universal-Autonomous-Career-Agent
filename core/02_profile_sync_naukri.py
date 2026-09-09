@@ -49,6 +49,51 @@ def sanitize_filename(name: str) -> str:
     return clean[:50] or "unnamed_role"
 
 
+def extract_years_from_tenure(text: str) -> tuple:
+    """
+    Extracts start and end years from any tenure/duration string.
+    Rule C16: Required for multi-attribute duplicate detection.
+    """
+    clean = str(text or "").strip().lower()
+    four_digit = re.findall(r'\b(19\d\d|20\d\d)\b', clean)
+    if four_digit:
+        start_yr = int(four_digit[0])
+        end_yr = int(four_digit[-1]) if len(four_digit) > 1 else ('present' if 'present' in clean else start_yr)
+        return (start_yr, end_yr)
+    two_digit = re.findall(r"(?:'|’|\b)(\d{2})\b", clean)
+    if two_digit:
+        start_yr = 2000 + int(two_digit[0])
+        end_yr = 2000 + int(two_digit[-1]) if len(two_digit) > 1 else ('present' if 'present' in clean else start_yr)
+        return (start_yr, end_yr)
+    return (None, None)
+
+
+def is_duplicate_employment_or_internship(exp1: dict, exp2: dict) -> bool:
+    """
+    Strict duplicate detection rule (Rule C16):
+    Matches across Company + Designation + Years.
+    If company and designation match, but years are different, it is NOT a duplicate
+    (a candidate can legitimately work in the same role at the same firm across separate periods).
+    """
+    c1 = re.sub(r'\W+', '', exp1.get("company", "").lower())
+    c2 = re.sub(r'\W+', '', exp2.get("company", "").lower())
+    if not (c1 in c2 or c2 in c1 or (len(c1) >= 4 and len(c2) >= 4 and c1[:5] == c2[:5])):
+        return False
+
+    d1 = re.sub(r'\W+', '', (exp1.get("designation") or exp1.get("project_name") or "").lower())
+    d2 = re.sub(r'\W+', '', (exp2.get("designation") or exp2.get("project_name") or "").lower())
+    if d1 and d2 and not (d1 in d2 or d2 in d1 or (len(d1) >= 4 and len(d2) >= 4 and d1[:5] == d2[:5])):
+        return False
+
+    y1 = extract_years_from_tenure(exp1.get("tenure") or exp1.get("dates") or "")
+    y2 = extract_years_from_tenure(exp2.get("tenure") or exp2.get("dates") or "")
+    if y1[0] is not None and y2[0] is not None:
+        if y1 != y2:
+            return False
+
+    return True
+
+
 def parse_candidate_experiences(resume_text: str, config: dict) -> List[Dict[str, Any]]:
     """
     Step A: Ingests candidate employment history from resume.md and candidate_config.json.
@@ -119,12 +164,22 @@ def parse_candidate_experiences(resume_text: str, config: dict) -> List[Dict[str
                 if comp_found and title_found:
                     comp_clean = re.sub(r'[\(\[].*?[\)\]]', '', comp_found).strip()
                     desig_clean = re.sub(r'[\(\[].*?[\)\]]', '', title_found).strip()
-                    composite = f"{comp_clean.lower()}::{desig_clean.lower()}"
+
+                    # Extract tenure / dates from chunk if available (Rule C16)
+                    tenure_found = ""
+                    date_match = re.search(r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\'\s]*\d{2,4}\s*(?:to|-|–)\s*(?:Present|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\'\s]*\d{2,4}|\d{4}))', chunk, re.IGNORECASE)
+                    if not date_match:
+                        date_match = re.search(r'\b(20\d\d\s*(?:to|-|–)\s*(?:Present|20\d\d))\b', chunk, re.IGNORECASE)
+                    if date_match:
+                        tenure_found = date_match.group(1).strip()
+
+                    composite = f"{comp_clean.lower()}::{desig_clean.lower()}::{tenure_found.lower()}"
                     if composite not in seen_roles and len(comp_clean) >= 2:
                         seen_roles.add(composite)
                         experiences.append({
                             "company": comp_clean,
                             "designation": desig_clean,
+                            "tenure": tenure_found,
                             "naukri_card_keyword": comp_clean,
                             "description": bullets_text,
                             "source": "resume"
@@ -230,6 +285,51 @@ def inspect_live_naukri_profile(page) -> Dict[str, Any]:
         except Exception as e:
             log(f"      [!] Error reading employment card {i}: {e}")
 
+    # Step B.2: Also inspect Naukri Campus Internship cards if present (Rule C16)
+    campus_intern_cards = page.locator(".internship-details .card-container, .internshipDetails .card-container, div[id*='internshipDetails-']").all()
+    if campus_intern_cards:
+        log(f"    Discovered {len(campus_intern_cards)} existing internship card(s) on Naukri Campus.")
+        for i, card in enumerate(campus_intern_cards):
+            try:
+                card_text = card.inner_text()
+                company = card.locator("p.card-heading").first.inner_text().strip() if card.locator("p.card-heading").count() else ""
+                tenure = card.locator("p.card-sub-heading").first.inner_text().strip() if card.locator("p.card-sub-heading").count() else ""
+                designation = ""
+                live_desc = ""
+
+                # Inspect modal with isolated container scrolling to avoid background page leaks
+                edit_pencil = card.locator("span.new-pencil").first
+                if edit_pencil.count() > 0 and edit_pencil.is_visible():
+                    edit_pencil.click(force=True)
+                    page.wait_for_timeout(1000)
+                    desig_inp = page.locator("input#projectName0, input[name*='projectName']").first
+                    if desig_inp.count() > 0:
+                        designation = desig_inp.input_value() or desig_inp.get_attribute("value") or ""
+                    desc_inp = page.locator("textarea#details0, textarea[name*='details']").first
+                    if desc_inp.count() > 0:
+                        live_desc = desc_inp.input_value() or desc_inp.inner_text() or ""
+
+                    # Close modal cleanly without background scroll
+                    cancel_link = page.locator("#internshipDetails_Modal .btn-container span:has-text('Cancel'), #internshipDetails_Modal span:has-text('Cancel')").first
+                    if cancel_link.count() > 0:
+                        cancel_link.click(force=True)
+                    else:
+                        page.keyboard.press("Escape")
+                    page.wait_for_timeout(400)
+
+                live_employments.append({
+                    "index": len(live_employments),
+                    "company": company.strip(),
+                    "designation": designation.strip(),
+                    "tenure": tenure.strip(),
+                    "description": live_desc.strip(),
+                    "raw_text": card_text,
+                    "is_campus_internship": True
+                })
+                log(f"      - Live Campus Internship #{i+1}: '{designation or 'Intern'}' at '{company}' [{tenure}] (Desc: {len(live_desc)} chars)")
+            except Exception as e:
+                log(f"      [!] Error reading campus internship card {i}: {e}")
+
     return {
         "headline": live_headline,
         "summary": live_summary,
@@ -259,18 +359,10 @@ def evaluate_and_generate_cards(
         source_desc = exp.get("description", "")
         keyword = exp.get("naukri_card_keyword") or comp
 
+        # Rule C16: Strict 3-way Multi-Attribute Duplicate Matching (Company + Designation + Years)
         matched_live = None
         for live in live_employments:
-            l_comp = live.get("company", "").lower()
-            l_desig = live.get("designation", "").lower()
-            k_clean = keyword.lower()
-            c_clean = comp.lower()
-
-            if (c_clean and c_clean in l_comp) or (k_clean and k_clean in l_comp) or (l_comp and l_comp in c_clean):
-                matched_live = live
-                break
-            comp_tokens = [t for t in re.split(r'\W+', c_clean) if len(t) > 3]
-            if comp_tokens and any(tok in l_comp for tok in comp_tokens):
+            if is_duplicate_employment_or_internship(exp, live):
                 matched_live = live
                 break
 
