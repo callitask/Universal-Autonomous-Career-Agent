@@ -499,9 +499,13 @@ Return STRICTLY a JSON object:
         job_description: str,
         candidate_profile: Optional[Dict[str, Any]] = None,
         resume_text: Optional[str] = None,
+        naukri_match_score: Optional[Dict[str, bool]] = None,
         *args,
         **kwargs
     ) -> MatchResult:
+        if not naukri_match_score and "naukri_match_score" in kwargs:
+            naukri_match_score = kwargs.get("naukri_match_score")
+
         """
         Two-Stage Cognitive Job Qualification Engine:
         Stage 1: Deterministic Hard Filter (Gatekeeper)
@@ -734,18 +738,47 @@ Return STRICTLY a JSON object:
         else:
             exp_score = 10
 
-        total_score = max(0, min(title_score + skill_score + exp_score, 100))
+        # Component D: Naukri Portal Empirical Match Signals
+        naukri_bonus = 0
+        naukri_reasons = []
+        if naukri_match_score and isinstance(naukri_match_score, dict):
+            ks = naukri_match_score.get("Keyskills")
+            exp = naukri_match_score.get("Work Experience")
+            loc = naukri_match_score.get("Location")
+            early = naukri_match_score.get("Early Applicant")
+
+            if ks is True and exp is True:
+                naukri_bonus += 10
+                naukri_reasons.append("Naukri Portal Verified: Keyskills & Exp Match (+10%)")
+            elif ks is True:
+                naukri_bonus += 5
+                naukri_reasons.append("Naukri Portal Verified: Keyskills Match (+5%)")
+            elif exp is True:
+                naukri_bonus += 3
+                naukri_reasons.append("Naukri Portal Verified: Exp Match (+3%)")
+
+            if early is True:
+                naukri_reasons.append("Early Applicant")
+            if loc is True:
+                naukri_reasons.append("Location Match")
+
+        total_score = max(0, min(title_score + skill_score + exp_score + naukri_bonus, 100))
+        naukri_str = f" [{', '.join(naukri_reasons)}]" if naukri_reasons else ""
 
         if total_score >= 60:
             reasoning = (
                 f"Qualified fit ({total_score}%): Title score {title_score}/35, "
-                f"matched {len(matched_core_skills)} core skills ({skill_score}/45), exp fit {exp_score}/20."
+                f"matched {len(matched_core_skills)} core skills ({skill_score}/45), exp fit {exp_score}/20.{naukri_str}"
             )
         else:
             reasoning = (
                 f"Rejected fit ({total_score}% < 60% threshold): Insufficient domain/skill density for '{job_title}'. "
-                f"Matched {len(matched_core_skills)} core skills ({skill_score}/45), title score {title_score}/35."
+                f"Matched {len(matched_core_skills)} core skills ({skill_score}/45), title score {title_score}/35.{naukri_str}"
             )
+
+        naukri_context_block = ""
+        if naukri_match_score and isinstance(naukri_match_score, dict):
+            naukri_context_block = f"\nNAUKRI NATIVE MATCH SIGNALS:\n{json.dumps(naukri_match_score, indent=2)}\n"
 
         # 2.2 Dual-Brain LLM Route (If Gemini API client is operational)
         if self.gemini_client:
@@ -757,7 +790,7 @@ Total Experience: {cand_exp} years
 Key Skills: {json.dumps(skills_dict)}
 Master Resume Excerpt:
 {resume_md[:1800]}
-
+{naukri_context_block}
 JOB TO EVALUATE:
 Title: {job_title}
 Job Description:
@@ -812,7 +845,7 @@ Baseline Deterministic Score: {total_score}% (Borderline 40-65% Window)
 Domain Skills: {matched_skills[:10]}
 Resume Excerpt:
 {resume_md[:1500]}
-
+{naukri_context_block}
 JOB:
 Title: {job_title}
 Description:

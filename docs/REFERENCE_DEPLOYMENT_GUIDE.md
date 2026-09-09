@@ -1,8 +1,8 @@
 # UNIVERSAL DEPLOYMENT GUIDE
 **System:** Anti-Gravity Autonomous Career Operations Engine  
 **Architecture:** Variable-Driven, Candidate-Agnostic, Multi-Profile  
-**Document Version:** 3.0 — Post-Phase 1-4 Remediation Complete  
-**Last Updated:** 2026-09-03
+**Document Version:** 3.1 — Post-Empirical DOM Reverse-Engineering & Telemetry Integration  
+**Last Updated:** 2026-09-09
 
 ---
 
@@ -74,8 +74,8 @@ python core/continuous_career_agent.py --profile profiles/<CandidateName>
 *(Note: `--profile` is optional; if omitted, the agent automatically discovers the active profile in `profiles/`, conducts pre-flight CDP diagnostics, and runs Guardrail P1 codebase purity checks).*
 
 **Pipeline per cycle:**
-1. `04_job_discovery.py` -> Scrapes LinkedIn & Naukri with dynamic URL parameters (`wfhType`, `companyJobs`), qualifies roles against candidate resume using Two-Stage Cognitive Evaluation ($\ge 60\%$ bar), writes `Job_Description.md` and `job_details.json` to application directory.
-2. `generate_factual_tailored.py` -> Reads actual `Job_Description.md` file from disk, extracts technical tokens, and compiles ATS-optimized PDFs per role.
+1. `04_job_discovery.py` -> Scrapes LinkedIn & Naukri with dynamic URL parameters (`wfhType`, `companyJobs`), extracts full SRP card metadata, un-clamps "Read More" (`span.styles_rm-link__RgrMs`) for deep JD ingestion (7.2k+ chars), scrapes the Naukri native match score (`div.styles_JDC__match-score__VnjLL`), qualifies roles using Two-Stage Cognitive Evaluation ($\ge 60\%$ bar with up to +10% portal verified confidence bonus), and writes `Job_Description.md` and `job_details.json` to application directory.
+2. `generate_factual_tailored.py` -> Reads actual un-clamped `Job_Description.md` from disk, extracts technical tokens, and compiles ATS-optimized PDFs per role.
 3. `05_apply_jobs.py` -> Applies with form solving, chatbot interaction (targeting `.ssrc__label` chips and scoped `.sendMsg` container), 3x stuck loop protection, and verification.
 4. 30-minute deep-sleep -> Account preservation pacing.
 
@@ -94,7 +94,7 @@ Skills are mapped to exact Naukri suggestion taxonomy (`ul.Sdrop li`). The engin
 
 | Tier | Description | Implementation |
 |:---|:---|:---|
-| **Tier 1 (Planned)** | Job sourced from manifest and qualified by Two-Stage Cognitive Evaluation Engine ($\ge 60\%$ score, C6 gatekeeper, domain stem alignment, min 2 skills) | `search_manifest.json` |
+| **Tier 1 (Planned)** | Job sourced from manifest, un-clamped, and qualified by Two-Stage Cognitive Evaluation Engine ($\ge 60\%$ score, C6 gatekeeper, domain stem alignment, min 2 skills, Naukri native match score calibration) | `search_manifest.json` |
 | **Tier 2 (Submitted)** | Final "Submit" button clicked and confirmation detected | `05_apply_jobs.py` modal confirmation trap |
 | **Tier 3 (Verified)** | Physical DOM confirmation on platform history page | Naukri: `/myapply/historypage` DOM text scan; LinkedIn: `/jobs-tracker/?stage=applied` |
 

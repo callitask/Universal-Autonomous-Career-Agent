@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: WORKSPACE DEVELOPMENT & CODING RULES
 
-> **Document Version:** 3.0 — Post-Phase 1-4 Remediation Complete  
-> **Last Updated:** 2026-09-03  
+> **Document Version:** 3.1 — Post-Empirical DOM Reverse-Engineering & Telemetry Integration  
+> **Last Updated:** 2026-09-09  
 > **Authority:** These rules are ABSOLUTE and OVERRIDE all model defaults. Violations cause runtime crashes, data corruption, phantom applications, or account bans.  
 > **Workspace Root:** `F:\JOB AI AGENT`
 
@@ -57,6 +57,7 @@
    def evaluate_job_match(self, job_title: str, job_description: str, 
                           candidate_profile: Optional[Dict[str, Any]] = None, 
                           resume_text: Optional[str] = None, 
+                          naukri_match_score: Optional[Dict[str, bool]] = None,
                           *args, **kwargs) -> MatchResult
    ```
    **Two-Stage Cognitive Qualification Architecture:**
@@ -65,10 +66,14 @@
      - *Domain Title Alignment:* Role rejected (`score=0`) if zero phrase or root-stem token overlap (`dt[:5] == tt[:5]`) exists with target domains. Generic hierarchy words (`manager`, `executive`, `analyst`, `operations`) are excluded from domain stem matching.
      - *Incompatible Vertical Hard Gate:* Role rejected immediately (`score=0`) if job title, specifications, or JD belongs to an incompatible vertical (Pharmaceutical R&D, Healthcare Clinical, Civil/Mechanical Engineering, Software Dev, HR, BPO) without candidate functional domain alignment (rejects "Regulatory Manager" in Pharma while permitting "Finance Manager" in Pharma).
      - *Experience Band Filter:* Role rejected (`score=0`) if JD requires experience exceeding candidate total experience by > 3 years.
-   * **Stage 2: Precision Semantic & Factual Scoring**
+   * **Stage 2: Precision Semantic & Factual Scoring (with Portal Calibration)**
      - *Dual-Brain LLM Route:* Structured JSON evaluation via operational Gemini client.
      - *Ambiguous Score IPC Handshake:* Scores in 40–65 range optionally routed to `pending_question.json` File IPC for AG 2.0 evaluation.
      - *Deterministic Factual Fallback:* Title/Domain (0–35), Core Skills (0–45, strictly requiring $\ge 2$ distinct CORE domain skills; generic soft skills like "analytical" or "problem solving" are excluded from awarding points), Experience (0–20).
+     - *Naukri Native Match Score Calibration:* If `naukri_match_score` is provided:
+       * `Keyskills == True` AND `Work Experience == True`: +10% verified confidence bonus.
+       * `Keyskills == True`: +5% verified confidence bonus.
+       * `Work Experience == True`: +3% verified confidence bonus.
      - *Strict 60% Qualification Bar:* Any role scoring below 60% is rejected, eliminating 40% false positives.
    
    **Return Type (`MatchResult`):**
@@ -208,6 +213,16 @@
 11. **Radio & Checkbox Target Standard:**
     Single-select and multi-select choices in the Naukri chatbot drawer are structured with `.ssrc__radio-btn-container` and `.ssrc__checkbox-btn-container`. Direct clicks must target `label.ssrc__label` associated with `input.ssrc__radio` or `input.ssrc__checkbox` to reliably activate React state and enable the `.send` button container.
 
+12. **Invariant DOM vs. Dynamic Runtime Separation Standard:**
+    All portal interactions and scrapers must strictly decouple invariant UI structure (HTML tags, CSS classes, container hierarchies, and data attributes like `data-job-id`) from runtime candidate/job data (designation strings, company names, experience years, CTC values). Scripts must never hardcode assumptions based on specific job listings.
+
+13. **Empirical Profile Edit Form Target Standard:**
+    When automating profile modifications on `https://www.naukri.com/mnjuser/profile`, scripts must target empirical form components:
+    - Resume Headline: `.resumeHeadline span.edit.icon` -> `textarea#resumeHeadlineTxt` (250 char limit) -> cancel `a.cancel-btn` / save `button.btn-dark-ot`.
+    - Key Skills: `.keySkills span.edit.icon` -> `.suggester-input input` -> chip `.chip` -> save `button.btn-dark-ot`.
+    - Employment: `#lazyEmployment .emp-list` with `span.edit` -> `form#employmentForm` -> `textarea#jobDescription` -> cancel `form#employmentForm a.cancel-btn` -> save `button#submitEmployment`.
+    Never target un-scoped generic `.edit` icons across the page.
+
 ---
 
 ## DIRECTIVE 6: LIVE LOGGING & RUNTIME TELEMETRY
@@ -318,6 +333,15 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 
 ### C11: Lazy-Loaded Profile Container Mounting Trap
 **Rule:** Naukri profile sections (`#lazyEmployment`, `#lazyKeySkills`, `#lazyEducation`) do NOT render child cards until scrolled into the viewport. Any scraping or sync script must execute `window.scrollTo(0, 1200)` and wait for DOM hydration before querying child cards, otherwise the page returns zero cards even on fully populated profiles.
+
+### C12: Naukri JD Read More Un-Clamping Protocol
+**Rule:** Naukri job description pages clamp full responsibilities, benefits, and requirements behind `-webkit-line-clamp: 5` on `div.styles_read-more__TFiRZ`. Any scraper or discovery engine must detect `span.styles_rm-link__RgrMs` (`.customReadMoreLabelClass`), force-click the element to remove the line clamp, and wait for text expansion before scraping. Scraping clamped JDs causes severely truncated text (~3,400 vs 7,200+ characters), degrading ATS keyword density and evaluation precision.
+
+### C13: Naukri Native Match Score Calibration Standard
+**Rule:** `04_job_discovery.py` must scrape Naukri's native match score container (`div.styles_JDC__match-score__VnjLL`), extracting boolean match flags for `Early Applicant`, `Keyskills`, `Location`, and `Work Experience` based on `i.ni-icon-check_circle` (True) vs `i.ni-icon-crossMatchscore` (False). This dictionary must be persisted to `job_details.json` and `search_manifest.json`, and passed into `ai_client.evaluate_job_match()` to award verified confidence bonuses (+10% for Keyskills + Work Experience).
+
+### C14: Profile Form Empirical Target Protocol
+**Rule:** Direct profile automation on Naukri (`02_profile_sync_naukri.py`) must strictly target verified component IDs and classes (`textarea#resumeHeadlineTxt`, `.suggester-input input`, `form#employmentForm`, `textarea#jobDescription`, `button#submitEmployment`, `a.cancel-btn`). Scripts must never attempt typing into unmounted or generic `.edit` icons, which triggers UI race conditions or closes open forms.
 
 ---
 

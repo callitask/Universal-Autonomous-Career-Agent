@@ -543,13 +543,29 @@ def run_batched_discovery(profile_path: str):
                                     title_el = card.locator(".job-card-list__title, .artdeco-entity-lockup__title").first
                                     comp_el = card.locator(".job-card-container__company-name").first
                                     exp_el = card.locator(".job-card-container__metadata-item").first
+                                    rating_text = ""
+                                    reviews_text = ""
+                                    sal_text = ""
+                                    loc_text = ""
+                                    posted_text = ""
                                     skill_tags = []
                                 else:
                                     title_el = card.locator("a.title, a.job-title").first
                                     comp_el = card.locator("a.comp-name, a.companyName").first
-                                    exp_el = card.locator("span.expwdth, li.experience, span[class*='exp'], span.ni-job-tuple-icon-experience").first
-                                    skill_els = card.locator("ul.tags-gt li, ul.dot-gt li, .job-tags a, span[class*='tag']").all()
+                                    rating_el = card.locator("a.rating span.main-2, a.rating").first
+                                    reviews_el = card.locator("a.review").first
+                                    exp_el = card.locator("span.exp-wrap, span.expwdth, li.experience, span[class*='exp'], span.ni-job-tuple-icon-experience").first
+                                    sal_el = card.locator("span.sal-wrap, span.ni-job-tuple-icon-salary").first
+                                    loc_el = card.locator("span.loc-wrap, span.locWdth").first
+                                    posted_el = card.locator("span.job-post-day").first
+                                    skill_els = card.locator("ul.tags-gt li, ul.dot-gt li, li.tag-li, .job-tags a, span[class*='tag']").all()
                                     skill_tags = [sk.inner_text().strip() for sk in skill_els if sk.inner_text().strip()]
+
+                                    rating_text = rating_el.inner_text().strip() if rating_el.count() else ""
+                                    reviews_text = reviews_el.inner_text().strip() if reviews_el.count() else ""
+                                    sal_text = sal_el.inner_text().strip() if sal_el.count() else ""
+                                    loc_text = loc_el.inner_text().strip() if loc_el.count() else ""
+                                    posted_text = posted_el.inner_text().strip() if posted_el.count() else ""
                                     
                                 if not title_el.count(): continue
                                 title = title_el.inner_text().strip()
@@ -558,6 +574,14 @@ def run_batched_discovery(profile_path: str):
                                 exp_text = exp_el.inner_text().strip() if exp_el.count() else ""
                                 
                                 session_seen_titles.add(title)
+
+                                card_info = f"Rating: {rating_text}" if rating_text else ""
+                                if reviews_text: card_info += f" ({reviews_text})"
+                                if exp_text: card_info += f" | Exp: {exp_text}"
+                                if loc_text: card_info += f" | Loc: {loc_text}"
+                                if sal_text: card_info += f" | Sal: {sal_text}"
+                                if posted_text: card_info += f" | Posted: {posted_text}"
+                                print(f"  [CARD] {title} @ {company}" + (f" [{card_info.strip(' |')}]" if card_info else ""), flush=True)
                                 
                                 if platform == "linkedin" and "/view/" in url:
                                     url = url.split("?")[0]
@@ -572,7 +596,12 @@ def run_batched_discovery(profile_path: str):
                                         "url": can_url if can_url else url,
                                         "raw_url": url,
                                         "card_skills": skill_tags,
-                                        "exp_text": exp_text
+                                        "exp_text": exp_text,
+                                        "rating": rating_text,
+                                        "reviews": reviews_text,
+                                        "salary": sal_text,
+                                        "card_location": loc_text,
+                                        "posted_age": posted_text
                                     })
                             except Exception:
                                 continue
@@ -631,6 +660,7 @@ def run_batched_discovery(profile_path: str):
                             other_details_text = ""
                             page_job_id = None
                             page_can_url = ""
+                            naukri_match_score = {}
 
                             try:
                                 try:
@@ -750,15 +780,81 @@ def run_batched_discovery(profile_path: str):
                                         continue
                                     
                                 if platform == "naukri":
+                                    # 1. Scrape Naukri Native Match Score (ATS Portal Signals)
+                                    try:
+                                        naukri_match_score = detail_page.evaluate("""() => {
+                                            const scores = {};
+                                            const container = document.querySelector('div.styles_JDC__match-score__VnjLL, div[class*="match-score"]');
+                                            if (!container) return scores;
+                                            const items = container.querySelectorAll('div.styles_MS__details__iS7mj, div[class*="MS__details"]');
+                                            items.forEach(it => {
+                                                const label = it.querySelector('span')?.innerText?.trim();
+                                                const isMatched = it.querySelector('i.ni-icon-check_circle') !== null;
+                                                if (label) {
+                                                    scores[label] = isMatched;
+                                                }
+                                            });
+                                            return scores;
+                                        }""")
+                                        if naukri_match_score:
+                                            print(f"     [NAUKRI MATCH SCORE] {json.dumps(naukri_match_score)}", flush=True)
+                                    except Exception:
+                                        naukri_match_score = {}
+
+                                    # 2. Click "Read More" to un-clamp full description and culture/benefits
+                                    try:
+                                        rm_btn = detail_page.locator("span.styles_rm-link__RgrMs, .customReadMoreLabelClass, .read-more-label, span.rm-link, div[class*='read-more'] span").first
+                                        if rm_btn.count() > 0 and rm_btn.is_visible():
+                                            rm_btn.click(timeout=3000)
+                                            detail_page.wait_for_timeout(800)
+                                    except Exception:
+                                        pass
+
+                                    # 3. Extract Job Highlights
+                                    highlights_els = detail_page.locator("ul.styles_JDC__job-highlight-list__QZC12 li, ul[class*='job-highlight'] li").all()
+                                    highlights_list = [h.inner_text().strip() for h in highlights_els if h.inner_text().strip()]
+
+                                    # 4. Extract Main Job Description
                                     desc_selector = ".styles_JDC__dang-inner-html__h0K4t, .dang-inner-html, .job-desc, section.job-desc, .styles_Jd__text__bWMxs"
                                     for _ in range(8):
                                         if detail_page.locator(desc_selector).count() > 0 and len(detail_page.locator(desc_selector).first.inner_text().strip()) > 50:
                                             break
                                         time.sleep(1)
                                     desc_el = detail_page.locator(desc_selector).first
-                                    skills_el = detail_page.locator(".styles_key-skill__GIPn_ a span, .styles_chip__7YCfG span, a.styles_chip__7YqPJ, .tags a, .job-tags a").all()
-                                    details_el = detail_page.locator("div[class*='other-details'], div.other-details, div[class*='jds-details'], section[class*='job-desc-container'] [class*='details']").first
+                                    main_desc = desc_el.inner_text().strip() if desc_el.count() else ""
+
+                                    # 5. Extract Extended Description (un-clamped by Read More)
+                                    ext_desc_el = detail_page.locator("div.styles_read-more__TFiRZ, div[class*='read-more-below-slides-desc']").first
+                                    ext_desc = ext_desc_el.inner_text().strip() if ext_desc_el.count() else ""
+
+                                    # 6. Extract Deduplicated Key Skills
+                                    skills_el = detail_page.locator("div.styles_key-skill__GIPn_ a span, a.styles_chip__7YqPJ span, .styles_chip__7YCfG span, .tags a, .job-tags a").all()
+                                    raw_skills = [sk.inner_text().strip() for sk in skills_el if sk.inner_text().strip()]
+                                    extracted_skills = list(dict.fromkeys(raw_skills))
+
+                                    # 7. Extract Specifications & Education
+                                    details_el = detail_page.locator("div.styles_other-details__oEN4O, div[class*='other-details'], div.other-details, div[class*='jds-details'], section[class*='job-desc-container'] [class*='details']").first
                                     other_details_text = details_el.inner_text().strip() if details_el.count() else ""
+
+                                    edu_el = detail_page.locator("div.styles_education__KXFkO, div[class*='education']").first
+                                    edu_text = edu_el.inner_text().strip() if edu_el.count() else ""
+
+                                    # 8. Assemble Full Comprehensive JD
+                                    desc_sections = []
+                                    if highlights_list:
+                                        desc_sections.append("Job Highlights:\n" + "\n".join(f"- {h}" for h in highlights_list))
+                                    if main_desc:
+                                        desc_sections.append(f"Job Description:\n{main_desc}")
+                                    if ext_desc and ext_desc not in main_desc:
+                                        desc_sections.append(f"Additional Details & Benefits:\n{ext_desc}")
+                                    if other_details_text:
+                                        desc_sections.append(f"Job Specifications:\n{other_details_text}")
+                                    if edu_text:
+                                        desc_sections.append(f"Education Requirements:\n{edu_text}")
+                                    if extracted_skills:
+                                        desc_sections.append(f"Key Skills: {', '.join(extracted_skills)}")
+
+                                    full_desc = "\n\n".join(desc_sections) if desc_sections else main_desc
                                 else:
                                     desc_selector = "div.jobs-description__content, div.description__text"
                                     for _ in range(8):
@@ -768,14 +864,8 @@ def run_batched_discovery(profile_path: str):
                                     desc_el = detail_page.locator(desc_selector).first
                                     skills_el = []
                                     other_details_text = ""
-                                    
-                                full_desc = desc_el.inner_text().strip() if desc_el.count() else ""
-                                extracted_skills = [sk.inner_text().strip() for sk in skills_el if sk.inner_text().strip()]
-                                
-                                if other_details_text:
-                                    full_desc += f"\n\nJob Specifications:\n{other_details_text}"
-                                if extracted_skills:
-                                    full_desc += f"\n\nRequired Skills: {', '.join(extracted_skills)}"
+                                    full_desc = desc_el.inner_text().strip() if desc_el.count() else ""
+                                    extracted_skills = []
 
                                 scan_success = True
                             finally:
@@ -797,7 +887,13 @@ def run_batched_discovery(profile_path: str):
                                     ctx.add_to_processed_ledger(can_url, status="no_description", metadata={"title": title, "company": company})
                                 continue
                                 
-                            eval_res = ai.evaluate_job_match(title, full_desc, config, resume_text)
+                            eval_res = ai.evaluate_job_match(
+                                title,
+                                full_desc,
+                                config,
+                                resume_text,
+                                naukri_match_score=naukri_match_score
+                            )
                             score = eval_res.get("score", 0) if isinstance(eval_res, dict) else (eval_res[0] if isinstance(eval_res, tuple) else 0)
                             
                             if score >= MATCH_THRESHOLD:
@@ -819,6 +915,7 @@ def run_batched_discovery(profile_path: str):
                                     "platform": platform,
                                     "score": score,
                                     "extracted_skills": extracted_skills,
+                                    "naukri_match_score": naukri_match_score,
                                     "scraped_at": time.strftime("%Y-%m-%d %H:%M:%S")
                                 }
                                 (app_folder / "job_details.json").write_text(json.dumps(job_meta, indent=2), encoding="utf-8")
@@ -831,7 +928,8 @@ def run_batched_discovery(profile_path: str):
                                     "platform": platform,
                                     "score": score,
                                     "jd_path": str(jd_file_path.resolve()),
-                                    "description": full_desc
+                                    "description": full_desc,
+                                    "naukri_match_score": naukri_match_score
                                 }
                                 current_batch.append(job_entry)
                                 processed_ledger.add(url.lower())
