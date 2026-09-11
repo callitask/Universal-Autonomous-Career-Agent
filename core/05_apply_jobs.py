@@ -1678,10 +1678,18 @@ class ApplicationEngine:
         context = self.browser_mgr.get_context()
         applied_count = 0
         
+        target_cfg = getattr(self.ctx, "config", {}).get("target_jobs", {})
+        negative_companies = [c.strip().lower() for c in target_cfg.get("negative_companies", []) if c and str(c).strip()]
+
         for job in jobs_queue:
             if applied_count >= max_applications:
                 log_step("LIMIT", f"Reached target application batch limit of {max_applications}.")
                 break
+
+            comp_raw = (job.get("company") or "").lower().strip()
+            if any((nc in comp_raw if len(nc) > 3 else re.search(rf'\b{re.escape(nc)}\b', comp_raw)) for nc in negative_companies):
+                log_step("GATED", f"Skipping excluded company '{job.get('company')}' for job '{job.get('title') or job.get('job_title')}'.")
+                continue
             
             page = self.browser_mgr.new_page()
             try:

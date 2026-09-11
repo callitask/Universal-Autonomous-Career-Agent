@@ -28,3 +28,12 @@ You are acting as the execution arm under the Human Master Architect. Follow the
 ### 4. Nuanced Real-World Reasoning
 - Deduplication requires multi-attribute composite checking (e.g. Company + Role + Tenure Years). Different years represent distinct legitimate stints.
 - Scope all scrolls and clicks inside active dialog/modal containers.
+
+### 5. Mandatory Sophron Cognitive Memory Protocol
+- Sophron (`F:\JOB AI AGENT\Sophron`) is the permanent cognitive reflection repository of the Human Architect.
+- At every milestone or session turn, the agent MUST autonomously maintain and synchronize Sophron:
+  1. Ingest active conversation turns: `python Sophron/core/run_master_agent.py learn --transcript-path "<current_transcript_path>"`.
+  2. Update `Sophron/master_agent_config.json` with the active conversation transcript path.
+  3. Formulate the structured reflection card in `Sophron/interaction_history/` following the 7-question schema (`user_intent`, `why_user_made_such_thinking`, `why_user_performed_this_way`, `user_reaction_and_satisfaction`, `did_ai_actually_understand`, `was_work_done_exactly_as_asked`, `evolutionary_takeaways`).
+  4. Update `Sophron/interaction_history/reflections_index.json` to keep all historical turns indexed.
+

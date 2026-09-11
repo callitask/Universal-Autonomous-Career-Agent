@@ -545,23 +545,24 @@ Return STRICTLY a JSON object:
                     missing_skills=["Non-negative domain title"]
                 )
 
-        # Check prominent headings / opening of JD or qualification section for negative keywords
-        jd_intro = desc_lower[:1200]
+        # Check prominent headings / opening of JD, skills, or qualification section for negative keywords
+        jd_intro = desc_lower[:1500]
         for neg in negative_keywords:
             if not neg:
                 continue
-            if re.search(rf'\b(?:role|position|hiring for|seeking a|looking for|qualification|education|eligibility|requirements|candidate profile)\s+[^.\n]*\b{re.escape(neg)}\b', jd_intro):
+            # Check requirements, skills, highlights, or qualification headings
+            if re.search(rf'\b(?:role|position|hiring for|seeking a|looking for|qualification|education|eligibility|requirements|required skills|key skills|job highlights|must have|skills required|candidate profile)\b[^.\n]*\b{re.escape(neg)}\b', jd_intro):
                 return MatchResult(
                     score=0,
-                    reasoning=f"Rejected: Negative keyword '{neg}' detected in job description requirements (C6 Guardrail).",
+                    reasoning=f"Rejected: Negative keyword '{neg}' detected in job description requirements/skills (C6 Guardrail).",
                     matching_skills=[],
                     missing_skills=["Target domain alignment"]
                 )
-            # Check entire description for qualification / education blocks demanding negative qualifications
-            if re.search(rf'\b(?:qualification|education requirements?|eligibility|candidate profile)\b[\s\S]{{0,120}}\b{re.escape(neg)}\b', desc_lower):
+            # Check entire description for qualification / education / required skills blocks demanding negative qualifications
+            if re.search(rf'\b(?:qualification|education requirements?|eligibility|candidate profile|required skills|must have)\b[\s\S]{{0,150}}\b{re.escape(neg)}\b', desc_lower):
                 return MatchResult(
                     score=0,
-                    reasoning=f"Rejected: Negative keyword '{neg}' detected in qualification section (C6 Guardrail).",
+                    reasoning=f"Rejected: Negative keyword '{neg}' detected in qualification/requirements section (C6 Guardrail).",
                     matching_skills=[],
                     missing_skills=["Target domain alignment"]
                 )
@@ -584,7 +585,8 @@ Return STRICTLY a JSON object:
             "head", "director", "vp", "intern", "trainee", "expert", "consultant",
             "general", "global", "regional", "assistant", "deputy", "group", "team",
             "operations", "analyst", "professional", "representative", "coordinator",
-            "administrator", "services", "service", "sr", "jr"
+            "administrator", "services", "service", "sr", "jr",
+            "engineer", "developer", "engineering"
         }
 
         domain_tokens = set()
@@ -676,6 +678,20 @@ Return STRICTLY a JSON object:
                         matching_skills=[],
                         missing_skills=[f"Target domain alignment (Not {vertical_name})"]
                     )
+
+        # 1.5 Mandatory Primary Domain Technology Anchor Check
+        # For any software engineering, architecture, or tech lead role, candidate's core stack
+        # (Java, Spring, Microservices, Enterprise Architecture, or Backend) MUST be present.
+        primary_domain_anchors = {"java", "spring", "spring boot", "microservices", "enterprise architecture", "backend", "api management"}
+        has_primary_anchor_in_title = any(re.search(rf'\b{re.escape(a)}\b', title_lower) for a in primary_domain_anchors)
+        has_primary_anchor_in_jd = any(re.search(rf'\b{re.escape(a)}\b', desc_lower) for a in primary_domain_anchors)
+        if not has_primary_anchor_in_title and not has_primary_anchor_in_jd:
+            return MatchResult(
+                score=0,
+                reasoning=f"Rejected: Role '{job_title}' lacks candidate's primary technology anchors ({', '.join(sorted(primary_domain_anchors))}).",
+                matching_skills=[],
+                missing_skills=["Primary technology domain anchor (Java/Spring/Enterprise Arch/Backend)"]
+            )
 
         # =========================================================================
         # STAGE 2: PRECISION SEMANTIC & FACTUAL SCORING
