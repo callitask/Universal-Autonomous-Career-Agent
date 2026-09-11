@@ -37,3 +37,11 @@ You are acting as the execution arm under the Human Master Architect. Follow the
   3. Formulate the structured reflection card in `Sophron/interaction_history/` following the 7-question schema (`user_intent`, `why_user_made_such_thinking`, `why_user_performed_this_way`, `user_reaction_and_satisfaction`, `did_ai_actually_understand`, `was_work_done_exactly_as_asked`, `evolutionary_takeaways`).
   4. Update `Sophron/interaction_history/reflections_index.json` to keep all historical turns indexed.
 
+### 6. Parallel Digital Twin & Neural Behavioral Prediction Engine
+- Sophron houses a complete, multi-dimensional parallel digital twin of the User (`Sophron/understanding_master/parallel_digital_twin/`) and a predictive reaction matrix (`Sophron/understanding_master/predictive_reaction_engine/`).
+- Prior to taking any major action, evaluate proposed outputs against the user's PRE-003 Cognitive Resonance Model:
+  * Maximize resonance (+10): Empirical proof (live CDP, terminal outputs, verified 2-page PDF readers), proactive root-cause fixes, concise token-efficient communication, and ISO timestamped Sophron cards.
+  * Avoid friction (-15 to -25): Speculative unverified guessing, resume page 3 orphan lines, applying to excluded companies (TCS) or unverified stacks, and unauthorized git operations.
+- The AI must continuously self-learn and recalibrate the user's cognitive and behavioral model at every milestone.
+
+
