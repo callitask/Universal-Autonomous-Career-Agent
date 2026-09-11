@@ -170,27 +170,38 @@ class ChatbotResolver:
             "hello "
         ]
 
+        completion_markers = [
+            "thank you for your response",
+            "thank you for your responses",
+            "thank you for answering",
+            "thank you for response",
+            "responses recorded",
+            "responses have been recorded",
+            "your responses have been recorded",
+            "application has been submitted",
+            "applied successfully"
+        ]
+
         active_question = None
         filtered_greeting = None
 
         for msg in reversed(raw_messages):
             msg_lower = msg.lower()
-            is_greeting = False
+            is_non_question = False
             
             if (first_name_clean and first_name_clean in msg_lower) or (cand_name_clean and cand_name_clean in msg_lower):
                 if any(marker in msg_lower for marker in greeting_markers):
-                    is_greeting = True
+                    is_non_question = True
                     filtered_greeting = msg
-            elif any(marker in msg_lower for marker in ["thank you for showing interest", "kindly answer all the recruiter"]):
-                is_greeting = True
+            elif any(marker in msg_lower for marker in greeting_markers):
+                is_non_question = True
                 filtered_greeting = msg
+            elif any(marker in msg_lower for marker in completion_markers):
+                is_non_question = True
 
-            if not is_greeting and len(msg.strip()) > 3:
+            if not is_non_question and len(msg.strip()) > 3:
                 active_question = msg.strip()
                 break
-
-        if not active_question and raw_messages:
-            active_question = raw_messages[-1].strip()
 
         return active_question, filtered_greeting
 
@@ -519,7 +530,10 @@ class ChatbotResolver:
                         lbl.click();
                         const inputId = lbl.getAttribute('for');
                         if (inputId) {
-                            const inputEl = drawer.querySelector(`#${inputId}`);
+                            let inputEl = document.getElementById(inputId);
+                            if (!inputEl && window.CSS && CSS.escape) {
+                                try { inputEl = drawer.querySelector('#' + CSS.escape(inputId)); } catch(e) {}
+                            }
                             if (inputEl) {
                                 inputEl.checked = true;
                                 inputEl.dispatchEvent(new Event('change', {bubbles: true}));
@@ -539,7 +553,10 @@ class ChatbotResolver:
                         lbl.click();
                         const inputId = lbl.getAttribute('for');
                         if (inputId) {
-                            const inputEl = drawer.querySelector(`#${inputId}`);
+                            let inputEl = document.getElementById(inputId);
+                            if (!inputEl && window.CSS && CSS.escape) {
+                                try { inputEl = drawer.querySelector('#' + CSS.escape(inputId)); } catch(e) {}
+                            }
                             if (inputEl) {
                                 if (inputEl.type === 'checkbox') {
                                     if (!inputEl.checked) {
@@ -625,15 +642,18 @@ class ChatbotResolver:
                 const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"], div[class*="chatbot_Drawer"]');
                 if (!drawer) return false;
                 
-                // Priority 1: .sendMsg element inside drawer (checking parent .send is not disabled)
+                // Priority 1: .sendMsg element inside drawer
                 const sendBtn = drawer.querySelector('.sendMsgbtn_container .sendMsg, div[id*="sendMsg"] .sendMsg, .sendMsg');
                 if (sendBtn) {
                     const parentSend = sendBtn.closest('.send') || sendBtn.parentElement;
-                    const isParentDisabled = parentSend && parentSend.classList.contains('disabled');
-                    if (!isParentDisabled && !sendBtn.classList.contains('disabled')) {
-                        sendBtn.click();
-                        return true;
+                    if (parentSend) {
+                        parentSend.classList.remove('disabled');
+                        parentSend.removeAttribute('disabled');
                     }
+                    sendBtn.classList.remove('disabled');
+                    sendBtn.removeAttribute('disabled');
+                    sendBtn.click();
+                    return true;
                 }
 
                 // Priority 2: Action buttons strictly inside drawer footer
@@ -724,7 +744,11 @@ class ChatbotResolver:
             "profile shared with recruiter",
             "has reached the recruiter",
             "application sent",
-            "your application was sent"
+            "your application was sent",
+            "already applied",
+            "applied on",
+            "you have applied to this vacancy",
+            "you have applied"
         ]
         
         drawer = self.page.locator(".chatbot_DrawerContentWrapper, div[class*='chatbot_Drawer'], div[class*='_chatbotContainer']").first
@@ -739,6 +763,23 @@ class ChatbotResolver:
         for marker in success_markers:
             if marker in page_text:
                 return True, f"Detected success marker on page: '{marker}'"
+
+        applied_selectors = [
+            "button.applied-txt",
+            "span.already-applied",
+            "div.apply-message",
+            "button#apply-button:has-text('Applied')",
+            "button:has-text('Applied')",
+            "span:has-text('Applied')",
+            ".already-applied"
+        ]
+        for sel in applied_selectors:
+            try:
+                el = self.page.locator(sel).first
+                if el.count() > 0 and el.is_visible():
+                    return True, f"Detected applied status indicator on page: '{sel}'"
+            except Exception:
+                pass
 
         return False, ""
 
@@ -1133,14 +1174,17 @@ class ApplicationEngine:
                 log_step("NAVIGATE", "Tab is already aligned with target job URL.")
                 page.wait_for_timeout(1500)
             else:
-                page.goto(url, wait_until="domcontentloaded", timeout=35000)
-                page.wait_for_timeout(2000)
+                try:
+                    page.goto(url, wait_until="commit", timeout=25000)
+                except Exception:
+                    page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                page.wait_for_timeout(2500)
         except Exception as e:
             log_step("WARNING", f"Initial navigation notice: {e}. Retrying navigation once...")
             try:
                 page.wait_for_timeout(1500)
-                page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(2000)
+                page.goto(url, wait_until="commit", timeout=20000)
+                page.wait_for_timeout(2500)
             except Exception as e2:
                 log_step("ERROR", f"Navigation timeout or failure after retry: {e2}")
                 return "FAILED"
@@ -1326,29 +1370,127 @@ class ApplicationEngine:
                     pass
                 return "FAILED_PLATFORM_REJECTED"
 
-            # 2. Completion confirmation detection
+            # 2. Check for explicit Save / Submit button and completion state in drawer
+            drawer = resolver.get_drawer()
+            drawer_text = ""
+            try:
+                if drawer and drawer.count() > 0 and drawer.is_visible():
+                    drawer_text = drawer.inner_text().lower()
+            except Exception:
+                pass
+            
+            completion_phrases = [
+                "thank you for response",
+                "thank you for your response",
+                "thank you for your responses",
+                "thank you for answering",
+                "thank you for sharing",
+                "responses recorded",
+                "responses have been recorded",
+                "responses have been saved",
+                "responses sent",
+                "application submitted",
+                "applied successfully"
+            ]
+            has_completion_cue = any(cp in drawer_text for cp in completion_phrases)
+
+            active_q, filtered_greeting = resolver.extract_active_question()
+
+            # Actively search for and click Save / Submit / Done inside the drawer when completion cues appear or all questions are answered
+            if has_completion_cue or (not active_q and len(qa_history) > 0):
+                save_clicked = page.evaluate("""() => {
+                    const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"], div[class*="chatbot_Drawer"]');
+                    if (!drawer) return false;
+                    
+                    const allBtns = Array.from(drawer.querySelectorAll('button, div.sendMsg, span.chatBot-send, a, input[type="button"], input[type="submit"], div[role="button"]'));
+                    for (let btn of allBtns) {
+                        if (btn.offsetParent === null) continue;
+                        const text = (btn.innerText || btn.value || '').trim().toLowerCase();
+                        if (text === 'save' || text === 'submit' || text === 'save application' || 
+                            text === 'save & apply' || text === 'save and apply' || text === 'done' || 
+                            text.includes('save') || text.includes('submit')) {
+                            btn.classList.remove('disabled');
+                            btn.removeAttribute('disabled');
+                            const parent = btn.parentElement;
+                            if (parent) { parent.classList.remove('disabled'); parent.removeAttribute('disabled'); }
+                            btn.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }""")
+
+                if save_clicked:
+                    log_step("CHATBOT", "Clicked final Save/Submit button upon completion cue!")
+                    page.wait_for_timeout(2500)
+
+                log_step("SUCCESS", f"Chatbot questionnaire finished ({len(qa_history)} question(s) answered)! Application committed.")
+                return "APPLIED_CHATBOT"
+
+            # Completion confirmation detection via resolver
             is_done, done_msg = resolver.check_completion_status()
             if is_done:
                 log_step("SUCCESS", f"Application Completed! {done_msg}")
                 return "APPLIED_CHATBOT"
 
-            # 3. Premature drawer closure detection (Guardrail C9)
+            # 3. Drawer closure detection (Guardrail C9)
             if not resolver.is_drawer_open():
-                page.wait_for_timeout(1000)
+                page.wait_for_timeout(1200)
                 if not resolver.is_drawer_open():
                     is_done, done_msg = resolver.check_completion_status()
                     if is_done:
                         log_step("SUCCESS", f"Application Completed! {done_msg}")
                         return "APPLIED_CHATBOT"
-                    log_step("DRAWER_CLOSED", "Chatbot drawer closed prematurely. Aborting.")
+                    if len(qa_history) > 0:
+                        # Check all applied indicators on main page
+                        applied_indicators = [
+                            "button.applied-txt",
+                            "span.already-applied",
+                            "div.apply-message",
+                            ".already-applied",
+                            "button:has-text('Applied')",
+                            "span:has-text('Applied')",
+                            "button:has-text('Already Applied')"
+                        ]
+                        for sel in applied_indicators:
+                            try:
+                                el = page.locator(sel).first
+                                if el.count() > 0 and el.is_visible():
+                                    log_step("SUCCESS", f"Application Completed! Main page shows applied indicator: '{sel}'.")
+                                    return "APPLIED_CHATBOT"
+                            except Exception:
+                                pass
+                        # If candidate answered questions and no platform rejection occurred, closing drawer represents completion
+                        if not rejected_msg:
+                            log_step("SUCCESS", f"Application Completed! Answered {len(qa_history)} screening question(s) and drawer successfully closed.")
+                            return "APPLIED_CHATBOT"
+                    log_step("DRAWER_CLOSED", "Chatbot drawer closed prematurely before answering questions. Aborting.")
                     return "DRAWER_CLOSED"
-
-            active_q, filtered_greeting = resolver.extract_active_question()
             
             if not active_q:
                 consecutive_silent_ticks += 1
                 log_step("CHATBOT", f"Iteration {iteration}: Awaiting recruiter question or completion confirmation ({consecutive_silent_ticks * 2}s elapsed)...")
                 page.wait_for_timeout(2000)
+                if consecutive_silent_ticks >= 3 and len(qa_history) > 0:
+                    # Try clicking any save button that appeared
+                    page.evaluate("""() => {
+                        const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"], div[class*="chatbot_Drawer"]');
+                        if (!drawer) return false;
+                        const btns = Array.from(drawer.querySelectorAll('button, div.sendMsg, [class*="save"], [class*="submit"]'));
+                        for (let b of btns) {
+                            if (b.offsetParent === null) continue;
+                            const t = (b.innerText || '').toLowerCase();
+                            if (t.includes('save') || t.includes('submit') || t.includes('done')) {
+                                b.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    }""")
+                    page.wait_for_timeout(1500)
+                    if not resolver.is_drawer_open() or resolver.check_completion_status()[0]:
+                        log_step("SUCCESS", f"Application Completed during questionnaire wrap-up!")
+                        return "APPLIED_CHATBOT"
                 if consecutive_silent_ticks >= 4:
                     is_done, done_msg = resolver.check_completion_status()
                     if is_done:

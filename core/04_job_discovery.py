@@ -28,6 +28,7 @@ import subprocess
 import logging
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from typing import Optional, List, Dict, Tuple, Any
 
 # Force standard output to UTF-8 and line-buffering (Guardrail H4)
 try:
@@ -185,7 +186,10 @@ def is_title_allowed(
     # 1. Absolute Negative Rejection (C6 Guardrail)
     for neg in negative_keywords:
         neg_clean = str(neg).strip().lower() if neg else ""
-        if neg_clean and re.search(rf'\b{re.escape(neg_clean)}\b', title_lower):
+        if neg_clean and (
+            neg_clean in title_lower if ' ' in neg_clean
+            else re.search(rf'\b{re.escape(neg_clean)}\b', title_lower)
+        ):
             return False
 
     # 2. Incompatible Vertical Quick Gating
@@ -391,10 +395,9 @@ def execute_naukri_header_search(
             kw_input.type(str(keyword), delay=35)
             page.wait_for_timeout(600)
             
-            top_sugg = page.locator(".drop-layer .tuple-wrap div.opt").first
-            if top_sugg.count() > 0 and top_sugg.is_visible():
-                top_sugg.click(force=True)
-            page.wait_for_timeout(400)
+            # Direct exact keyword entry without selecting dropdown suggestions
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(300)
 
         # Step 4: Experience Dropdown (Standard Naukri only)
         if exp_years is not None:
@@ -425,12 +428,19 @@ def execute_naukri_header_search(
                     top_loc_sugg.click(force=True)
                 page.wait_for_timeout(400)
 
-        # Step 6: Click Search Button
+        # Step 6: Trigger Search & Verify Navigation
         search_btn = page.locator("button.nI-gNb-sb__icon-wrapper, .nI-gNb-sb__search-btn, button:has-text('Search')").first
         if search_btn.count() > 0 and search_btn.is_visible():
             search_btn.click(force=True)
-            page.wait_for_timeout(3500)
-            return True
+        else:
+            page.keyboard.press("Enter")
+            
+        for _ in range(10):
+            page.wait_for_timeout(500)
+            cur = page.url.lower()
+            if "/mnjuser/profile" not in cur and ("jobs" in cur or "-jobs" in cur or "k=" in cur):
+                return True
+        return "/mnjuser/profile" not in page.url.lower()
     except Exception as e:
         logger.warning(f"Notice during header search automation: {e}")
     return False
@@ -488,16 +498,7 @@ def run_batched_discovery(profile_path: str):
         target_companies = [c.strip() for c in (cog_prof.get("top_target_companies") or []) if c and str(c).strip()]
 
     search_tasks = []
-    # 1. Strategy A: Role Only (Broad Domain Sweep)
-    for kw in keywords:
-        search_tasks.append({
-            "strategy": "ROLE_ONLY",
-            "query": kw,
-            "role": kw,
-            "company": ""
-        })
-
-    # 2. Strategy B: Target Company Only (Company Infiltration)
+    # 1. Strategy B: Target Company Infiltration First (Priority Target)
     for comp in target_companies:
         search_tasks.append({
             "strategy": "COMPANY_ONLY",
@@ -506,10 +507,10 @@ def run_batched_discovery(profile_path: str):
             "company": comp
         })
 
-    # 3. Strategy C: Role AND Company Combined (Precision Match)
+    # 2. Strategy C: Precision Role AND Company Match
     if target_companies:
-        for kw in keywords[:3]:
-            for comp in target_companies[:3]:
+        for kw in keywords[:4]:
+            for comp in target_companies[:2]:
                 search_tasks.append({
                     "strategy": "ROLE_AND_COMPANY",
                     "query": f"{kw} {comp}",
@@ -517,8 +518,18 @@ def run_batched_discovery(profile_path: str):
                     "company": comp
                 })
 
+    # 3. Strategy A: Broad Role Sweep
+    for kw in keywords:
+        search_tasks.append({
+            "strategy": "ROLE_ONLY",
+            "query": kw,
+            "role": kw,
+            "company": ""
+        })
+
     print(f"[DISCOVERY CONTROLLER] Multi-Strategy Search Matrix: {len(search_tasks)} tasks (Roles: {len(keywords)}, Companies: {len(target_companies)})", flush=True)
     
+    match_threshold = int(target.get("match_threshold", MATCH_THRESHOLD))
     negative_keywords = target.get("negative_keywords", [])
     locations = target.get("locations", [])
     platforms = [p.lower() for p in target.get("platforms", ["naukri"])]
@@ -581,32 +592,60 @@ def run_batched_discovery(profile_path: str):
                         cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
                         page = discovery_page
                         
+                        ui_search_success = False
                         if platform == "naukri":
-                            if strategy == "ROLE_ONLY":
-                                query_slug = re.sub(r'[^a-z0-9]+', '-', query_text.lower()).strip('-')
-                                loc_slug = re.sub(r'[^a-z0-9]+', '-', primary_loc.lower()).strip('-')
-                                base_url = f"https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}"
-                                if page_num > 1:
-                                    base_url += f"-{page_num}"
-                                query_url = f"{base_url}?experience={int(float(exp_years or 0))}&jobAge={job_age_days}{wfh_param}{company_jobs_param}"
-                                if ctc_filter:
-                                    query_url += f"&ctcFilter={ctc_filter}"
-                            elif strategy == "COMPANY_ONLY":
-                                encoded_comp = urllib.parse.quote(comp_text)
-                                encoded_loc = urllib.parse.quote(primary_loc)
-                                query_url = f"https://www.naukri.com/jobs?k={encoded_comp}&l={encoded_loc}&experience={int(float(exp_years or 0))}&jobAge={job_age_days}{wfh_param}{company_jobs_param}"
-                                if page_num > 1:
-                                    query_url += f"&pageNo={page_num}"
-                                if ctc_filter:
-                                    query_url += f"&ctcFilter={ctc_filter}"
-                            else: # ROLE_AND_COMPANY
-                                encoded_query = urllib.parse.quote(query_text)
-                                encoded_loc = urllib.parse.quote(primary_loc)
-                                query_url = f"https://www.naukri.com/jobs?k={encoded_query}&l={encoded_loc}&experience={int(float(exp_years or 0))}&jobAge={job_age_days}{wfh_param}{company_jobs_param}"
-                                if page_num > 1:
-                                    query_url += f"&pageNo={page_num}"
-                                if ctc_filter:
-                                    query_url += f"&ctcFilter={ctc_filter}"
+                            if page_num == 1:
+                                try:
+                                    page.goto("https://www.naukri.com/mnjuser/profile", wait_until="domcontentloaded", timeout=20000)
+                                    time.sleep(2)
+                                    is_campus = is_naukri_campus(page)
+                                    target_job_type = "Internship" if is_campus and "intern" in query_text.lower() else "Job"
+                                    ui_search_success = execute_naukri_header_search(
+                                        page, 
+                                        keyword=query_text, 
+                                        exp_years=exp_years, 
+                                        location=primary_loc, 
+                                        job_type=target_job_type
+                                    )
+                                    query_url = page.url
+                                except Exception as e:
+                                    logger.warning(f"UI search fallback: {e}")
+                                    
+                            if not ui_search_success:
+                                if strategy == "ROLE_ONLY":
+                                    query_slug = re.sub(r'[^a-z0-9]+', '-', query_text.lower()).strip('-')
+                                    loc_slug = re.sub(r'[^a-z0-9]+', '-', primary_loc.lower()).strip('-')
+                                    base_url = f"https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}"
+                                    if page_num > 1:
+                                        base_url += f"-{page_num}"
+                                    query_url = f"{base_url}?experience={int(float(exp_years or 0))}&jobAge={job_age_days}{wfh_param}{company_jobs_param}"
+                                    if ctc_filter:
+                                        query_url += f"&ctcFilter={ctc_filter}"
+                                elif strategy == "COMPANY_ONLY":
+                                    encoded_comp = urllib.parse.quote(comp_text)
+                                    encoded_loc = urllib.parse.quote(primary_loc)
+                                    query_url = f"https://www.naukri.com/jobs?k={encoded_comp}&l={encoded_loc}&experience={int(float(exp_years or 0))}&jobAge={job_age_days}{wfh_param}{company_jobs_param}"
+                                    if page_num > 1:
+                                        query_url += f"&pageNo={page_num}"
+                                    if ctc_filter:
+                                        query_url += f"&ctcFilter={ctc_filter}"
+                                else: # ROLE_AND_COMPANY
+                                    encoded_query = urllib.parse.quote(query_text)
+                                    encoded_loc = urllib.parse.quote(primary_loc)
+                                    query_url = f"https://www.naukri.com/jobs?k={encoded_query}&l={encoded_loc}&experience={int(float(exp_years or 0))}&jobAge={job_age_days}{wfh_param}{company_jobs_param}"
+                                    if page_num > 1:
+                                        query_url += f"&pageNo={page_num}"
+                                    if ctc_filter:
+                                        query_url += f"&ctcFilter={ctc_filter}"
+                            elif page_num > 1:
+                                current_url = page.url
+                                if "pageNo=" in current_url:
+                                    query_url = re.sub(r'pageNo=\d+', f'pageNo={page_num}', current_url)
+                                elif "?" in current_url:
+                                    query_url = current_url + f"&pageNo={page_num}"
+                                else:
+                                    query_url = current_url + f"?pageNo={page_num}"
+                                    
                             card_selector = "div.srp-jobtuple-wrapper, article.jobTuple, div.cust-job-tuple"
                             
                         elif platform == "linkedin":
@@ -620,7 +659,8 @@ def run_batched_discovery(profile_path: str):
                             
                         print(f"[{strategy}] Searching: '{query_text}' | Page {page_num}...", flush=True)
                         try:
-                            page.goto(query_url, wait_until="domcontentloaded", timeout=20000)
+                            if not ui_search_success:
+                                page.goto(query_url, wait_until="domcontentloaded", timeout=20000)
                             if platform == "naukri":
                                 for _ in range(10):
                                     if page.locator(card_selector).count() > 0:
@@ -909,10 +949,15 @@ def run_batched_discovery(profile_path: str):
 
                                     # 2. Click "Read More" to un-clamp full description and culture/benefits
                                     try:
-                                        rm_btn = detail_page.locator("span.styles_rm-link__RgrMs, .customReadMoreLabelClass, .read-more-label, span.rm-link, div[class*='read-more'] span").first
-                                        if rm_btn.count() > 0 and rm_btn.is_visible():
-                                            rm_btn.click(timeout=3000)
-                                            detail_page.wait_for_timeout(800)
+                                        detail_page.evaluate("""() => {
+                                            const rmEls = Array.from(document.querySelectorAll('span.styles_rm-link__RgrMs, .customReadMoreLabelClass, .styles_read-more-link__dD_5h, .read-more-label, span.rm-link, div[class*="read-more"] span, div[class*="read-more"] a'));
+                                            for (const el of rmEls) {
+                                                if (el && el.innerText && el.innerText.toLowerCase().includes('read more')) {
+                                                    el.click();
+                                                }
+                                            }
+                                        }""")
+                                        detail_page.wait_for_timeout(600)
                                     except Exception:
                                         pass
 
@@ -1002,7 +1047,7 @@ def run_batched_discovery(profile_path: str):
                             )
                             score = eval_res.get("score", 0) if isinstance(eval_res, dict) else (eval_res[0] if isinstance(eval_res, tuple) else 0)
                             
-                            if score >= MATCH_THRESHOLD:
+                            if score >= match_threshold:
                                 print(f"     [MATCH QUEUED! Score: {score}%]", flush=True)
 
                                 clean_c = re.sub(r"[^\w\s-]", "", company).strip().replace(" ", "_")[:50]

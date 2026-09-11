@@ -64,3 +64,7 @@ scratch/
 ehthumbs.db
 Thumbs.db
 desktop.ini
+
+# 7. Master Persona Agent (User's Personality, Cognition, and Understanding Master)
+# Strictly ignored to ensure user persona models, learning cards, and supervisor code are NEVER pushed to git
+Sophron/

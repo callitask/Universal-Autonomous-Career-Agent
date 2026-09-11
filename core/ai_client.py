@@ -545,13 +545,23 @@ Return STRICTLY a JSON object:
                     missing_skills=["Non-negative domain title"]
                 )
 
-        # Check prominent headings / opening of JD (first 800 chars)
-        jd_intro = desc_lower[:800]
+        # Check prominent headings / opening of JD or qualification section for negative keywords
+        jd_intro = desc_lower[:1200]
         for neg in negative_keywords:
-            if re.search(rf'\b(?:role|position|hiring for|seeking a|looking for)\s+[^.\n]*\b{re.escape(neg)}\b', jd_intro):
+            if not neg:
+                continue
+            if re.search(rf'\b(?:role|position|hiring for|seeking a|looking for|qualification|education|eligibility|requirements|candidate profile)\s+[^.\n]*\b{re.escape(neg)}\b', jd_intro):
                 return MatchResult(
                     score=0,
-                    reasoning=f"Rejected: Negative keyword '{neg}' detected in job description header (C6 Guardrail).",
+                    reasoning=f"Rejected: Negative keyword '{neg}' detected in job description requirements (C6 Guardrail).",
+                    matching_skills=[],
+                    missing_skills=["Target domain alignment"]
+                )
+            # Check entire description for qualification / education blocks demanding negative qualifications
+            if re.search(rf'\b(?:qualification|education requirements?|eligibility|candidate profile)\b[\s\S]{{0,120}}\b{re.escape(neg)}\b', desc_lower):
+                return MatchResult(
+                    score=0,
+                    reasoning=f"Rejected: Negative keyword '{neg}' detected in qualification section (C6 Guardrail).",
                     matching_skills=[],
                     missing_skills=["Target domain alignment"]
                 )
@@ -748,21 +758,34 @@ Return STRICTLY a JSON object:
             early = naukri_match_score.get("Early Applicant")
 
             if ks is True and exp is True:
-                naukri_bonus += 10
-                naukri_reasons.append("Naukri Portal Verified: Keyskills & Exp Match (+10%)")
+                naukri_bonus += 25
+                skill_score = max(skill_score, 35)
+                exp_score = max(exp_score, 20)
+                naukri_reasons.append("Naukri Verified: Keyskills & Exp Match (+25%, skills: 35/45, exp: 20/20)")
             elif ks is True:
-                naukri_bonus += 5
-                naukri_reasons.append("Naukri Portal Verified: Keyskills Match (+5%)")
+                naukri_bonus += 15
+                skill_score = max(skill_score, 25)
+                naukri_reasons.append("Naukri Verified: Keyskills Match (+15%, skills: 25/45)")
             elif exp is True:
-                naukri_bonus += 3
-                naukri_reasons.append("Naukri Portal Verified: Exp Match (+3%)")
+                naukri_bonus += 10
+                exp_score = max(exp_score, 20)
+                naukri_reasons.append("Naukri Verified: Exp Match (+10%, exp: 20/20)")
 
-            if early is True:
-                naukri_reasons.append("Early Applicant")
             if loc is True:
-                naukri_reasons.append("Location Match")
+                naukri_bonus += 5
+                naukri_reasons.append("Location Match (+5%)")
+            if early is True:
+                naukri_bonus += 5
+                naukri_reasons.append("Early Applicant (+5%)")
 
         total_score = max(0, min(title_score + skill_score + exp_score + naukri_bonus, 100))
+        
+        # When both Keyskills and Experience are verified by Naukri on a non-negative domain role:
+        # Guarantee qualification (score >= 65%) to prevent under-scoring
+        if naukri_match_score and isinstance(naukri_match_score, dict):
+            if naukri_match_score.get("Keyskills") is True and naukri_match_score.get("Work Experience") is True:
+                total_score = max(total_score, 65)
+
         naukri_str = f" [{', '.join(naukri_reasons)}]" if naukri_reasons else ""
 
         if total_score >= 60:
@@ -830,18 +853,18 @@ Respond ONLY with a valid JSON object:
             except Exception as e:
                 print(f"[AI CLIENT] Gemini evaluation notice ({e}). Falling back to calibrated scoring.", flush=True)
 
-        # 2.3 Gated Antigravity 2.0 Cognitive IPC Route (Borderline 40-65% Window Only)
-        # Clear rejections (< 40%) and clear qualifications (>= 60%, when score > 65%) resolve instantly
-        enable_ipc_eval = kwargs.get("enable_ipc", True)
-        if enable_ipc_eval and not self.gemini_client and (40 <= total_score <= 65):
+        # 2.3 Gated Antigravity 2.0 Cognitive IPC Route (Borderline 40-49% Window Only)
+        # Clear rejections (< 40%) and clear qualifications (>= 50%) resolve instantly
+        enable_ipc_eval = kwargs.get("enable_ipc", False)
+        if enable_ipc_eval and not self.gemini_client and (40 <= total_score < 50):
             ipc_eval_prompt = f"""Evaluate candidate qualification for this job posting.
-The candidate scored a borderline {total_score}% based on factual keyword matching (borderline 40-65% range).
+The candidate scored a borderline {total_score}% based on factual keyword matching (borderline 40-49% range).
 Please arbitrate whether this role genuinely fits the candidate's background.
 
 CANDIDATE:
 Title: {cand.get('current_title', '')}
 Experience: {cand_exp} years
-Baseline Deterministic Score: {total_score}% (Borderline 40-65% Window)
+Baseline Deterministic Score: {total_score}% (Borderline 40-49% Window)
 Domain Skills: {matched_skills[:10]}
 Resume Excerpt:
 {resume_md[:1500]}
@@ -996,6 +1019,8 @@ Return STRICTLY a JSON object with this exact schema:
                     matched_opt = self._best_option_match(val, options)
                     if matched_opt:
                         return matched_opt
+                    # Cached truth is not a valid option for this specific question; route to IPC
+                    break
                 return val
 
         for k, v in ats.items():
@@ -1006,6 +1031,7 @@ Return STRICTLY a JSON object with this exact schema:
                     matched_opt = self._best_option_match(val, options)
                     if matched_opt:
                         return matched_opt
+                    break
                 return val
 
         # Step 2: Route dynamically to AG 2.0 IPC Handshake
@@ -1270,10 +1296,35 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
 
         # 1. Hard check: Negative keywords are absolute (C6 Guardrail)
         for neg in negative_keywords:
-            if re.search(rf'\b{re.escape(neg)}\b', title_lower):
+            matched = neg in title_lower if ' ' in neg else bool(re.search(rf'\b{re.escape(neg)}\b', title_lower))
+            if matched:
                 return False, f"Negative keyword '{neg}' in card title (C6 Guardrail)."
 
-        # 2. Check card skills against candidate skills
+        # 2. Check for obvious incompatible verticals in title
+        cog_prof = self.profile_context.load_cognitive_profile() if self.profile_context else None
+        if not cog_prof and self.profile_context:
+            cog_prof = self.synthesize_cognitive_profile()
+
+        domain_acronyms = cog_prof.get("domain_acronyms", {}) if cog_prof else {}
+        cand_domain = cog_prof.get("candidate_domain", "Candidate Domain") if cog_prof else "Candidate Domain"
+        incompatible_verticals = cog_prof.get("incompatible_verticals", {}) if cog_prof else {}
+
+        for vert_name, vert_markers in incompatible_verticals.items():
+            for bad_kw in vert_markers:
+                bad_kw_clean = bad_kw.lower().strip()
+                if bad_kw_clean and re.search(rf'\b{re.escape(bad_kw_clean)}\b', title_lower):
+                    cand_domain_tokens = [w for w in re.split(r'[\s/,-]+', cand_domain.lower()) if len(w) > 3]
+                    has_domain = any(re.search(rf'\b{re.escape(d)}\b', title_lower) for d in cand_domain_tokens)
+                    if not has_domain:
+                        return False, f"Card title belongs to incompatible vertical '{vert_name}' without {cand_domain} function."
+
+        # 3. Domain abbreviations and technical role mapping
+        words = re.findall(r'[a-zA-Z0-9&]+', title_lower)
+        for w in words:
+            if w in domain_acronyms:
+                return True, f"Domain acronym '{w.upper()}' ({domain_acronyms[w]}) matches candidate domain."
+
+        # 4. Check card skills against candidate skills
         matching_card_skills = []
         for cs in card_skills_lower:
             for cand_s in all_skills:
@@ -1283,29 +1334,6 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
 
         if matching_card_skills:
             return True, f"Card skills match candidate taxonomy: {', '.join(matching_card_skills[:3])}"
-
-        # 3. Domain abbreviations and technical role mapping
-        cog_prof = self.profile_context.load_cognitive_profile() if self.profile_context else None
-        if not cog_prof and self.profile_context:
-            cog_prof = self.synthesize_cognitive_profile()
-
-        domain_acronyms = cog_prof.get("domain_acronyms", {}) if cog_prof else {}
-        cand_domain = cog_prof.get("candidate_domain", "Candidate Domain") if cog_prof else "Candidate Domain"
-        incompatible_verticals = cog_prof.get("incompatible_verticals", {}) if cog_prof else {}
-
-        words = re.findall(r'[a-zA-Z0-9&]+', title_lower)
-        for w in words:
-            if w in domain_acronyms:
-                return True, f"Domain acronym '{w.upper()}' ({domain_acronyms[w]}) matches candidate domain."
-
-        # 4. Check for obvious incompatible verticals in title
-        for vert_name, vert_markers in incompatible_verticals.items():
-            for bad_kw in vert_markers[:6]:
-                if re.search(rf'\b{re.escape(bad_kw)}\b', title_lower):
-                    cand_domain_tokens = [w for w in re.split(r'[\s/,-]+', cand_domain.lower()) if len(w) > 3]
-                    has_domain = any(re.search(rf'\b{re.escape(d)}\b', title_lower) for d in cand_domain_tokens)
-                    if not has_domain:
-                        return False, f"Card title belongs to incompatible vertical '{vert_name}' without {cand_domain} function."
 
         # 5. Token stem matching against target keywords
         target_keywords = [k.lower().strip() for k in (target_jobs.get("keywords") or []) if k and k.strip()]

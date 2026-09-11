@@ -383,7 +383,8 @@ def evaluate_and_generate_cards(
                 "designation": matched_live.get("designation", desig),
                 "company": matched_live.get("company", comp),
                 "tenure": matched_live.get("tenure", ""),
-                "description": live_desc
+                "description": live_desc,
+                "is_campus_internship": matched_live.get("is_campus_internship", False)
             }
         else:
             log(f"    Role '{desig}' at '{comp}' not found on live profile. Decision: ADD_NEW.")
@@ -462,38 +463,76 @@ def execute_selective_naukri_sync(
             try:
                 page.goto("https://www.naukri.com/mnjuser/profile", wait_until="domcontentloaded")
                 page.wait_for_timeout(3000)
-                page.evaluate("window.scrollTo(0, 800)")
-                page.wait_for_timeout(1000)
+                
+                is_internship = card.get("live_content", {}).get("is_campus_internship", False)
+                if not is_internship and "intern" in desig.lower():
+                    # Fallback check
+                    is_internship = page.locator(".internship-details").count() > 0
 
-                card_loc = page.locator("#lazyEmployment .emp-list", has_text=keyword).first
-                if card_loc.count() == 0 or not card_loc.is_visible():
-                    card_loc = page.locator(".emp-list", has_text=comp).first
+                if is_internship:
+                    card_loc = page.locator(".internship-details .card-container", has_text=comp).first
+                    if card_loc.count() > 0 and card_loc.is_visible():
+                        card_loc.locator("span.new-pencil").first.click()
+                        page.wait_for_timeout(2000)
 
-                if card_loc.count() > 0 and card_loc.is_visible():
-                    card_loc.locator("span.edit, .editOneTheme").first.click()
-                    page.wait_for_timeout(2000)
+                        desig_inp = page.locator("input#projectName0, input[name*='projectName']").first
+                        if desig_inp.is_visible():
+                            desig_inp.click()
+                            page.keyboard.press("Control+A")
+                            page.keyboard.press("Backspace")
+                            desig_inp.fill(desig)
 
-                    desig_inp = page.locator("input#designationSugg, input#designation").first
-                    if desig_inp.is_visible():
-                        desig_inp.click()
-                        page.keyboard.press("Control+A")
-                        page.keyboard.press("Backspace")
-                        desig_inp.fill(desig)
+                        desc_box = page.locator("textarea#details0, textarea[name*='details']").first
+                        if desc_box.is_visible():
+                            desc_box.click()
+                            page.keyboard.press("Control+A")
+                            page.keyboard.press("Backspace")
+                            desc_box.fill(desc)
 
-                    desc_box = page.locator("#jobDescription, textarea#jobDescription, textarea[name='jobDescription']").first
-                    if desc_box.is_visible():
-                        desc_box.click()
-                        page.keyboard.press("Control+A")
-                        page.keyboard.press("Backspace")
-                        desc_box.fill(desc)
+                        # FIX: Use isolated modal scrolling
+                        page.evaluate("document.querySelector('#internshipDetails_Modal').scrollTop = document.querySelector('#internshipDetails_Modal').scrollHeight")
+                        page.wait_for_timeout(500)
 
-                    save_btn = page.locator("button#submitEmployment, form#employmentForm button:has-text('Save'), form#employmentForm .btn-dark-ot").first
-                    if save_btn.is_visible() and save_btn.is_enabled():
-                        save_btn.click()
-                        page.wait_for_timeout(2500)
-                        log(f"      [OK] Saved updated ATS description for {comp}.")
+                        save_btn = page.locator("form#internship button.btn-blue:has-text('Save'), form#internship button[type='submit']").first
+                        if save_btn.is_visible() and save_btn.is_enabled():
+                            save_btn.click()
+                            page.wait_for_timeout(2500)
+                            log(f"      [OK] Saved updated ATS description for Internship {comp}.")
+                    else:
+                        log(f"      [!] Campus Internship Card for {comp} not located on page to update.")
                 else:
-                    log(f"      [!] Card for {comp} not located on page to update.")
+                    page.evaluate("window.scrollTo(0, 800)")
+                    page.wait_for_timeout(1000)
+
+                    card_loc = page.locator("#lazyEmployment .emp-list", has_text=keyword).first
+                    if card_loc.count() == 0 or not card_loc.is_visible():
+                        card_loc = page.locator(".emp-list", has_text=comp).first
+
+                    if card_loc.count() > 0 and card_loc.is_visible():
+                        card_loc.locator("span.edit, .editOneTheme").first.click()
+                        page.wait_for_timeout(2000)
+
+                        desig_inp = page.locator("input#designationSugg, input#designation").first
+                        if desig_inp.is_visible():
+                            desig_inp.click()
+                            page.keyboard.press("Control+A")
+                            page.keyboard.press("Backspace")
+                            desig_inp.fill(desig)
+
+                        desc_box = page.locator("#jobDescription, textarea#jobDescription, textarea[name='jobDescription']").first
+                        if desc_box.is_visible():
+                            desc_box.click()
+                            page.keyboard.press("Control+A")
+                            page.keyboard.press("Backspace")
+                            desc_box.fill(desc)
+
+                        save_btn = page.locator("button#submitEmployment, form#employmentForm button:has-text('Save'), form#employmentForm .btn-dark-ot").first
+                        if save_btn.is_visible() and save_btn.is_enabled():
+                            save_btn.click()
+                            page.wait_for_timeout(2500)
+                            log(f"      [OK] Saved updated ATS description for {comp}.")
+                    else:
+                        log(f"      [!] Card for {comp} not located on page to update.")
             except Exception as e:
                 log(f"      [!] Failed to update {comp}: {e}")
 
@@ -502,32 +541,64 @@ def execute_selective_naukri_sync(
             try:
                 page.goto("https://www.naukri.com/mnjuser/profile", wait_until="domcontentloaded")
                 page.wait_for_timeout(3000)
-                page.evaluate("window.scrollTo(0, 800)")
-                page.wait_for_timeout(1000)
+                
+                is_internship = page.locator(".internship-details").count() > 0 and "intern" in desig.lower()
+                
+                if is_internship:
+                    add_btn = page.locator("div.internship-details div.add-more, span:has-text('Add internship')").first
+                    if add_btn.is_visible():
+                        add_btn.click(force=True)
+                        page.wait_for_timeout(2000)
 
-                add_btn = page.locator("#add-employment, span:has-text('Add employment')").first
-                if add_btn.is_visible():
-                    add_btn.click(force=True)
-                    page.wait_for_timeout(2000)
+                        desig_inp = page.locator("input#projectName0, input[name*='projectName']").first
+                        if desig_inp.is_visible():
+                            desig_inp.fill(desig)
 
-                    desig_inp = page.locator("input#designationSugg, input#designation").first
-                    if desig_inp.is_visible():
-                        desig_inp.fill(desig)
+                        comp_inp = page.locator("input#organisation0, input[name*='organisation']").first
+                        if comp_inp.is_visible():
+                            comp_inp.fill(comp)
 
-                    comp_inp = page.locator("input#companySugg, input#company").first
-                    if comp_inp.is_visible():
-                        comp_inp.fill(comp)
+                        desc_box = page.locator("textarea#details0, textarea[name*='details']").first
+                        if desc_box.is_visible():
+                            desc_box.click()
+                            desc_box.fill(desc)
+                            
+                        # FIX: Use isolated modal scrolling
+                        page.evaluate("document.querySelector('#internshipDetails_Modal').scrollTop = document.querySelector('#internshipDetails_Modal').scrollHeight")
+                        page.wait_for_timeout(500)
 
-                    desc_box = page.locator("#jobDescription, textarea#jobDescription, textarea[name='jobDescription']").first
-                    if desc_box.is_visible():
-                        desc_box.click()
-                        desc_box.fill(desc)
+                        save_btn = page.locator("form#internship button.btn-blue:has-text('Save'), form#internship button[type='submit']").first
+                        if save_btn.is_visible() and save_btn.is_enabled():
+                            save_btn.click()
+                            page.wait_for_timeout(2500)
+                            log(f"      [OK] Saved new internship record for {comp}.")
+                else:
+                    page.evaluate("window.scrollTo(0, 800)")
+                    page.wait_for_timeout(1000)
 
-                    save_btn = page.locator("button#submitEmployment, form#employmentForm button:has-text('Save'), form#employmentForm .btn-dark-ot").first
-                    if save_btn.is_visible() and save_btn.is_enabled():
-                        save_btn.click()
-                        page.wait_for_timeout(2500)
-                        log(f"      [OK] Saved new employment record for {comp}.")
+                    add_btn = page.locator("#add-employment, span:has-text('Add employment')").first
+                    if add_btn.is_visible():
+                        add_btn.click(force=True)
+                        page.wait_for_timeout(2000)
+
+                        desig_inp = page.locator("input#designationSugg, input#designation").first
+                        if desig_inp.is_visible():
+                            desig_inp.fill(desig)
+
+                        comp_inp = page.locator("input#companySugg, input#company").first
+                        if comp_inp.is_visible():
+                            comp_inp.fill(comp)
+
+                        desc_box = page.locator("#jobDescription, textarea#jobDescription, textarea[name='jobDescription']").first
+                        if desc_box.is_visible():
+                            desc_box.click()
+                            desc_box.fill(desc)
+
+                        save_btn = page.locator("button#submitEmployment, form#employmentForm button:has-text('Save'), form#employmentForm .btn-dark-ot").first
+                        if save_btn.is_visible() and save_btn.is_enabled():
+                            save_btn.click()
+                            page.wait_for_timeout(2500)
+                            log(f"      [OK] Saved new employment record for {comp}.")
             except Exception as e:
                 log(f"      [!] Failed to add new employment {comp}: {e}")
 

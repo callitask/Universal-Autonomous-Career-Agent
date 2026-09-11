@@ -253,11 +253,22 @@ class ResumeTailorEngine:
                     if tailored_data.get("tailored_summary"):
                         section["lines"] = [tailored_data["tailored_summary"]]
 
-            # 2. Prioritize Core Competencies / Technical Skills Table
+            # 2. Prioritize Core Competencies / Technical Skills (Supports ATS-safe lines and legacy tables)
             elif "COMPETENCIES" in heading or "SKILLS" in heading:
                 new_lines = []
                 for line in section["lines"]:
-                    if "|" in line:
+                    # Case A: ATS-safe format: **Category:** skill1, skill2
+                    match = re.match(r'^(\s*\*\*[^*]+\*\*:?\s*)(.*)', line)
+                    if match and match.group(2).strip():
+                        cat_prefix = match.group(1)
+                        skills_str = match.group(2).strip()
+                        skills_list = [s.strip() for s in re.split(r'[,;]+', skills_str) if s.strip()]
+                        # Sort skills placing JD-matched skills first
+                        skills_list.sort(key=lambda s: 0 if any(re.search(rf'\b{re.escape(k)}\b', s.lower()) for k in jd_keywords) else 1)
+                        new_skills_str = ", ".join(skills_list)
+                        new_lines.append(f"{cat_prefix}{new_skills_str}")
+                    # Case B: Legacy pipe table format: | **Category** | skill1, skill2 |
+                    elif "|" in line:
                         parts = line.split("|")
                         if len(parts) >= 3:
                             cat = parts[1].strip()
