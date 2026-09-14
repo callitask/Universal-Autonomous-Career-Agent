@@ -2,10 +2,12 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: .gitignore
 # ==============================================================================
 
-# 1. CRITICAL: SENSITIVE CANDIDATE DATA
-# Completely block the profiles directory to prevent PII/Resume leaks
+# 1. CRITICAL: SENSITIVE CANDIDATE DATA & DYNAMIC PROFILES DIRECTORY
+# Completely block the profiles directory to prevent PII/Resume leaks.
+# All dynamic candidate inputs and runtime outputs live in profiles/ and must NEVER be pushed to git.
+profiles/
 profiles/*
-!profiles/.gitkeep
+
 
 # 2. Python Environment & Cache
 __pycache__/

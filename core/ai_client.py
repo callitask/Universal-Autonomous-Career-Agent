@@ -111,6 +111,14 @@
 # 4. Expanded primary domain anchors to include all sub-tokens and phrases from target_keywords, recommended_titles, and candidate taxonomy skills, allowing roles like 'Audit Associate' through.
 # Rationale: Guarantees candidate work-capability and skill overlap are the authoritative determinants of job fit. Prevents timeout regressions and aligns with user directive.
 # Preventative Notes: Never return a 0% score on IPC timeout. Never gate or score jobs on Location or Early Applicant badges.
+#
+# [ENTRY #013]
+# Term: [PROFILES_DYNAMIC_IO_ISOLATION]
+# Timestamp: 2026-09-14 17:40:00 +05:30
+# Issue / Context: Platform learning recorded heuristics to static core/knowledge/platform_heuristics.json, violating strict profiles isolation.
+# Changes Made: Isolated dynamic platform learnings strictly to active profile sandbox (profiles/<profile>/output/platform_heuristics.json) while preserving base knowledge read fallback.
+# Rationale: Guarantees zero dynamic file writes to core/ and ensures 100% dynamic data lives in profiles/.
+# Preventative Notes: Never write runtime outputs or dynamic learnings to core/.
 # ================================================================================
 """
 ================================================================================
@@ -260,18 +268,30 @@ class AIClient:
         return os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
 
     def load_platform_heuristics(self) -> Dict[str, Any]:
-        """Loads shared global platform heuristics and routing rules from core/knowledge/platform_heuristics.json."""
+        """Loads shared global platform heuristics and merges profile-specific dynamic overrides."""
         heuristics_file = BASE_DIR / "core" / "knowledge" / "platform_heuristics.json"
+        base_heuristics = {}
         if heuristics_file.exists():
             try:
-                return json.loads(heuristics_file.read_text(encoding="utf-8"))
+                base_heuristics = json.loads(heuristics_file.read_text(encoding="utf-8"))
             except Exception as e:
                 print(f"[AI CLIENT] Notice loading platform heuristics: {e}", flush=True)
-        return {}
+        if self.profile_context and hasattr(self.profile_context, "output_dir"):
+            profile_heuristics_file = Path(self.profile_context.output_dir) / "platform_heuristics.json"
+            if profile_heuristics_file.exists():
+                try:
+                    overrides = json.loads(profile_heuristics_file.read_text(encoding="utf-8"))
+                    if isinstance(overrides, dict):
+                        base_heuristics.update(overrides)
+                except Exception:
+                    pass
+        return base_heuristics
 
     def record_platform_learning(self, platform: str, heuristic_key: str, value: Any) -> None:
-        """Dynamically persists cross-profile platform insights to core/knowledge/platform_heuristics.json."""
-        heuristics_file = BASE_DIR / "core" / "knowledge" / "platform_heuristics.json"
+        """Dynamically persists profile-isolated platform insights strictly to profiles/<profile>/output/platform_heuristics.json."""
+        if not (self.profile_context and hasattr(self.profile_context, "output_dir")):
+            return
+        heuristics_file = Path(self.profile_context.output_dir) / "platform_heuristics.json"
         heuristics = self.load_platform_heuristics()
         if not heuristics:
             heuristics = {"version": "1.0.0", "platforms": {}}

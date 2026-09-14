@@ -36,6 +36,14 @@
 # Changes Made: Built verify_codebase_purity() running on every ProfileContext initialization across core/ and scripts/.
 # Rationale: Mathematical guarantee of 100% candidate-agnostic, zero-hardcoding codebase purity.
 # Preventative Notes: Any violation triggers a fatal CodebasePurityViolationError. Never bypass purity enforcement.
+#
+# [ENTRY #004]
+# Term: [PROFILES_DYNAMIC_IO_ISOLATION]
+# Timestamp: 2026-09-14 17:40:00 +05:30
+# Issue / Context: Dynamic execution telemetry wrote to root logs_dump.txt; profiles/.gitkeep allowed git tracking.
+# Changes Made: Strictly isolated all dynamic runtime input and output to profiles/<profile_name>/, removed root logs_dump.txt write, guaranteed profiles/ directory auto-creation, and blocked profiles/ from git tracking.
+# Rationale: Guarantees candidate data is strictly contained within profiles/ and cannot be pushed to git.
+# Preventative Notes: Never write runtime output, logs, or state outside profiles/<profile_name>/.
 # ================================================================================
 """
 ================================================================================
@@ -248,6 +256,7 @@ class ProfileContext:
         self.base_path = Path(base_path).resolve() if base_path else PROJECT_ROOT
         
         # 1. Resolve Profile Directory Path
+        (self.base_path / "profiles").mkdir(parents=True, exist_ok=True)
         if profile_path:
             p_path = Path(profile_path)
             if p_path.is_absolute():
@@ -315,18 +324,12 @@ class ProfileContext:
         print("=" * 80, flush=True)
 
     def append_execution_log(self, text: str) -> None:
-        """Appends execution telemetry to the profile terminal log and root logs_dump.txt."""
+        """Appends execution telemetry strictly to the profile terminal log under profiles/<profile>/output/logs/."""
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
         entry = f"[{ts}] {text.strip()}\n"
         try:
             log_file = self.logs_dir / "terminal_execution_log.txt"
             with open(log_file, "a", encoding="utf-8") as f:
-                f.write(entry)
-        except Exception:
-            pass
-        try:
-            root_log = self.base_path / "logs_dump.txt"
-            with open(root_log, "a", encoding="utf-8") as f:
                 f.write(entry)
         except Exception:
             pass
