@@ -36,6 +36,14 @@
 # Changes Made: Implemented multi-strategy JS evaluation in _extract_drawer_options() covering explicit radios, choice chips, toggle pills, and custom radio items.
 # Rationale: 100% options discovery across all modern chatbot variants.
 # Preventative Notes: Do not revert JS drawer options extraction to simple DOM query selectors.
+#
+# [ENTRY #004]
+# Term: [SKIP_CHIP_CONTROL_TYPE_DISAMBIGUATION]
+# Timestamp: 2026-09-14 17:53:00 +05:30
+# Issue / Context: Text input fields with adjacent 'Skip this question' buttons were misclassified as RADIO_CHIP, preventing numeric/text submissions.
+# Changes Made: Filtered standalone skip/restart chips in _detect_question_control_type when a contenteditable text area is present, classifying the question as CONTENTEDITABLE.
+# Rationale: Ensures text and numeric answers can be typed into input fields with optional skip buttons.
+# Preventative Notes: Never classify a question as RADIO_CHIP when the only discovered chip is a skip/restart button and a textarea is available.
 # ================================================================================
 """
 ================================================================================
@@ -268,6 +276,14 @@ class ChatbotResolver:
                 'div[class*="toggle"], div.yesNoToggle, label[class*="radio"], ul.ChoiceList li'
             )).filter(el => !el.closest('.chipMsg') && !el.classList.contains('chipMsg') && el.offsetParent !== null);
             
+            const nonSkipChips = chips.filter(el => {
+                const t = (el.innerText || '').toLowerCase().trim();
+                return !t.startsWith('skip') && !t.includes('skip this question') && !t.includes('restart');
+            });
+            const hasTextarea = !!drawer.querySelector('div.textArea[contenteditable="true"], div[id^="userInput_"]');
+            if (chips.length > 0 && nonSkipChips.length === 0 && hasTextarea) {
+                return false;
+            }
             return chips.length > 0;
         }""")
         if is_radio:
