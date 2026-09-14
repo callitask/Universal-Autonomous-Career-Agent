@@ -1,3 +1,34 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [ARCHITECTURE]
+# Timestamp: 2026-09-09 12:00:00 +05:30
+# Issue / Context: Cold start analysis needed for raw candidate resumes to bootstrap search criteria.
+# Changes Made: Implemented cognitive profile synthesis via Gemini / AG Brain failover; extracts core domain skills, recommended titles, and multi-cycle designation queues.
+# Rationale: Fully automated candidate onboarding without manual persona modeling.
+# Preventative Notes: Never hardcode target designations or domains; always invoke ai.synthesize_cognitive_profile().
+#
+# [ENTRY #002]
+# Term: [ZERO-HARDCODING_COMPLIANCE]
+# Timestamp: 2026-09-13 16:10:00 +05:30
+# Issue / Context: Placeholder keywords in configuration needed dynamic replacement from synthesized cognitive profile.
+# Changes Made: Ensured ProfileContext dynamic resolution is used; verified atomic file writes for config updates.
+# Rationale: Enforces Directive 2 (Strict Zero-Hardcoding Policy).
+# Preventative Notes: Never directly overwrite candidate_config.json without atomic temporary file swap (os.replace).
+# ================================================================================
 """
 ================================================================================
 UNIVERSAL AUTONOMOUS CAREER AGENT

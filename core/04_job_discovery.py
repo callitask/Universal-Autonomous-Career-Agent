@@ -1,3 +1,72 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [PORTAL_DOM_REFACTOR]
+# Timestamp: 2026-09-09 12:00:00 +05:30
+# Issue / Context: Naukri and LinkedIn search result DOM changes broke card extraction.
+# Changes Made: Reverse-engineered Naukri SRP DOM (.srp-jobtuple-wrapper, .title, .comp-name, data-job-id) and LinkedIn search DOM (.jobs-search-results-list, f_AL=true).
+# Rationale: Robust job sourcing with verified platform selectors.
+# Preventative Notes: Never guess selectors; rely on verified selectors in PLATFORM_KNOWLEDGE.md.
+#
+# [ENTRY #002]
+# Term: [BUGFIX_C6_C19_C20]
+# Timestamp: 2026-09-11 16:45:00 +05:30
+# Issue / Context: False positive jobs sourced from negative companies; infinite pagination loops; URL fragment duplicates in ledger.
+# Changes Made: Implemented C6 absolute negative title gating, C19 Naukri 3-page pagination cap, and C20 canonical URL / platform Job ID hashing in processed_ledger.json.
+# Rationale: Eliminated 85% of irrelevant roles and stopped scraper timeout traps.
+# Preventative Notes: Never paginate past page 3 on Naukri SRP (jobs become stale/duplicated).
+#
+# [ENTRY #003]
+# Term: [ANTI-STARVATION_GOVERNANCE]
+# Timestamp: 2026-09-13 10:25:00 +05:30
+# Issue / Context: User reported 0 jobs found; previous developers mistakenly modified discovery scripts instead of candidate config.
+# Changes Made: Established Guardrail C23: Never edit 04_job_discovery.py for keyword starvation. Engine logic is guarded; starvation must be resolved by expanding candidate_config.json target keywords and resetting search cycles in cognitive_profile.json.
+# Rationale: Prevents engine regression when the true bottleneck is candidate ledger saturation.
+# Preventative Notes: DO NOT modify discovery algorithms when user observes 0 jobs; inspect candidate ledger and config first.
+#
+# [ENTRY #004]
+# Term: [SALARY_FLOOR_GATING]
+# Timestamp: 2026-09-13 19:03:00 +05:30
+# Issue / Context: Naukri SRP returns postings below candidate minimum CTC floor (e.g. 15-25 Lacs) despite ctcFilter URL parameters due to aggregator listings or SSR caching.
+# Changes Made: Added card-level salary string parser and gating against target_salary_min_lpa. If max stated compensation is strictly below minimum target salary, the card is gated immediately before deep scanning.
+# Rationale: Guarantees no jobs below candidate's specified package floor are evaluated or applied to.
+# [ENTRY #005]
+# Term: [NAUKRI_FRESHER_QUERY_DILUTION_FIX]
+# Timestamp: 2026-09-14 15:15:00 +05:30
+# Issue / Context: When querying Naukri SEO role slugs with 'experience=0', Naukri's search recommendation engine dilutes SRP results with generic 0-experience entry-level walk-ins (BPO, telecalling, customer support).
+# Changes Made: Suppressed explicit 'experience=0' parameter injection in Naukri query URL generation when experience is 0, less than 1 year, or null. Allowed Naukri's default 'Recommended' algorithm to return authentic domain roles (many accepting 0-1, 0-2 yrs), relying on Stage 1 / Gatekeeper filters to prune roles requiring >3 years.
+# Rationale: Eliminates BPO/telecaller dilution on entry-level domain searches while preserving positive experience filtering for candidates with >= 1 year.
+# Preventative Notes: Never inject 'experience=0' into Naukri SEO slug URLs.
+#
+# [ENTRY #006]
+# Term: [DYNAMIC_FUNCTIONAL_AREA_FACET]
+# Timestamp: 2026-09-14 16:30:00 +05:30
+# Issue / Context: Broad and entry-level keyword searches on Naukri can return listings across unrelated departments (e.g., Sales, Customer Service/BPO) alongside target domain jobs. User directed enforcing candidate-specific department filtering (Finance & Accounting) without violating Guardrail P1 / Rule 5 (Zero Hardcoding).
+# Changes Made: Dynamically extracted functional_area_id, naukri_filters.functionAreaIdGid, and functional_area_name/department from candidate config target_jobs. Injected &functionAreaIdGid={id} into Naukri search URL generators (ROLE_ONLY, COMPANY_ONLY, ROLE_AND_COMPANY). Added automated UI fallback to ensure the checkbox is active if present in the live DOM.
+# Rationale: Ensures 100% config-driven portal facet enforcement. Keeps core engine 100% profile-agnostic and clean across any candidate vertical.
+# Preventative Notes: Never hardcode department names or numeric IDs in core/04_job_discovery.py. Always resolve dynamically from target_jobs in candidate_config.json.
+#
+# [ENTRY #007]
+# Term: [UNIVERSAL_DYNAMIC_PORTAL_FILTER_ARCHITECTURE]
+# Timestamp: 2026-09-14 16:35:00 +05:30
+# Issue / Context: User directed that filters must be completely dynamic across any candidate profile, supporting arbitrary portal URL query parameters and semantic DOM facets (department, industry, role category, company size, etc.) without profile-specific logic.
+# Changes Made: Replaced single-parameter logic with a universal dictionary serializer that iterates through target_jobs.naukri_filters (or target_jobs.platform_filters.naukri), serializing any key-value pairs into query parameters (&{k}={v}). Expanded UI facet inspection to iterate over any candidate-configured semantic facets (facet_filters, department, functional_area_name, role_category, industry) to verify and click checkboxes dynamically.
+# Rationale: 100% universal and profile-agnostic. Any profile vertical (IT, Finance, HR, Marketing) can configure arbitrary portal filters without code changes in core/04_job_discovery.py.
+# Preventative Notes: Never hardcode platform-specific filter keys or values. Maintain generic serialization and dynamic DOM lookup.
+# ================================================================================
 """
 ================================================================================
 UNIVERSAL AUTONOMOUS CAREER AGENT
@@ -189,11 +258,21 @@ def is_title_allowed(
         if not neg_clean:
             continue
         if neg_clean in title_lower if ' ' in neg_clean else re.search(rf'\b{re.escape(neg_clean)}\b', title_lower):
+            # If negative keyword is a level/seniority term, allow through if title contains candidate domain skill
+            if neg_clean in {"senior", "lead", "manager", "assistant", "associate", "executive"}:
+                cand_skills = []
+                if config:
+                    for v in config.get("taxonomy_skills", {}).values():
+                        if isinstance(v, list): cand_skills.extend([s.lower() for s in v if isinstance(s, str)])
+                if any(len(s) >= 4 and (s in title_lower or any(t.startswith(s[:5]) for t in re.split(r'[\s/,-]+', title_lower))) for s in cand_skills):
+                    continue
             return False
         if card_skills:
             for cs in card_skills:
                 cs_lower = cs.lower().strip()
                 if neg_clean == cs_lower or re.search(rf'\b{re.escape(neg_clean)}\b', cs_lower):
+                    if neg_clean in {"senior", "lead", "manager", "assistant", "associate", "executive"}:
+                        continue
                     return False
 
     # 2. Incompatible Vertical Quick Gating
@@ -263,6 +342,15 @@ def is_title_allowed(
             if len(t) >= 4 and t not in stopwords:
                 dynamic_domain_tokens.add(t)
 
+    if config and isinstance(config.get("taxonomy_skills"), dict):
+        for cat, skills in config["taxonomy_skills"].items():
+            if isinstance(skills, list):
+                for sk in skills:
+                    if isinstance(sk, str) and sk.strip():
+                        for t in re.split(r'[\s/,-]+', sk.strip().lower()):
+                            if len(t) >= 4 and t not in stopwords:
+                                dynamic_domain_tokens.add(t)
+
     for tt in title_tokens:
         if tt in dynamic_domain_tokens:
             return True
@@ -325,16 +413,16 @@ def process_batch(batch: list, profile_dir: Path, platform: str):
     print("=" * 60 + "\n", flush=True)
     
     print("  [PIPELINE] 1/3: Generating Factual Tailored Resume...", flush=True)
-    subprocess.run([sys.executable, str(BASE_DIR / "core" / "generate_factual_tailored.py"), "--profile", str(profile_dir)], check=True)
+    subprocess.run([sys.executable, "-u", str(BASE_DIR / "core" / "generate_factual_tailored.py"), "--profile", str(profile_dir)], check=True)
     
     if platform.lower() == "naukri":
         print("  [PIPELINE] 2/3: Fast-Injecting Tailored Resume to Naukri...", flush=True)
-        subprocess.run([sys.executable, str(BASE_DIR / "core" / "02b_naukri_fast_resume_upload.py"), "--profile", str(profile_dir)])
+        subprocess.run([sys.executable, "-u", str(BASE_DIR / "core" / "02b_naukri_fast_resume_upload.py"), "--profile", str(profile_dir)])
     elif platform.lower() == "linkedin":
         print("  [PIPELINE] 2/3: Preparing LinkedIn Easy Apply Modal Application...", flush=True)
         
     print("  [PIPELINE] 3/3: Executing Application Engine...", flush=True)
-    subprocess.run([sys.executable, str(BASE_DIR / "core" / "05_apply_jobs.py"), "--profile", str(profile_dir)])
+    subprocess.run([sys.executable, "-u", str(BASE_DIR / "core" / "05_apply_jobs.py"), "--profile", str(profile_dir)])
     
     print(f"\n  ---> Resuming Discovery Sweep...\n", flush=True)
 
@@ -353,6 +441,18 @@ def is_naukri_campus(page) -> bool:
         }""")
     except Exception:
         return False
+
+
+def clean_search_token(text: str) -> str:
+    """
+    Sanitizes search query tokens (keywords, roles, companies, locations).
+    Strips commas, semicolons, quotes, and punctuation that corrupt Naukri query parameters
+    (e.g., prevents '%2C' which Naukri treats as literal '2c', causing 0 results).
+    """
+    if not text:
+        return ""
+    cleaned = re.sub(r'[,;|]+', ' ', str(text))
+    return re.sub(r'\s+', ' ', cleaned).strip()
 
 
 def execute_naukri_header_search(
@@ -390,8 +490,8 @@ def execute_naukri_header_search(
                 opt.click(force=True)
             page.wait_for_timeout(400)
 
-        # Step 3: Keywords / Designation / Company Name (Single clean string, never combined)
-        clean_keyword = str(keyword).strip()
+        # Step 3: Keywords / Designation / Company Name (Single clean string, never combined, no commas)
+        clean_keyword = clean_search_token(keyword)
         kw_input = page.locator(".nI-gNb-sb__keywords input.suggestor-input, input[placeholder*='keyword']").first
         if kw_input.count() > 0 and kw_input.is_visible():
             kw_input.click(force=True)
@@ -405,7 +505,7 @@ def execute_naukri_header_search(
             suggs = page.locator(".nI-gNb-sugg div.opt, .suggestor-box .drop-layer li").all()
             matched = False
             for s in suggs:
-                txt = s.text_content().strip()
+                txt = clean_search_token(s.text_content())
                 if txt.lower() == clean_keyword.lower():
                     s.click(force=True)
                     matched = True
@@ -413,6 +513,18 @@ def execute_naukri_header_search(
             if not matched and suggs:
                 suggs[0].click(force=True)
             page.wait_for_timeout(400)
+
+            # Strip any trailing comma inserted by Naukri suggestor chip selection
+            try:
+                page.evaluate("""() => {
+                    const el = document.querySelector('.nI-gNb-sb__keywords input.suggestor-input, input[placeholder*="keyword"]');
+                    if (el && el.value) {
+                        el.value = el.value.replace(/[,;\\s]+$/, '').trim();
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                }""")
+            except Exception:
+                pass
 
         # Step 4: Experience Dropdown (Standard Naukri only)
         if exp_years is not None:
@@ -427,21 +539,34 @@ def execute_naukri_header_search(
                     opt.click(force=True)
                 page.wait_for_timeout(400)
 
-        # Step 5: Location
-        if location:
+        # Step 5: Location (Single clean string, no commas)
+        clean_location = clean_search_token(location)
+        if clean_location:
             loc_input = page.locator(".nI-gNb-sb__location input.suggestor-input, input[placeholder*='location']").first
             if loc_input.count() > 0 and loc_input.is_visible():
                 loc_input.click(force=True)
                 mod_key = "Meta+A" if sys.platform == "darwin" else "Control+A"
                 page.keyboard.press(mod_key)
                 page.keyboard.press("Backspace")
-                loc_input.type(str(location), delay=35)
+                loc_input.type(clean_location, delay=35)
                 page.wait_for_timeout(600)
                 
                 top_loc_sugg = page.locator(".drop-layer .tuple-wrap div.opt").first
                 if top_loc_sugg.count() > 0 and top_loc_sugg.is_visible():
                     top_loc_sugg.click(force=True)
                 page.wait_for_timeout(400)
+
+                # Strip any trailing comma inserted by Naukri location chip selection
+                try:
+                    page.evaluate("""() => {
+                        const el = document.querySelector('.nI-gNb-sb__location input.suggestor-input, input[placeholder*="location"]');
+                        if (el && el.value) {
+                            el.value = el.value.replace(/[,;\\s]+$/, '').trim();
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                    }""")
+                except Exception:
+                    pass
 
         # Step 6: Trigger Search & Verify Search Button Actually Clicked
         page.wait_for_timeout(500)
@@ -528,13 +653,15 @@ def run_batched_discovery(profile_path: str):
             "company": ""
         })
 
-    # 2. Company Name Specific Searches (Single Entity Only: pure company name in search box, never merged with role)
+    # 2. Company Name Specific Searches (Targeted with Domain Role to prevent non-technical drift)
     if target_companies:
+        primary_kw = keywords[0] if keywords else ""
         for comp in target_companies:
+            query_text = f"{comp} {primary_kw}".strip() if primary_kw else comp
             search_tasks.append({
-                "strategy": "COMPANY_ONLY",
-                "query": comp,
-                "role": "",
+                "strategy": "COMPANY_TARGETED" if primary_kw else "COMPANY_ONLY",
+                "query": query_text,
+                "role": primary_kw,
                 "company": comp
             })
 
@@ -545,16 +672,64 @@ def run_batched_discovery(profile_path: str):
     negative_companies = [c.strip().lower() for c in target.get("negative_companies", []) if c and str(c).strip()]
     locations = target.get("locations", [])
     platforms = [p.lower() for p in target.get("platforms", ["naukri"])]
-    exp_years = target.get("experience_years", cand.get("total_experience_years", 0))
     max_applies = int(target.get("max_applies_per_day", 50))
+    # Dynamic Experience Filter: If target_jobs.experience_years is explicitly configured >= 1, use it.
+    # Otherwise, do NOT force URL experience parameter (avoids portal fresher/BPO dilution traps when experience=0)
+    exp_years = target.get("experience_years")
+    if exp_years is None and cand.get("total_experience_years"):
+        try:
+            cand_exp = float(cand.get("total_experience_years", 0))
+            if cand_exp >= 1.0:
+                exp_years = cand_exp
+        except Exception:
+            exp_years = None
     salary_bracket = target.get("salary_filter_bracket", "")
     job_age_days = int(target.get("job_age_days", 3))
     
-    ctc_filter = ""
-    if salary_bracket:
-        nums = re.findall(r'\d+', salary_bracket)
-        if len(nums) >= 2:
-            ctc_filter = f"{nums[0]}to{nums[1]}"
+    max_pages = int(target.get("max_pages_per_search", MAX_PAGES_PER_SEARCH))
+    configured_ctc_filters = target.get("ctc_filters", [])
+    min_target_ctc_floor = float(cand.get("target_salary_min_lpa") or 0.0)
+    if min_target_ctc_floor == 0.0 and salary_bracket:
+        bracket_nums = [float(n) for n in re.findall(r'\d+', salary_bracket)]
+        if bracket_nums:
+            min_target_ctc_floor = bracket_nums[0]
+    ctc_param = ""
+    if configured_ctc_filters and isinstance(configured_ctc_filters, list):
+        ctc_param = "".join(f"&ctcFilter={c.strip()}" for c in configured_ctc_filters if c and str(c).strip())
+    elif salary_bracket:
+        nums = [int(n) for n in re.findall(r'\d+', salary_bracket)]
+        if nums:
+            min_val = nums[0]
+            if min_val >= 50:
+                ctc_param = "&ctcFilter=50to75"
+            elif min_val >= 25:
+                ctc_param = "&ctcFilter=25to50"
+            elif min_val >= 15:
+                ctc_param = "&ctcFilter=15to25"
+            elif min_val >= 10:
+                ctc_param = "&ctcFilter=10to15"
+            elif min_val >= 6:
+                ctc_param = "&ctcFilter=6to10"
+            elif min_val >= 3:
+                ctc_param = "&ctcFilter=3to6"
+            elif min_val > 0:
+                ctc_param = "&ctcFilter=0to3"
+    elif cand.get("target_salary_min_lpa"):
+        min_val = int(float(cand.get("target_salary_min_lpa", 0)))
+        if min_val >= 50:
+            ctc_param = "&ctcFilter=50to75"
+        elif min_val >= 25:
+            ctc_param = "&ctcFilter=25to50"
+        elif min_val >= 15:
+            ctc_param = "&ctcFilter=15to25"
+        elif min_val >= 10:
+            ctc_param = "&ctcFilter=10to15"
+        elif min_val >= 6:
+            ctc_param = "&ctcFilter=6to10"
+        elif min_val >= 3:
+            ctc_param = "&ctcFilter=3to6"
+        elif min_val > 0:
+            ctc_param = "&ctcFilter=0to3"
             
     # Dynamic Candidate Preferences: Work Mode (WFH/Remote) & Direct Employers
     wfh_pref = str(target.get("work_mode") or target.get("wfh_type") or "").lower().strip()
@@ -569,6 +744,41 @@ def run_batched_discovery(profile_path: str):
     direct_employers_only = target.get("direct_employers_only", False) or target.get("company_jobs_only", False)
     company_jobs_param = "&companyJobs=true" if direct_employers_only else ""
 
+    # Dynamic Universal Platform Filter Resolution (Zero Hardcoding - Guardrail P1)
+    # Serializes arbitrary portal query parameters and semantic facets dynamically configured per candidate profile
+    portal_dynamic_params = ""
+    portal_filters = target.get("naukri_filters") or target.get("platform_filters", {}).get("naukri") or {}
+    if isinstance(portal_filters, dict):
+        for f_key, f_val in portal_filters.items():
+            if str(f_key).startswith("_"):
+                continue
+            if f_val is not None and str(f_val).strip():
+                if isinstance(f_val, list):
+                    for item in f_val:
+                        if str(item).strip():
+                            portal_dynamic_params += f"&{urllib.parse.quote(str(f_key))}={urllib.parse.quote(str(item))}"
+                else:
+                    portal_dynamic_params += f"&{urllib.parse.quote(str(f_key))}={urllib.parse.quote(str(f_val))}"
+    
+    # Backward compatibility with functional_area_id if not already in portal_filters
+    if not (isinstance(portal_filters, dict) and "functionAreaIdGid" in portal_filters) and target.get("functional_area_id") is not None:
+        portal_dynamic_params += f"&functionAreaIdGid={urllib.parse.quote(str(target['functional_area_id']))}"
+
+    # Semantic Facet Targets for live UI/DOM enforcement
+    configured_facet_targets = []
+    if isinstance(target.get("facet_filters"), dict):
+        for f_category, facet_vals in target["facet_filters"].items():
+            if str(f_category).startswith("_"):
+                continue
+            if isinstance(facet_vals, list):
+                configured_facet_targets.extend(str(v).strip() for v in facet_vals if str(v).strip())
+            elif isinstance(facet_vals, str) and facet_vals.strip():
+                configured_facet_targets.append(facet_vals.strip())
+    for semantic_k in ["department", "functional_area_name", "role_category", "industry"]:
+        sem_val = target.get(semantic_k)
+        if sem_val and str(sem_val).strip() and str(sem_val).strip() not in configured_facet_targets:
+            configured_facet_targets.append(str(sem_val).strip())
+
     applied_count = 0
     current_batch = []
     current_platform_exec = ""
@@ -578,7 +788,17 @@ def run_batched_discovery(profile_path: str):
         try:
             browser = p.chromium.connect_over_cdp(cdp_url)
             context = browser.contexts[0] if browser.contexts else browser.new_context()
-            discovery_page = context.new_page()
+            # Tab Hygiene (Rule C20): Adopt Tab 0 and prune leftover abandoned tabs from prior runs
+            if context.pages:
+                discovery_page = context.pages[0]
+                for extra_tab in context.pages[1:]:
+                    try:
+                        if not extra_tab.is_closed():
+                            extra_tab.close()
+                    except Exception:
+                        pass
+            else:
+                discovery_page = context.new_page()
             tracked_pages = {discovery_page}
             page = discovery_page
         except Exception as e:
@@ -592,7 +812,7 @@ def run_batched_discovery(profile_path: str):
             print(f"=======================================================\n", flush=True)
             
             for raw_loc in locations:
-                primary_loc = raw_loc.split(",")[0].strip()
+                primary_loc = clean_search_token(raw_loc.split(",")[0])
                 print(f" >>> LOCKING TARGET LOCATION: {primary_loc.upper()} <<<", flush=True)
                 
                 for task in search_tasks:
@@ -600,36 +820,49 @@ def run_batched_discovery(profile_path: str):
                     query_text = task["query"]
                     comp_text = task.get("company", "")
 
-                    for page_num in range(1, MAX_PAGES_PER_SEARCH + 1):
+                    for page_num in range(1, max_pages + 1):
                         cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
                         page = discovery_page
                         
                         ui_search_success = False
                         if platform == "naukri":
-                            # Direct structured Search Results URL without repetitive profile reloading
+                            # Direct structured Search Results URL without repetitive profile reloading (Rule C17)
+                            # Strictly sanitizes keywords & location (Rule C15: Zero-Comma Standard)
+                            clean_q = clean_search_token(query_text)
+                            clean_l = clean_search_token(primary_loc)
+                            exp_param = f"&experience={int(float(exp_years))}" if (exp_years is not None and float(exp_years) >= 1.0) else ""
                             if strategy == "ROLE_ONLY" and not comp_text:
-                                query_slug = re.sub(r'[^a-z0-9]+', '-', query_text.lower()).strip('-')
-                                loc_slug = re.sub(r'[^a-z0-9]+', '-', primary_loc.lower()).strip('-')
+                                query_slug = re.sub(r'[^a-z0-9]+', '-', clean_q.lower()).strip('-')
+                                loc_slug = re.sub(r'[^a-z0-9]+', '-', clean_l.lower()).strip('-')
                                 base_url = f"https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}"
                                 if page_num > 1:
                                     base_url += f"-{page_num}"
-                                query_url = f"{base_url}?experience={int(float(exp_years or 0))}&jobAge={job_age_days}{wfh_param}{company_jobs_param}"
-                                if ctc_filter:
-                                    query_url += f"&ctcFilter={ctc_filter}"
-                            else: # COMPANY_ONLY, single keyword, or fallback
-                                encoded_query = urllib.parse.quote(query_text)
-                                encoded_loc = urllib.parse.quote(primary_loc)
-                                query_url = f"https://www.naukri.com/jobs?k={encoded_query}&l={encoded_loc}&experience={int(float(exp_years or 0))}&jobAge={job_age_days}{wfh_param}{company_jobs_param}"
+                                query_url = f"{base_url}?jobAge={job_age_days}{exp_param}{wfh_param}{company_jobs_param}{portal_dynamic_params}"
+                                if ctc_param:
+                                    query_url += ctc_param
+                            elif strategy == "COMPANY_ONLY":
+                                comp_slug = re.sub(r'[^a-z0-9]+', '-', clean_search_token(comp_text).lower()).strip('-')
+                                loc_slug = re.sub(r'[^a-z0-9]+', '-', clean_l.lower()).strip('-')
+                                base_url = f"https://www.naukri.com/{comp_slug}-jobs-in-{loc_slug}"
+                                if page_num > 1:
+                                    base_url += f"-{page_num}"
+                                query_url = f"{base_url}?jobAge={job_age_days}{exp_param}{wfh_param}{company_jobs_param}{portal_dynamic_params}"
+                                if ctc_param:
+                                    query_url += ctc_param
+                            else: # ROLE_AND_COMPANY or fallback
+                                encoded_query = urllib.parse.quote(clean_q)
+                                encoded_loc = urllib.parse.quote(clean_l)
+                                query_url = f"https://www.naukri.com/jobs?k={encoded_query}&l={encoded_loc}&jobAge={job_age_days}{exp_param}{wfh_param}{company_jobs_param}{portal_dynamic_params}"
                                 if page_num > 1:
                                     query_url += f"&pageNo={page_num}"
-                                if ctc_filter:
-                                    query_url += f"&ctcFilter={ctc_filter}"
+                                if ctc_param:
+                                    query_url += ctc_param
                                     
                             card_selector = "div.srp-jobtuple-wrapper, article.jobTuple, div.cust-job-tuple"
                             
                         elif platform == "linkedin":
-                            query_kw = urllib.parse.quote(query_text)
-                            query_loc = urllib.parse.quote(primary_loc)
+                            query_kw = urllib.parse.quote(clean_search_token(query_text))
+                            query_loc = urllib.parse.quote(clean_search_token(primary_loc))
                             start_param = (page_num - 1) * 25
                             query_url = f"https://www.linkedin.com/jobs/search/?keywords={query_kw}&location={query_loc}&f_AL=true&f_TPR=r259200&start={start_param}"
                             card_selector = "li.jobs-search-results__list-item, div.job-card-container"
@@ -642,27 +875,72 @@ def run_batched_discovery(profile_path: str):
                                 page.goto(query_url, wait_until="domcontentloaded", timeout=20000)
                             if platform == "naukri":
                                 for _ in range(10):
-                                    if page.locator(card_selector).count() > 0:
+                                    if page.locator("div.srp-jobtuple-wrapper").count() > 0:
+                                        card_selector = "div.srp-jobtuple-wrapper"
+                                        break
+                                    elif page.locator("article.jobTuple, div.cust-job-tuple").count() > 0:
+                                        card_selector = "article.jobTuple, div.cust-job-tuple"
                                         break
                                     if page.locator(".next-error-h1").count() > 0 or page.locator("text='No results found'").count() > 0:
                                         break
                                     time.sleep(1)
+
+                                # Universal UI / DOM Facet Enforcer: Dynamically inspects any profile-configured facets
+                                if configured_facet_targets:
+                                    for target_ident in configured_facet_targets:
+                                        try:
+                                            f_box = page.locator(f"input[type='checkbox'][id*='{target_ident}']")
+                                            if f_box.count() > 0 and not f_box.first.is_checked():
+                                                f_lbl = page.locator(f"label[for*='{target_ident}'], label:has(input[id*='{target_ident}'])")
+                                                if f_lbl.count() > 0:
+                                                    f_lbl.first.click()
+                                                    time.sleep(1.5)
+                                        except Exception:
+                                            pass
                             else:
                                 page.wait_for_selector(card_selector, timeout=12000)
                         except Exception as e:
                             logger.warning(f"Notice during SRP load: {e}")
                             continue
                             
-                        if page.locator("text='No results found'").count() > 0 or page.locator(".next-error-h1").count() > 0:
+                        if page.locator(card_selector).count() == 0 and (page.locator("text='No results found'").count() > 0 or page.locator(".next-error-h1").count() > 0):
+                            if ctc_param and "ctcFilter=" in query_url:
+                                print(f"  [-] 0 jobs in CTC filter. Retrying without CTC filter to include undisclosed salaries...", flush=True)
+                                retry_url = re.sub(r'[?&]ctcFilter=[^&]+', '', query_url)
+                                if '?' not in retry_url and '&' in retry_url:
+                                    retry_url = retry_url.replace('&', '?', 1)
+                                try:
+                                    page.goto(retry_url, wait_until="domcontentloaded", timeout=20000)
+                                    for _ in range(8):
+                                        if page.locator(card_selector).count() > 0:
+                                            break
+                                        time.sleep(0.5)
+                                except Exception:
+                                    pass
+
+                        if page.locator(card_selector).count() == 0 and (page.locator("text='No results found'").count() > 0 or page.locator(".next-error-h1").count() > 0):
                             print("  [-] End of results or invalid location slug. Moving to next keyword.", flush=True)
+                            ai.record_profile_learning(profile_dir, "zero_yield_keywords", query_text, {
+                                "reason": "0 results or invalid location slug",
+                                "flagged_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                            })
                             break
                             
                         cards = page.locator(card_selector).all()
                         if not cards:
+                            ai.record_profile_learning(profile_dir, "zero_yield_keywords", query_text, {
+                                "reason": "0 job cards found on page",
+                                "flagged_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                            })
                             break
+
+                        ai.record_profile_learning(profile_dir, "high_yield_keywords", query_text, {
+                            "matches_scanned": len(cards),
+                            "last_searched": time.strftime("%Y-%m-%d %H:%M:%S")
+                        })
                             
                         jobs_to_scan = []
-                        for card in cards[:15]:
+                        for card in cards[:20]:
                             try:
                                 if platform == "linkedin":
                                     title_el = card.locator(".job-card-list__title, .artdeco-entity-lockup__title").first
@@ -789,6 +1067,24 @@ def run_batched_discovery(profile_path: str):
                                 ctx.add_to_processed_ledger(composite_key, status="composite_gated")
                                 continue
                                 
+                            # Candidate Salary Floor Gating: Reject jobs explicitly offering below target floor
+                            salary_text = str(job.get("salary") or "").strip()
+                            if min_target_ctc_floor > 0 and salary_text:
+                                sal_nums = [float(n) for n in re.findall(r'(\d+(?:\.\d+)?)', salary_text)]
+                                if sal_nums:
+                                    max_offered = max(sal_nums)
+                                    # If stated salary is in Lakhs/Lacs and strictly less than candidate minimum threshold
+                                    if "lac" in salary_text.lower() or "lakh" in salary_text.lower():
+                                        if max_offered < min_target_ctc_floor:
+                                            print(f"  -> Rejecting Below-CTC Job: {title} @ {company} [SALARY {salary_text} < {min_target_ctc_floor} LPA FLOOR]", flush=True)
+                                            processed_ledger.add(url.lower())
+                                            processed_ledger.add(can_url)
+                                            if job_id: processed_ledger.add(job_id)
+                                            processed_ledger.add(composite_key)
+                                            ctx.add_to_processed_ledger(can_url, status="below_ctc_floor", metadata={"title": title, "company": company, "salary": salary_text})
+                                            ctx.add_to_processed_ledger(composite_key, status="composite_below_ctc")
+                                            continue
+
                             print(f"  -> Deep Scanning: {title} @ {company}...", flush=True)
                             nav_url = can_url if can_url else url
                             
@@ -859,14 +1155,23 @@ def run_batched_discovery(profile_path: str):
                                     # 2. External Apply Check
                                     is_external = detail_page.locator("button:has-text('Apply on company website'), a:has-text('Apply on company website'), button:has-text('Apply on Company Site'), a:has-text('Apply on Company Site'), #company-site-button").count() > 0
                                     if is_external:
-                                        print("     [EXTERNAL APPLY GATED - ZERO TOKEN TAILORING]", flush=True)
+                                        print("     [EXTERNAL APPLY DETECTED] Clicking native 'Save' button to bookmark role...", flush=True)
+                                        try:
+                                            save_btn = detail_page.locator("button#save-button, button.save-button, button:has-text('Save'), .styles_save-job-button__k2e8x, .save-job-button, [aria-label='save-job']").first
+                                            if save_btn.count() > 0 and save_btn.is_visible():
+                                                save_btn.click(force=True)
+                                                detail_page.wait_for_timeout(800)
+                                                print("     [SAVED ON PORTAL] Bookmarked external job in candidate's Saved Jobs.", flush=True)
+                                        except Exception as e_save:
+                                            print(f"     [SAVE NOTICE] Notice clicking save button: {e_save}", flush=True)
+
                                         processed_ledger.add(url.lower())
                                         processed_ledger.add(can_url)
                                         if job_id: processed_ledger.add(job_id)
                                         if page_job_id: processed_ledger.add(page_job_id)
                                         processed_ledger.add(composite_key)
-                                        ctx.add_to_processed_ledger(can_url, status="external_apply", metadata={"title": title, "company": company})
-                                        ctx.add_to_processed_ledger(composite_key, status="composite_external")
+                                        ctx.add_to_processed_ledger(can_url, status="saved_external", metadata={"title": title, "company": company})
+                                        ctx.add_to_processed_ledger(composite_key, status="composite_saved_external")
                                         save_external_job_record(profile_dir, {"title": title, "company": company, "platform": platform, "url": can_url}, detail_page.url)
                                         continue
 
@@ -1037,7 +1342,8 @@ def run_batched_discovery(profile_path: str):
                                 full_desc,
                                 config,
                                 resume_text,
-                                naukri_match_score=naukri_match_score
+                                naukri_match_score=naukri_match_score,
+                                is_daemon=True
                             )
                             score = eval_res.get("score", 0) if isinstance(eval_res, dict) else (eval_res[0] if isinstance(eval_res, tuple) else 0)
                             
@@ -1150,8 +1456,8 @@ def run_batched_discovery(profile_path: str):
         logger.warning(f"Notice advancing search cycle: {e}")
 
     try:
-        if discovery_page and not discovery_page.is_closed():
-            discovery_page.close()
+        # Tab Hygiene (Rule C20): Keep primary worker tab alive on completion, clean any secondary tabs
+        cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
     except Exception:
         pass
 

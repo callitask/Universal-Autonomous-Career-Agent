@@ -1,3 +1,26 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [CDP_TAB_REUSE]
+# Timestamp: 2026-09-09 12:00:00 +05:30
+# Issue / Context: Launching new browser instances caused login session drops and duplicate window bloat.
+# Changes Made: Built Playwright CDP browser manager attaching to active Chrome debug port (http://127.0.0.1:9222), reusing existing pages, and activating them via .bring_to_front().
+# Rationale: Preserves logged-in portal cookies and reduces memory consumption.
+# Preventative Notes: Never close the primary browser window; only close temporary worker tabs.
+# ================================================================================
 """
 ================================================================================
 UNIVERSAL AUTONOMOUS CAREER AGENT - BROWSER & CDP CONTEXT MANAGER

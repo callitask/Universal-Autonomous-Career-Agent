@@ -1,3 +1,26 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [PLATFORM_DECOUPLING]
+# Timestamp: 2026-09-09 12:00:00 +05:30
+# Issue / Context: Profile syncing logic was initially coupled between Naukri and LinkedIn, risking cross-portal failure propagation.
+# Changes Made: Built completely standalone LinkedIn selective sync implementing independent DOM selectors and evaluation card generation under output/profile_sync/linkedin_cards/.
+# Rationale: Directive 5 (Portal Decoupling): Failure on one platform must never affect the other.
+# Preventative Notes: Never share browser tabs or selector logic between Naukri and LinkedIn engines.
+# ================================================================================
 """
 ================================================================================
 UNIVERSAL AUTONOMOUS CAREER AGENT: SURGICAL SELECTIVE LINKEDIN PROFILE SYNC
@@ -633,4 +656,4 @@ if __name__ == "__main__":
     parser.add_argument("--profile", default=None, help="Path to profile directory (auto-discovered if omitted)")
     args, _ = parser.parse_known_args()
 
-    run_sync(args.profile)
+    run_sync(args.profile)

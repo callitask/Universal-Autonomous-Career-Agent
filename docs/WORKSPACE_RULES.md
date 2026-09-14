@@ -17,22 +17,23 @@
 
 ---
 
-## DIRECTIVE 2: STRICT ZERO-HARDCODING POLICY
+## DIRECTIVE 2: STRICT ZERO-HARDCODING POLICY (ZERO-TRUST ARCHITECTURE)
 
-1. **No Personal Data in Code:** No candidate names, email addresses, phone numbers, compensation numbers (CTCs), notice period days, city names, pin codes, or resume bullet points may be hardcoded inside `core/` scripts.
-2. **Dynamic Profile Sandboxing:** All personal parameters, skill taxonomies, target job criteria, and file paths must resolve at runtime through `ProfileContext` from:
+1. **Absolute Zero-Hardcoding Prohibition:** Zero hardcoded data, constants, variables, tech stacks, domains, company names, cities, models, or filesystem paths may exist in any Python file across `core/`, `scripts/`, or subsystems.
+2. **No Personal Data in Code:** No candidate names, email addresses, phone numbers, compensation numbers (CTCs), notice period days, city names, pin codes, or resume bullet points may be hardcoded inside `core/` or `scripts/` files.
+3. **Dynamic Profile Sandboxing:** All personal parameters, skill taxonomies, target job criteria, and file paths must resolve at runtime through `ProfileContext` from:
    * `profiles/<profile_name>/candidate_config.json`
    * `profiles/<profile_name>/resume.md`
-3. **Dynamic Directory Resolution:** The engine must automatically locate the active candidate profile directory from command-line arguments (`--profile`) or dynamically scan `profiles/` for existing candidate configurations without hardcoded fallback strings.
-4. **Isolated Output Paths:** All outputs (tailored resumes, PDF packages, trackers, search manifests, and screenshots) must write strictly to `profiles/<profile_name>/output/`.
-5. **No Hardcoded Regex Intercepts for Screening Questions:** Never match questions like `"notice period"`, `"experience"`, `"CTC"` to hardcoded numeric values. Every screening question must be routed through: exact cache match in `auto_learned_truths` → AI model analysis → terminal fallback. No shortcuts.
-6. **No Hardcoded Model Names as Constants:** Model identifiers (e.g., `gemini-2.5-flash`) should be configurable via `candidate_config.json` or environment variables when possible.
-7. **Zero-Hardcoding via Cognitive Profile Synthesis:** Never hardcode domain words, vertical dictionaries, or soft skill sets in Python code. All domain models, core vs. soft skill taxonomies, domain acronyms, and multi-cycle designation queues must be synthesized dynamically by `AIClient.synthesize_cognitive_profile()` and saved to `profiles/<profile>/output/cognitive_profile.json`. Out-of-domain vertical checks and search cycles must read strictly from the candidate's cognitive profile.
-8. **Strict Developer Boundary vs. Runtime Sandbox Separation:**
+4. **Dynamic Directory Resolution:** The engine must automatically locate the active candidate profile directory from command-line arguments (`--profile`) or dynamically scan `profiles/` for existing candidate configurations without hardcoded fallback strings.
+5. **Isolated Output Paths:** All outputs (tailored resumes, PDF packages, trackers, search manifests, and screenshots) must write strictly to `profiles/<profile_name>/output/`.
+6. **No Hardcoded Regex Intercepts for Screening Questions:** Never match questions like `"notice period"`, `"experience"`, `"CTC"` to hardcoded numeric values. Every screening question must be routed through: exact cache match in `auto_learned_truths` → AI model analysis → terminal fallback. No shortcuts.
+7. **No Hardcoded Model Names as Constants:** Model identifiers (e.g., `gemini-2.5-flash`) must be configurable via `candidate_config.json` (`gemini_model`) or environment variables (`GEMINI_MODEL`).
+8. **Zero-Hardcoding via Cognitive Profile Synthesis & AG Brain Push-Start:** Never hardcode domain words, vertical dictionaries, soft skill sets, role templates, seniority prefixes, or experience threshold branches (`if exp >= N:`) in Python code. Python scripts act strictly as an execution actuator / browser medium between job portals and the AG Brain. The AG Brain is the sole decider and talent strategist. At session start, the AG Brain analyzes the candidate's complete profile and push-starts `candidate_config.json` with high-yield target roles, recommended titles, and skills. All domain models, core vs. soft skill taxonomies, domain acronyms, and multi-cycle designation queues are synthesized dynamically by `AIClient.synthesize_cognitive_profile()` or read from `candidate_config.json`. Out-of-domain vertical checks and search cycles must read strictly from the candidate's cognitive profile.
+9. **Strict Developer Boundary vs. Runtime Sandbox Separation:**
    - **Developer Role:** In any development session, the AI assistant acts strictly as the **Principal Agent Developer**, modifying only the engine code (`core/`), documentation (`docs/`), utilities (`core/utils/`), and test harnesses.
    - **Hands Off `profiles/`:** The developer must **NEVER manually edit files inside the `profiles/` directory** (including `candidate_config.json`, `resume.md`, or candidate sandboxes).
    - **Autonomous Runtime Adaptation:** The agent code must be engineered so that **when the agent runs**, the agent itself autonomously and smartly reads, synthesizes, adapts, and updates candidate data (e.g. `cognitive_profile.json`, `processed_ledger.json`, `auto_learned_truths`, and `recommended_titles`) at runtime without human or developer manual file patching.
-9. **Guardrail P1 (Codebase Purity Enforcer):** The `ProfileContext` class must run `ctx.verify_codebase_purity()` on instantiation or pre-flight startup. It inspects all files under `core/*.py` to mathematically verify that zero candidate PII, candidate names, compensation values, or hardcoded profile paths exist in code. Any purity violation triggers a fatal runtime halt (`purity check failed`).
+10. **Guardrail P1 (Zero-Trust Codebase Purity Enforcer):** The `ProfileContext` class runs `ctx.verify_codebase_purity()` automatically on instantiation and pre-flight startup. It inspects all files under `core/*.py` and `scripts/*.py` to mathematically verify that zero candidate PII, candidate names, compensation values, hardcoded user paths (`C:\Users\...`), or hardcoded profile paths exist in code. Any purity violation triggers a fatal runtime halt (`CodebasePurityViolationError`).
 
 ---
 
@@ -122,7 +123,7 @@
     ```python
     def analyze_and_expand_designations(self, resume_text: str, candidate_exp: float, current_keywords: list, market_seen_titles: list = None) -> list[str]
     ```
-    Tier 4 Starvation Auto-Healing: Inspects `resume.md` and candidate's total experience alongside live market titles seen during search starvation to infer and return 5–8 high-yield senior designations strictly within the candidate's synthesized domain.
+    Tier 4 Starvation Auto-Healing: Queries the AG Brain via IPC (`task_type='STARVATION_EXPANSION'`) using candidate experience and live market titles to generate 6–10 authentic senior designations strictly within the candidate's domain. If IPC is offline, falls back strictly to unexhausted backup titles pre-configured by the AG Brain in `candidate_config.json` (`recommended_titles`, `target_roles`, `keywords`). Contains ZERO hardcoded role templates, experience thresholds, or synthetic prefixes.
 
 11. **`synthesize_cognitive_profile()` Public Method Contract (`AIClient`):**
     ```python
@@ -343,13 +344,14 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 ### C14: Profile Form Empirical Target Protocol
 **Rule:** Direct profile automation on Naukri (`02_profile_sync_naukri.py`) must strictly target verified component IDs and classes (`textarea#resumeHeadlineTxt`, `.suggester-input input`, `form#employmentForm`, `textarea#jobDescription`, `button#submitEmployment`, `a.cancel-btn`). Scripts must never attempt typing into unmounted or generic `.edit` icons, which triggers UI race conditions or closes open forms.
 
-### C15: Naukri 3-Field Header Search Bar Protocol
-**Rule:** When executing search automation via the Naukri global header (`04_job_discovery.py`), the agent must target empirical 3-field components:
+### C15: Naukri 3-Field Header Search Bar Protocol & Zero-Comma Rule
+**Rule:** When executing search automation via the Naukri global header (`04_job_discovery.py`), the agent must target empirical 3-field components with strict zero-comma sanitization:
 1. **Collapsed State Expansion:** Must detect `button.nI-gNb-sb__expand[aria-label="Search jobs here"]` and click to expand the search bar container into `.nI-gNb-sb__main--expand` before interacting with inputs.
-2. **Field 1 (Keywords / Roles / Companies):** Target `.nI-gNb-sb__keywords input.suggestor-input` (`placeholder="Enter keyword / designation / companies"`). Supports single designations, company names, and comma-separated multi-keyword combinations.
+2. **Field 1 (Keywords / Roles / Companies):** Target `.nI-gNb-sb__keywords input.suggestor-input` (`placeholder="Enter keyword / designation / companies"`). Must be single clean designation or company string. **CRITICAL ZERO-COMMA RULE**: Commas must NEVER be entered or submitted. Naukri query engine encodes commas as `%2C` and parses them as literal `"2c"` tokens (e.g. `java technical lead 2c`), returning **0 jobs**.
 3. **Field 2 (Experience Dropdown):** Click `input#experienceDD` (`placeholder="Select experience"`) to open `ul.dropdown`. Target option by value attribute `li[value='a{exp}']` (`a0` for fresher, `a1` for 1 yr, up to `a30` for 30 yrs).
-4. **Field 3 (Location):** Target `.nI-gNb-sb__location input.suggestor-input` (`placeholder="Enter location"`), optionally selecting canonical suggestion chips from `.drop-layer .tuple-wrap div.opt`.
-5. **Search Action:** Click `button.nI-gNb-sb__icon-wrapper` (`aria-label="Search"`). Never click un-scoped generic icons.
+4. **Field 3 (Location):** Target `.nI-gNb-sb__location input.suggestor-input` (`placeholder="Enter location"`). Must be sanitized to remove commas (e.g. `"Bangalore"`, never `"Bangalore, Karnataka"`).
+5. **Suggestor Auto-Comma Trap Stripping:** Selecting suggestion chips from `.nI-gNb-sugg div.opt` or `.drop-layer` automatically appends `", "` to the input field. Automation must proactively strip trailing commas (`el.value.replace(/[,;\s]+$/, '').trim()`) and dispatch input events before submitting.
+6. **Search Action:** Click `button.nI-gNb-sb__icon-wrapper` (`aria-label="Search"`). Never click un-scoped generic icons.
 
 ### C16: Campus Internship Modal Isolated Scrolling & Multi-Attribute Duplicate Prevention Protocol
 **Rule:** When operating on student/campus profiles (`naukricampus`):
@@ -357,6 +359,103 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 2. **Campus Profile Inspection:** The profile sync engine must scrape both `#lazyEmployment .emp-list` and `.internship-details.internshipDetails .card-container[id*='internshipDetails-']`.
 3. **Strict Container-Isolated Scrolling:** When `div#internshipDetails_Modal` is open, scripts must NEVER execute `window.scrollTo()` (which scrolls the background page behind the modal). All scroll commands must target `document.querySelector('#internshipDetails_Modal').scrollTop` or element-level scrolling.
 4. **Multi-Attribute Duplicate Prevention:** A candidate experience entry is considered a duplicate if and only if **Company**, **Designation**, AND **Years/Tenure** all match. If Company and Designation match but Years are different (e.g., worked in 2022 and again in 2024), the entry is strictly recognized as a separate legitimate stint (`ADD_NEW` / independent card evaluation) and must NEVER be overwritten or skipped.
+
+### C17: Naukri Structured SEO Slug Search Routing Standard
+**Rule:** When executing direct URL searches (`04_job_discovery.py`), the engine must construct structured SEO slug URLs:
+```
+https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}?experience={exp}&jobAge={job_age_days}&ctcFilter={ctc_filter}
+```
+For pagination (Page 2+):
+```
+https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}-{page_num}?experience={exp}&jobAge={job_age_days}&ctcFilter={ctc_filter}
+```
+**Empirical Truth & Trap Avoidance:**
+1. **The `/jobs?k=` Trap:** Never construct `https://www.naukri.com/jobs?k=...&l=...`. Naukri's routing engine automatically redirects `/jobs?k=...` to `/jobs-in-india?k=...` which fails to render job cards (yields 0 tuples).
+2. **The Comma Slug Trap:** The historical reason SEO slugs failed was NOT the slug URL architecture, but **trailing commas** in search tokens (`"java technical lead,"`, `"bangalore, "`). Commas encode as `%2C` which Naukri parses literally as `"2c"`, collapsing results to 0. All tokens MUST pass through `clean_search_token()` to strip commas, semicolons, and special characters before slugifying (`re.sub(r'[^a-z0-9]+', '-', clean_token.lower()).strip('-')`).
+3. Structured slug URLs with clean tokens and appended query parameters (`experience`, `jobAge`, `ctcFilter`) reliably yield **20 job tuples per page** and 25,000+ available postings.
+
+### C18: AG Brain Authoritative Job Qualification & External Save Protocol
+**Rule:**
+1. **AG Brain Full Ownership:** The AG Brain (via Gemini API or Antigravity 2.0 Cognitive IPC `task_type="JOB_EVALUATION"`) has authoritative oversight over job qualification. It strictly evaluates Job Title, Key Skills, and Job Description against the candidate's core domain and technical stack.
+2. **Naukri Native Keyskills Disqualification:** If Naukri's native match score explicitly reports `Keyskills: false` (Red Cross), the role is immediately disqualified (Score: 0%) unless the candidate's exact primary keyword is in the title.
+3. **Incompatible Ecosystem Hard Gating:** Enterprise stacks distinct from the candidate's domain (e.g., SAP, SAP BTP, CAP, UI5, ABAP, Salesforce, ServiceNow, Workday, .NET) are strictly gated in Stage 1. Generic title modifiers (such as "Full-Stack", "Backend", "Lead") cannot qualify a role without matching the primary technology domain (Java).
+4. **External Company Website Bookmark Standard:** When a job shows "Apply on company website" or "Apply on Company Site", the discovery and application engines must locate and click the native **Save** button (`button:has-text('Save')`, `.styles_save-job-button__k2e8x`) on Naukri to bookmark the role in the candidate's Saved Jobs before gating and recording as `SAVED_EXTERNAL`.
+5. **Chatbot Zero-Experience Screening Circuit-Breaker:** In `05_apply_jobs.py`, if candidate screening answers resolve to 0 years of experience for any primary technology named in the job title, or if $\ge 50\%$ of experience questions resolve to 0, the engine must immediately abort the questionnaire (`REJECTED_ZERO_EXPERIENCE_SCREENING`) and close the drawer without submitting.
+
+### C19: Autonomous Dual-Tier Learning & Heuristics Memory Protocol
+**Rule:**
+1. **Tier 1 (Per-Profile Sandboxed Memory):** Every candidate profile maintains a dedicated memory file at `profiles/<profile_name>/output/cognitive_learnings.json`. It continuously records:
+   - `high_yield_keywords`: Search designations that yielded valid matches, with match counts and timestamps.
+   - `zero_yield_keywords`: Terms that returned 0 results or out-of-domain junk, preventing future cycles from wasting search quota.
+   - `learned_question_answers`: Screening questions encountered on Naukri and how the AG Brain answered them based on candidate truths, enabling instant zero-latency retrieval in subsequent runs.
+   - `evaluated_jobs_summary`: Real-time tally of evaluated, qualified, and disqualified jobs, and recurring disqualification reasons.
+2. **Tier 2 (Global Cross-Profile Platform Heuristics):** Central portal mechanics are decoupled from candidate data and stored in `core/knowledge/platform_heuristics.json`. This captures universal portal routing (structured SEO slugs), DOM selectors, anti-starvation mechanisms, and zero-comma rules. Any profile run can read from this repository and contribute new portal discoveries to it.
+
+### C20: Strict Browser Tab Hygiene & Single-Tab Lifecycle Standard
+**Rule:**
+1. **Tab 0 Adoption & Orphan Pruning:** When connecting to Chrome via CDP port 9222, the agent must inspect `context.pages`. If tabs exist, it adopts `context.pages[0]` as its primary worker tab and immediately closes any abandoned secondary tabs left over from previous runs.
+2. **Deterministic Detail Tab Closure:** Whenever a secondary tab is spawned to inspect job details (`detail_page = context.new_page()`), it MUST be wrapped in a `try...finally:` block. The `detail_page.close()` call inside `finally:` guarantees the tab is destroyed immediately after inspection—even across early exits (`continue`, `return`, exceptions).
+3. **Bounded Session Footprint:** The agent must never allow tabs to accumulate in Chrome. The active session must strictly maintain exactly 1 worker tab throughout execution.
+
+### C21: Mandatory Documentation Auto-Load & Pre-Flight Verification Standard
+**Rule:**
+1. **Universal Auto-Load:** Whenever this agent is invoked or any Python engine script is executed (`core/*.py`), the agent and engine MUST verify and ingest the core documentation in `docs/` (`WORKSPACE_RULES.md`, `ARCHITECTURE_REFERENCE.md`, `PLATFORM_KNOWLEDGE.md`) before taking action.
+2. **Runtime Verification Banner:** `ProfileContext` prints an explicit `[PRE-FLIGHT] MANDATORY DOCUMENTATION VERIFICATION: VERIFIED [OK]` banner verifying that rules, contracts, and guardrails are active and enforced.
+
+### C22: Dynamic Profile Sandbox Boundaries & Blueprint Contract
+**Rule:**
+1. **Dynamic Sandbox Isolation:** `profiles/` is strictly the dynamic runtime I/O sandbox. The `profiles/<profile_name>/output/` directory contains volatile runtime artifacts (`processed_ledger.json`, tracker CSV, PDFs, logs).
+2. **Developer Separation:** Scanning or modifying `profiles/` has nothing to do with editing the engine code. Developers modify `core/`, `docs/`, and tests.
+3. **Blueprint Reference:** `profiles/default_user` is the canonical immutable blueprint showing the intended schema for `candidate_config.json`, `resume.md`, and output folders.
+
+### C23: User Observation & Starvation Intervention Standard (Config-First, Hands Off 04/05)
+**Rule:**
+1. **Zero-Tampering of Engine Code:** When the user observes that no jobs are being applied to or the agent is not finding jobs / hallucinating, the agent is strictly forbidden from scanning or altering `04_job_discovery.py` or `05_apply_jobs.py`.
+2. **Profile-Driven Config Remediation:** The agent must inspect the active candidate profile (`resume.md`, `candidate_config.json`, `processed_ledger.json`), identify saturation or exclusions, and edit `candidate_config.json` to add new, high-yield job designations strictly relevant to that candidate's verified experience and domain.
+3. **Cognitive Re-synthesis:** The engine re-synthesizes search cycles in `cognitive_profile.json` so the running daemon immediately targets the newly configured roles.
+
+### C24: AG Brain Telemetry Monitor, Log Analysis & Self-Healing Protocol
+**Rule:**
+1. **Active Observant:** The AG Brain continuously monitors terminal logs (`logs_dump.txt`, `terminal_execution_log.txt`).
+2. **Diagnostic Auditing:** It checks for deduplication saturation (all SRP cards already in ledger), company exclusion collisions, starvation expansion timeouts, and stuck question loops.
+3. **Knowledge Persistence:** All new findings and fixes must be permanently recorded in `docs/PLATFORM_KNOWLEDGE.md` and `cognitive_learnings.json` so that past bottlenecks are never repeated.
+
+### C25: Mandatory AI Context Header Maintenance & Anti-Regression Logging
+**Rule:**
+1. **First-Read Requirement:** Every Python file in `core/` and `scripts/` contains an `# AI CONTEXT & CHANGE LOG` block at the very top (commented out to preserve runtime execution). Whenever an AI agent or developer inspects, analyzes, edits, or debugs a `.py` file, they MUST read this AI Context block first before proposing or making changes.
+2. **Append-Only Logging:** Every modification, bugfix, refactoring, or reverted experiment MUST append a new entry to the AI Context header of the affected file. Previous entries must NEVER be deleted.
+3. **Mandatory Schema:** Each entry must contain:
+   - `Serial Number`: Sequential identifier (e.g. `[ENTRY #003]`).
+   - `Term`: Standardized category (e.g. `[BUGFIX]`, `[REFACTOR]`, `[OPTIMIZATION]`, `[ZERO-HARDCODING]`).
+   - `Timestamp`: Date and exact local timestamp with timezone (`YYYY-MM-DD HH:MM:SS +05:30`).
+   - `Issue / Context`: Crisp description of the problem or goal.
+   - `Changes Made`: Specific functions, methods, or algorithms modified.
+   - `Rationale`: Why this specific solution was chosen.
+   - `Preventative Notes / Do Not Repeat`: Explicit guidance on what failed or was reverted, preventing future AI circular regressions.
+4. **Candidate-Agnostic / Zero-PII Invariant:** Never record personal candidate names, emails, phones, CTC amounts, or candidate-specific titles in the AI Context header. Only record generic, architectural, DOM, and engineering issues.
+
+
+---
+
+## DIRECTIVE 8: DIAGNOSTIC & AUTO-HEALING TOOLING GUIDE
+
+When investigating runtime portal anomalies, unexpected selector behavior, or performance bottlenecks, the agent must leverage Antigravity's specialized browser and diagnostic tools:
+
+1. **`/browser` & Chrome DevTools Protocol (CDP):**
+   - Use to connect directly to the user's running Chrome session on `http://127.0.0.1:9222`.
+   - Inspect live page DOM, take snapshots, evaluate in-page JavaScript, and verify visual state.
+2. **`chrome-devtools` Skill:**
+   - **Page Inspection:** Use `take_snapshot` to inspect accessibility trees, forms, and interactive inputs.
+   - **DOM Evaluation:** Use `evaluate_script` to check in-page React states, unclamp read-more elements, or test selector specificity.
+   - **Visual Proof:** Use `take_screenshot` when visual UI state (e.g. modals, banners, captcha) requires inspection.
+3. **`troubleshooting` Skill:**
+   - Use when CDP connection drops, port 9222 is unreachable, or Chrome remote debugging requires re-initialization.
+   - Diagnoses `--remote-debugging-port=9222` flags, `DevToolsActivePort` availability, and browser permissions.
+4. **`debug-optimize-lcp` Skill:**
+   - Use when portal pages load slowly or fail to render within Playwright timeouts.
+   - Diagnoses Time to First Byte (TTFB), resource load delay, and render blocking on heavy React Single Page Apps like Naukri.
+5. **`a11y-debugging` Skill:**
+   - Use to audit complex modal accessibility trees, focus traps, and hidden/aria-hidden form controls in portal application drawers.
 
 ---
 

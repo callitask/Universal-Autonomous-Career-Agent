@@ -168,8 +168,9 @@ continuous_career_agent.py (daemon loop)
 
 **Naukri URL Pattern:**
 ```
-https://www.naukri.com/{keyword-slug}-jobs-in-{location-slug}[-{page}]?experience={N}&jobAge={age}&wfhType={mode}&companyJobs={bool}[&ctcFilter={lo}to{hi}]
+https://www.naukri.com/jobs?k={clean_keyword}&l={clean_location}[&pageNo={page}]&experience={N}&jobAge={age}&wfhType={mode}&companyJobs={bool}[&ctcFilter={lo}to{hi}]
 ```
+*(Note: Static SEO slug URLs `/{slug}-jobs-in-{loc}` must NOT be used with dynamic filters like `experience` or `ctcFilter` as Naukri SSR caching returns 0 vacancies).*
 
 **Naukri 3-Field Header Search Bar Protocol (UI Automation):**
 When navigating via in-browser UI form interaction (`execute_naukri_header_search()`):
@@ -178,10 +179,11 @@ When navigating via in-browser UI form interaction (`execute_naukri_header_searc
    - On **Standard Naukri**: Field 1 is Keywords, Field 2 is Experience (`#experienceDD`), Field 3 is Location.
    - On **Naukri Campus** (`is_naukri_campus()`): Field 1 is Job Type (`input#jobType` with options `Job` [`ajob`] or `Internship` [`ainternship`]), Field 2 is Keywords, Field 3 is Location.
    - For internships, applies parameters: `qinternshipFlag=true`, `qproductJobSource=2`, and `naukriCampus=true`.
-3. **Field 1 / Keywords:** Enters search term into `.nI-gNb-sb__keywords input.suggestor-input` (`placeholder="Enter keyword / designation / companies"`). Supports single designations, company names (e.g., `"American Express"`), and comma-separated combinations (`"Financial Analyst, Python"`).
-4. **Field 2 / Experience (Standard):** Clicks `input#experienceDD` to open `ul.dropdown`. Selects `li[value='a{exp}']` (`a0` for fresher, `a1` for 1 yr, up to `a30` for 30 yrs).
-5. **Field 3 / Location:** Enters location into `.nI-gNb-sb__location input.suggestor-input` (`placeholder="Enter location"`), selecting from `.drop-layer .tuple-wrap div.opt`.
-6. **Search Submission:** Clicks `button.nI-gNb-sb__icon-wrapper` (`aria-label="Search"`). Generates unified canonical URL with `nignbevent_src=jobsearchDeskGNB`.
+3. **Field 1 / Keywords (Zero-Comma Standard):** Enters sanitized search term into `.nI-gNb-sb__keywords input.suggestor-input` (`placeholder="Enter keyword / designation / companies"`). All commas, semicolons, and special punctuation must be stripped before typing. Commas produce `%2C` query tokens that Naukri evaluates as literal `"2c"`, causing total zero-result failure.
+4. **Suggestor Auto-Comma Cleanup:** Clicking suggestion chips in Naukri's suggestor dropdown automatically inserts `", "` into the field. Automation must strip this trailing comma before submitting.
+5. **Field 2 / Experience (Standard):** Clicks `input#experienceDD` to open `ul.dropdown`. Selects `li[value='a{exp}']` (`a0` for fresher, `a1` for 1 yr, up to `a30` for 30 yrs).
+6. **Field 3 / Location (Zero-Comma Standard):** Enters sanitized location into `.nI-gNb-sb__location input.suggestor-input` (`placeholder="Enter location"`), ensuring no trailing commas or state designations (e.g., `"Bangalore"`, never `"Bangalore, Karnataka"`).
+7. **Search Submission:** Clicks `button.nI-gNb-sb__icon-wrapper` (`aria-label="Search"`). Generates unified canonical URL with `nignbevent_src=jobsearchDeskGNB`.
 
 **Campus Multi-Attribute Duplicate Prevention Protocol (Rule C16):**
 In `02_profile_sync_naukri.py`, duplicate evaluation strictly enforces a 3-way match:
@@ -203,6 +205,8 @@ In `02_profile_sync_naukri.py`, duplicate evaluation strictly enforces a 3-way m
 - **Chatbot Drawer Submit Scoping:** Submissions target `.sendMsgbtn_container .send:not(.disabled) .sendMsg` strictly scoped within `get_drawer()`, preventing background page bookmark click interference.
 - **Platform Rejection Banner Detection (Guardrail C9):** Checks for platform rejection banners and aborts immediately (`FAILED_PLATFORM_REJECTED`).
 - **Premature Drawer Closure Detection (Guardrail C9):** Detects unmounted or dismissed chatbot drawers (`not resolver.is_drawer_open()`), verifies completion, and aborts immediately (`DRAWER_CLOSED`).
+- **Zero-Experience Screening Circuit-Breaker (Rule C18):** If candidate answers `0` to a screening question targeting a core technology named in the job title (e.g. `SAP BTP`), the engine immediately aborts the questionnaire (`REJECTED_ZERO_EXPERIENCE_SCREENING`) and closes the drawer without submitting.
+- **External Redirect Save Bookmark Standard (Rule C18):** When external employer redirects are detected (`"Apply on company website"`), clicks the native `Save` button (`button:has-text('Save')`) on Naukri to bookmark the role before recording as `REDIRECT_EXTERNAL`.
 - **3x Stuck Question Loop Breaker (Guardrail C7):** Aborts on 3 repeated questions without progress.
 - **Adaptive Answer Formatter:** Automatically formats repeated screening answers (e.g. `9` -> `9 years` or `30` -> `30 Days`) based on question semantics to pass frontend portal validation.
 

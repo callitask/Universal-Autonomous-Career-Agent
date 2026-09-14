@@ -1,15 +1,57 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [DAEMON_ORCHESTRATION]
+# Timestamp: 2026-09-09 12:00:00 +05:30
+# Issue / Context: Running individual scripts manually was inefficient for continuous background operation.
+# Changes Made: Built infinite daemon loop executing Cycle: Discovery -> Match Evaluation -> Tailoring -> Resume Injection -> Application -> Ledger Update.
+# Rationale: Fully autonomous multi-hour application runs.
+# Preventative Notes: Ensure inter-cycle delay prevents portal rate-limiting.
+#
+# [ENTRY #002]
+# Term: [TELEMETRY_LOGGING]
+# Timestamp: 2026-09-13 10:20:00 +05:30
+# Issue / Context: Lack of cycle-by-cycle telemetry made diagnosing starvation bottlenecks difficult.
+# Changes Made: Added execution telemetry recording to profiles/<profile>/output/logs/terminal_execution_log.txt and logs_dump.txt.
+# Rationale: Enables AG Brain autonomous monitoring and self-healing.
+# Preventative Notes: Ensure logging handles missing directories gracefully without crashing.
+#
+# [ENTRY #003]
+# Term: [DAEMON_MODE_ENVIRONMENT_EXPORT]
+# Timestamp: 2026-09-14 17:00:00 +05:30
+# Issue / Context: Background execution of discovery pipeline required autonomous fast heuristic scoring without 25s IPC timeout delays.
+# Changes Made: Injected os.environ["DAEMON_MODE"] = "1" at top of daemon orchestrator.
+# Rationale: Guarantees child discovery processes evaluate job fit instantaneously using calibrated semantic models.
+# Preventative Notes: Always ensure daemon processes propagate DAEMON_MODE=1 to subprocesses.
+# ================================================================================
 """
 continuous_career_agent.py
 Universal Master Orchestrator Daemon
 Zero hardcoded profiles, paths, or settings.
 """
 
+import os
 import time
 import argparse
 import subprocess
 import logging
 import sys
 from pathlib import Path
+
+os.environ["DAEMON_MODE"] = "1"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] continuous_career_agent - %(message)s')
 logger = logging.getLogger("continuous_career_agent")
@@ -34,16 +76,25 @@ def check_cdp_status(cdp_url: str):
         )
         return False
 
-def run_step(step_name, script_name, profile_arg):
-    logger.info(f"---> [DAEMON] Initiating: {step_name}...")
+def run_step(step_name, script_name, profile_arg, ctx=None):
+    msg = f"---> [DAEMON] Initiating: {step_name}..."
+    logger.info(msg)
+    if ctx:
+        ctx.append_execution_log(msg)
     try:
         script_path = str(CORE_DIR / script_name)
         cmd = [sys.executable, script_path, "--profile", profile_arg]
         subprocess.run(cmd, cwd=str(BASE_DIR), check=True)
-        logger.info(f"---> [DAEMON] {step_name} completed successfully.")
+        done_msg = f"---> [DAEMON] {step_name} completed successfully."
+        logger.info(done_msg)
+        if ctx:
+            ctx.append_execution_log(done_msg)
         return True
-    except subprocess.CalledProcessError:
-        logger.error(f"---> [DAEMON] {step_name} exited with error. Proceeding to next step.")
+    except subprocess.CalledProcessError as err:
+        err_msg = f"---> [DAEMON] {step_name} exited with error code {err.returncode}. Proceeding to next step."
+        logger.error(err_msg)
+        if ctx:
+            ctx.append_execution_log(err_msg)
         return False
 
 def main():
@@ -74,21 +125,27 @@ def main():
     # Pre-flight Chrome CDP Check
     check_cdp_status(ctx.cdp_url)
 
-    if args.analyze:
-        run_step("Cognitive Profile Analysis & Synthesis", "01_ai_analyzer.py", profile_arg)
+    # Universal Step 0: Automatic Cognitive Profile Analysis & Resume Comprehension
+    cog_model = ctx.load_cognitive_profile()
+    if args.analyze or not (cog_model and cog_model.get("candidate_domain") and cog_model.get("core_domain_skills")):
+        run_step("Cognitive Profile Analysis & Synthesis", "01_ai_analyzer.py", profile_arg, ctx=ctx)
 
     if args.sync_profile:
-        run_step("Naukri Profile Sync", "02_profile_sync_naukri.py", profile_arg)
-        run_step("LinkedIn Profile Sync", "03_profile_sync_linkedin.py", profile_arg)
+        run_step("Naukri Profile Sync", "02_profile_sync_naukri.py", profile_arg, ctx=ctx)
+        run_step("LinkedIn Profile Sync", "03_profile_sync_linkedin.py", profile_arg, ctx=ctx)
 
     try:
         while True:
-            logger.info(f"\n=================== DAEMON CYCLE #{cycle} ===================")
+            cycle_start = f"\n=================== DAEMON CYCLE #{cycle} ==================="
+            logger.info(cycle_start)
+            ctx.append_execution_log(cycle_start)
 
             # The Interleaved Discovery engine now internally orchestrates tailoring and applying
-            run_step("Interleaved Discovery & Application Engine", "04_job_discovery.py", profile_arg)
+            run_step("Interleaved Discovery & Application Engine", "04_job_discovery.py", profile_arg, ctx=ctx)
 
-            logger.info(f"[DAEMON] Cycle #{cycle} complete. Entering {args.delay}-second cooldown before next scan...")
+            cycle_done = f"[DAEMON] Cycle #{cycle} complete. Entering {args.delay}-second cooldown before next scan..."
+            logger.info(cycle_done)
+            ctx.append_execution_log(cycle_done)
             time.sleep(args.delay)
             cycle += 1
 

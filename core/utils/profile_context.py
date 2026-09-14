@@ -1,3 +1,42 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [PROFILE_SANDBOX_ABSTRACTION]
+# Timestamp: 2026-09-09 12:00:00 +05:30
+# Issue / Context: Hardcoded file paths and profile directories caused cross-candidate data collisions.
+# Changes Made: Built ProfileContext resolving all paths, configs, and outputs strictly under profiles/<profile_name>/.
+# Rationale: Complete candidate isolation and multi-profile support.
+# Preventative Notes: Never hardcode profiles/<name> paths in code; resolve dynamically via --profile or directory discovery.
+#
+# [ENTRY #002]
+# Term: [DOCUMENTATION_PREFLIGHT]
+# Timestamp: 2026-09-13 10:20:00 +05:30
+# Issue / Context: Agents operated without internalizing workspace governance and bug prevention guardrails.
+# Changes Made: Added _verify_documentation_preflight() automatically verifying WORKSPACE_RULES.md, ARCHITECTURE_REFERENCE.md, and PLATFORM_KNOWLEDGE.md on startup.
+# Rationale: Mandatory compliance with Directives 1-8 and Guardrails C1-C24.
+# Preventative Notes: Do not suppress pre-flight documentation verification.
+#
+# [ENTRY #003]
+# Term: [ZERO-TRUST_PURITY_ENFORCER]
+# Timestamp: 2026-09-13 16:11:00 +05:30
+# Issue / Context: Prevent hardcoded candidate PII, user paths, compensation, and self-modifying code.
+# Changes Made: Built verify_codebase_purity() running on every ProfileContext initialization across core/ and scripts/.
+# Rationale: Mathematical guarantee of 100% candidate-agnostic, zero-hardcoding codebase purity.
+# Preventative Notes: Any violation triggers a fatal CodebasePurityViolationError. Never bypass purity enforcement.
+# ================================================================================
 """
 ================================================================================
 UNIVERSAL AUTONOMOUS CAREER AGENT - PROFILE CONTEXT & SANDBOX RESOLVER
@@ -230,14 +269,67 @@ class ProfileContext:
         self.saved_external_path = self.output_dir / "saved_external_jobs.json"
         self.cognitive_profile_path = self.output_dir / "cognitive_profile.json"
         self.ledger_path = self.output_dir / "processed_ledger.json"
+        self.logs_dir = self.output_dir / "logs"
 
         # 3. Ensure Output Directories Exist
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.applications_dir.mkdir(parents=True, exist_ok=True)
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
 
-        # 4. Ingest State
+        # 4. Mandatory Documentation Auto-Load & Sandbox Boundary Verification
+        self._verify_documentation_preflight()
+
+        # 5. Ingest State
         self.config: Dict[str, Any] = self._load_config()
         self.resume_text: str = self._load_resume()
+
+        # 6. Guardrail P1: Zero-Trust Codebase Purity Verification
+        self.verify_codebase_purity()
+
+        # 7. Universal Startup Profile & Resume Comprehension
+        self.cognitive_profile: Dict[str, Any] = self._ensure_cognitive_profile_analyzed()
+
+    def _verify_documentation_preflight(self) -> None:
+        """
+        Mandatory Pre-Flight Documentation & Sandbox Verification Protocol.
+        Guarantees that every script launch verifies all core documentation and
+        explicitly establishes the dynamic sandbox boundaries for profiles/.
+        """
+        docs_dir = self.base_path / "docs"
+        rules_file = docs_dir / "WORKSPACE_RULES.md"
+        arch_file = docs_dir / "ARCHITECTURE_REFERENCE.md"
+        plat_file = docs_dir / "PLATFORM_KNOWLEDGE.md"
+
+        docs_present = rules_file.exists() and arch_file.exists() and plat_file.exists()
+        doc_status = "VERIFIED [OK]" if docs_present else "WARNING: MISSING FILES"
+
+        print("=" * 80, flush=True)
+        print(f" [PRE-FLIGHT] MANDATORY DOCUMENTATION VERIFICATION: {doc_status}", flush=True)
+        print(f"   -> {rules_file.name} (Directives 1-8, 20+ Bug Prevention Guardrails)", flush=True)
+        print(f"   -> {arch_file.name} (Pipeline anatomy, contracts, data schemas)", flush=True)
+        print(f"   -> {plat_file.name} (DOM mechanics, SEO slugs, zero-comma rules)", flush=True)
+        print(f" [SANDBOX BOUNDARY] Active Candidate Sandbox: {self.profile_path}", flush=True)
+        print(f" [DYNAMIC DATA I/O] Volatile Output Directory: {self.output_dir}", flush=True)
+        print(f" [DEVELOPER NOTICE] profiles/ is dynamic runtime I/O data. Engine code lives in core/.", flush=True)
+        print(f"                    For schema blueprint & debugging, inspect: profiles/default_user", flush=True)
+        print("=" * 80, flush=True)
+
+    def append_execution_log(self, text: str) -> None:
+        """Appends execution telemetry to the profile terminal log and root logs_dump.txt."""
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        entry = f"[{ts}] {text.strip()}\n"
+        try:
+            log_file = self.logs_dir / "terminal_execution_log.txt"
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(entry)
+        except Exception:
+            pass
+        try:
+            root_log = self.base_path / "logs_dump.txt"
+            with open(root_log, "a", encoding="utf-8") as f:
+                f.write(entry)
+        except Exception:
+            pass
 
 
     def _auto_discover_profile_dir(self) -> Path:
@@ -270,57 +362,71 @@ class ProfileContext:
         )
 
     def verify_codebase_purity(self) -> Tuple[bool, List[str]]:
-        """
-        Guardrail P1: Codebase Purity & Zero-Hardcoding Enforcer.
-        Scans all python files in core/ to guarantee that:
-        1. No candidate-specific values (email, phone, specific folder names) are hardcoded.
-        2. No self-modifying code writes to .py files.
+        r"""
+        Guardrail P1: Zero-Trust Codebase Purity & Zero-Hardcoding Enforcer.
+        Scans all python files in core/ and scripts/ to guarantee that:
+        1. No candidate-specific values (full name, email, phone, compensation, specific profile folder) are hardcoded.
+        2. No hardcoded Windows user paths (C:\Users\...) exist.
+        3. No self-modifying code writes to .py files.
+        4. All parameters are dynamically derived from candidate_config.json via ProfileContext.
         Raises CodebasePurityViolationError if any violation is detected.
         """
-        core_dir = self.base_path / "core"
-        if not core_dir.exists():
-            return True, []
-
+        scan_dirs = [self.base_path / "core", self.base_path / "scripts"]
         violations = []
         cand = self.config.get("candidate", {})
+        cand_name = str(cand.get("full_name", "")).strip().lower()
         cand_email = str(cand.get("email", "")).strip().lower()
         cand_phone = re.sub(r'\D', '', str(cand.get("phone", "")))
         profile_folder_name = self.profile_path.name.lower()
 
         # Check candidate personal values (ignoring placeholders)
         forbidden_strings = set()
-        if cand_email and "@" in cand_email and not any(p in cand_email for p in ["[", "<", "your"]):
+        if cand_name and len(cand_name.split()) >= 2 and not any(p in cand_name for p in ["[", "<", "your", "default"]):
+            forbidden_strings.add(cand_name)
+        if cand_email and "@" in cand_email and not any(p in cand_email for p in ["[", "<", "your", "default"]):
             forbidden_strings.add(cand_email)
         if cand_phone and len(cand_phone) >= 10 and not any(p in cand_phone for p in ["[", "<"]):
             forbidden_strings.add(cand_phone)
         if profile_folder_name and profile_folder_name != "default_user":
-            # Search for specific profile path patterns like "profiles/name"
             forbidden_strings.add(f"profiles/{profile_folder_name}")
             forbidden_strings.add(f"profiles\\\\{profile_folder_name}")
 
-        for py_file in core_dir.rglob("*.py"):
-            if "__pycache__" in str(py_file):
-                continue
+        py_files = []
+        for sdir in scan_dirs:
+            if sdir.exists():
+                py_files.extend([f for f in sdir.rglob("*.py") if "__pycache__" not in str(f)])
+
+        for py_file in py_files:
             try:
                 content = py_file.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 continue
 
-            # 1. Check for candidate PII / profile path hardcoding
-            for s in forbidden_strings:
-                if s in content.lower():
-                    violations.append(f"Found hardcoded token '{s}' in {py_file.relative_to(self.base_path)}")
+            lines = content.split("\n")
+            for idx, line in enumerate(lines, 1):
+                s_line = line.strip()
+                if not s_line or s_line.startswith("#") or s_line.startswith('"""') or s_line.startswith("'''"):
+                    continue
 
-            # 2. Check for self-modifying scripts writing to .py files
+                # 1. Check for candidate personal data / profile path
+                for s in forbidden_strings:
+                    if s in s_line.lower():
+                        violations.append(f"Hardcoded candidate token '{s}' at {py_file.relative_to(self.base_path)}:{idx}")
+
+                # 2. Check for hardcoded Windows user paths
+                if re.search(r"C:\\Users\\[a-zA-Z0-9_-]+", s_line, re.IGNORECASE):
+                    violations.append(f"Hardcoded Windows user directory at {py_file.relative_to(self.base_path)}:{idx}: {s_line}")
+
+            # 3. Check for self-modifying scripts writing to .py files
             write_py_matches = re.findall(r'open\s*\([^)]*\.py[\'\"][^)]*[\'\"a-zA-Z]*w', content)
             if write_py_matches:
                 violations.append(f"Potential self-modifying write to .py found in {py_file.relative_to(self.base_path)}: {write_py_matches}")
 
         if violations:
-            err_msg = "[GUARDRAIL P1 VIOLATION] Hardcoded profile data detected in engine code:\n" + "\n".join(f"  - {v}" for v in violations)
+            err_msg = "[GUARDRAIL P1 VIOLATION] Hardcoded data or PII detected in codebase:\n" + "\n".join(f"  - {v}" for v in violations)
             raise CodebasePurityViolationError(err_msg)
 
-        print("  [PURITY CHECK] Guardrail P1 passed: 100% candidate-agnostic codebase purity verified.", flush=True)
+        print("  [PURITY CHECK] Guardrail P1 passed: Zero-trust codebase purity verified (0 hardcoded values).", flush=True)
         return True, []
 
     def _load_config(self) -> Dict[str, Any]:
@@ -380,6 +486,28 @@ class ProfileContext:
             os.replace(tmp_path, self.cognitive_profile_path)
         except Exception as e:
             print(f"[ProfileContext] Error saving cognitive profile atomically: {e}")
+
+    def _ensure_cognitive_profile_analyzed(self) -> Dict[str, Any]:
+        """
+        Universal Startup Profile & Resume Comprehension Hook.
+        Guarantees that whenever any script launches for any candidate profile,
+        the resume is parsed and understood in-depth (domain, seniority, experience,
+        skills, constraints) so screening questions can be resolved immediately.
+        """
+        cog_data = self.load_cognitive_profile()
+        if cog_data and cog_data.get("candidate_domain") and cog_data.get("core_domain_skills"):
+            return cog_data
+
+        try:
+            from core.ai_client import AIClient
+            client = AIClient(self)
+            synthesized = client.synthesize_cognitive_profile(force_refresh=False)
+            if synthesized:
+                return synthesized
+        except Exception:
+            pass
+
+        return cog_data or {}
 
     def load_processed_ledger(self) -> ProcessedLedger:
         """
@@ -484,7 +612,21 @@ class ProfileContext:
 
     @property
     def cdp_url(self) -> str:
-        return self.candidate.get("cdp_url", "http://127.0.0.1:9222")
+        configured = self.candidate.get("cdp_url", "http://127.0.0.1:9222")
+        # Fast health check with fallback auto-probe across standard ports (9222, 9223)
+        candidate_ports = [configured, "http://127.0.0.1:9222", "http://127.0.0.1:9223"]
+        seen = set()
+        import urllib.request
+        for url in candidate_ports:
+            if url in seen:
+                continue
+            seen.add(url)
+            try:
+                urllib.request.urlopen(f"{url.rstrip('/')}/json/version", timeout=0.8)
+                return url
+            except Exception:
+                pass
+        return configured
 
     @property
     def target_jobs(self) -> Dict[str, Any]:

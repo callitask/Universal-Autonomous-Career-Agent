@@ -1,3 +1,26 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [SEO_SLUG_GENERATION]
+# Timestamp: 2026-09-09 12:00:00 +05:30
+# Issue / Context: Naukri search forms failed on non-alphanumeric queries and special characters.
+# Changes Made: Implemented dynamic SEO slugification ({kw}-jobs-in-{loc}) and URL fallback parameters.
+# Rationale: Direct portal URL access bypassing flaky search box input interaction.
+# Preventative Notes: Always clean punctuation from search keyword slugs.
+# ================================================================================
 import time
 import re
 from urllib.parse import quote_plus

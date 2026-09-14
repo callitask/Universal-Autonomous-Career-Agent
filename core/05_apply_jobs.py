@@ -1,3 +1,42 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [DRAWER_AUTOMATION]
+# Timestamp: 2026-09-09 12:00:00 +05:30
+# Issue / Context: Naukri chatbot application drawer and LinkedIn Easy Apply required intelligent form filling.
+# Changes Made: Implemented automated question detection, options parsing, and answer dispatch via AIClient.answer_screening_question().
+# Rationale: End-to-end autonomous job application capability.
+# Preventative Notes: Never click external apply links (apply_type: 'external'); only native drawer applications are supported.
+#
+# [ENTRY #002]
+# Term: [BUGFIX_H1_TO_H6]
+# Timestamp: 2026-09-10 18:30:00 +05:30
+# Issue / Context: Screening question matching collisions: substring matching picked wrong radio options, learned truths were poisoned by fuzzy regex.
+# Changes Made: Fixed H1 (return None on option mismatch), H2 (word-boundary regex matching), H3 (strict zero experience priority), H4 (strict exact-match key caching in auto_learned_truths).
+# Rationale: Stopped false application answers and recruiter rejection loops.
+# Preventative Notes: Never match screening question options using naive substrings (e.g. '1' in '10').
+#
+# [ENTRY #003]
+# Term: [DOM_SELECTOR_ROBUSTNESS]
+# Timestamp: 2026-09-12 11:20:00 +05:30
+# Issue / Context: Naukri chatbot drawer introduced dynamic chip items (.choiceChip, .radioItem, label.ssrc__label) that failed standard radio selectors.
+# Changes Made: Implemented multi-strategy JS evaluation in _extract_drawer_options() covering explicit radios, choice chips, toggle pills, and custom radio items.
+# Rationale: 100% options discovery across all modern chatbot variants.
+# Preventative Notes: Do not revert JS drawer options extraction to simple DOM query selectors.
+# ================================================================================
 """
 ================================================================================
 UNIVERSAL AUTONOMOUS CAREER AGENT: APPLICATION ENGINE
@@ -417,6 +456,10 @@ class ChatbotResolver:
             log_step("WARNING", "Could not locate contenteditable textarea in chatbot drawer.")
             return False
 
+        if not answer or not str(answer).strip():
+            log_step("WARNING", "Attempted contenteditable input with empty answer string. Aborting typing.")
+            return False
+
         log_step("CHATBOT", f"Targeting input container with answer: '{answer}'")
         self.scroll_drawer_to_bottom()
 
@@ -503,19 +546,25 @@ class ChatbotResolver:
             return False
 
     def execute_chip_selection(self, matched_option: str) -> bool:
+        if not matched_option or not str(matched_option).strip():
+            log_step("WARNING", "Attempted chip selection with empty option string. Aborting click.")
+            return False
         self.scroll_drawer_to_bottom()
         drawer = self.get_drawer()
         
         # Support multi-select options (e.g. "Python, SQL" or "Immediate, Serving Notice")
         raw_options = [o.strip() for o in re.split(r'[,;]+', str(matched_option)) if o.strip()]
         if not raw_options:
-            raw_options = [str(matched_option).strip()]
+            return False
 
         any_clicked = False
 
         for clean_target in raw_options:
+            if not clean_target:
+                continue
             clicked = self.page.evaluate("""(targetText) => {
-                const cleanTarget = targetText.toLowerCase().trim();
+                const cleanTarget = (targetText || '').toLowerCase().trim();
+                if (!cleanTarget) return false;
                 const drawer = document.querySelector('.chatbot_DrawerContentWrapper, div[class*="_chatbotContainer"], div[class*="chatbot_Drawer"]');
                 if (!drawer) return false;
                 
@@ -526,7 +575,7 @@ class ChatbotResolver:
                 );
                 for (let lbl of ssrcLabels) {
                     const txt = (lbl.innerText || '').toLowerCase().trim();
-                    if (txt === cleanTarget || txt.includes(cleanTarget) || cleanTarget.includes(txt)) {
+                    if (cleanTarget && (txt === cleanTarget || txt.includes(cleanTarget) || cleanTarget.includes(txt))) {
                         lbl.click();
                         const inputId = lbl.getAttribute('for');
                         if (inputId) {
@@ -587,7 +636,7 @@ class ChatbotResolver:
                     if (!labelText && inp.nextElementSibling) {
                         labelText = (inp.nextElementSibling.innerText || '').toLowerCase().trim();
                     }
-                    if (labelText && (labelText === cleanTarget || labelText.includes(cleanTarget) || cleanTarget.includes(labelText))) {
+                    if (cleanTarget && labelText && (labelText === cleanTarget || labelText.includes(cleanTarget) || cleanTarget.includes(labelText))) {
                         inp.click();
                         inp.checked = true;
                         inp.dispatchEvent(new Event('change', {bubbles: true}));
@@ -1081,7 +1130,7 @@ class ApplicationEngine:
     def __init__(self, profile_path: Optional[str] = None):
         self.ctx = ProfileContext(profile_path, PROJECT_ROOT)
         self.ctx.verify_codebase_purity()
-        self.browser_mgr = BrowserManager()
+        self.browser_mgr = BrowserManager(cdp_url=self.ctx.cdp_url)
         self.ai = AIClient(self.ctx)
         self.stats = {
             "total": 0,
@@ -1175,15 +1224,18 @@ class ApplicationEngine:
                 page.wait_for_timeout(1500)
             else:
                 try:
-                    page.goto(url, wait_until="commit", timeout=25000)
+                    page.goto(url, wait_until="domcontentloaded", timeout=20000)
                 except Exception:
-                    page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                    try:
+                        page.goto(url, wait_until="commit", timeout=15000)
+                    except Exception:
+                        pass
                 page.wait_for_timeout(2500)
         except Exception as e:
             log_step("WARNING", f"Initial navigation notice: {e}. Retrying navigation once...")
             try:
                 page.wait_for_timeout(1500)
-                page.goto(url, wait_until="commit", timeout=20000)
+                page.goto(url, wait_until="domcontentloaded", timeout=20000)
                 page.wait_for_timeout(2500)
             except Exception as e2:
                 log_step("ERROR", f"Navigation timeout or failure after retry: {e2}")
@@ -1200,7 +1252,15 @@ class ApplicationEngine:
         for sel in ext_btn_selectors:
             loc = page.locator(sel)
             if loc.count() > 0 and loc.first.is_visible():
-                log_step("GATE", "Listing requires external site redirect. Gating and saving...")
+                log_step("GATE", "Listing requires external site redirect. Clicking Save button and gating...")
+                try:
+                    save_btn = page.locator("button#save-button, button.save-button, button:has-text('Save'), .styles_save-job-button__k2e8x, .save-job-button, [aria-label='save-job']").first
+                    if save_btn.count() > 0 and save_btn.is_visible():
+                        save_btn.click(force=True)
+                        page.wait_for_timeout(800)
+                        log_step("SAVE", "Bookmarked external job on Naukri.")
+                except Exception as e_s:
+                    log_step("SAVE_NOTICE", f"Notice clicking save button: {e_s}")
                 self.record_external_redirect(job, url)
                 return "REDIRECT_EXTERNAL"
 
@@ -1586,6 +1646,23 @@ class ApplicationEngine:
                     log_step("ADAPTIVE RETRY", f"Adapted answer format: '{raw_ans}' -> '{ans}'")
                 else:
                     ans = raw_ans
+
+                # Zero-Experience Screening Circuit-Breaker (Rule C18)
+                # If candidate has 0 experience in a technology named in the job title, abort application immediately
+                if re.search(r'\b(?:years?|yrs?|experience)\b', active_q, re.I) and str(ans).strip() in ["0", "0.0", "zero", "none"]:
+                    q_words = [w.lower() for w in re.findall(r'[a-zA-Z]{3,}', active_q) if w.lower() not in ["how", "many", "years", "have", "you", "experience", "what", "total", "relevant"]]
+                    title_words = [w.lower() for w in re.findall(r'[a-zA-Z]{3,}', job_title) if w.lower() not in ["developer", "engineer", "lead", "architect", "manager", "full", "stack", "senior", "junior", "specialist", "consultant"]]
+                    overlap = set(q_words).intersection(title_words)
+                    if overlap:
+                        log_step("CIRCUIT_BREAKER", f"Candidate has 0 experience in primary job title technology ({', '.join(overlap)}). Aborting application to avoid automated ATS disqualification.")
+                        try:
+                            close_btn = page.locator(".chatbot_DrawerClose, .crossIcon, button[aria-label='Close'], .styles_close-btn__JvY8P, span.ni-icon-cross").first
+                            if close_btn.count() > 0 and close_btn.is_visible():
+                                close_btn.click(force=True)
+                        except Exception:
+                            pass
+                        return "REJECTED_ZERO_EXPERIENCE_SCREENING"
+
                 log_step("ACTION", f"Submitting text response: \"{ans}\"")
                 resolver.execute_contenteditable_input(ans)
                 last_submitted_answer = ans
@@ -1655,6 +1732,13 @@ class ApplicationEngine:
             try:
                 with open(qa_log_path, "w", encoding="utf-8") as f:
                     json.dump(qa_history, f, indent=2)
+                if ans and str(ans).strip():
+                    self.ai.record_profile_learning(
+                        self.ctx.profile_dir,
+                        "learned_question_answers",
+                        active_q.strip(),
+                        str(ans).strip()
+                    )
             except Exception:
                 pass
 

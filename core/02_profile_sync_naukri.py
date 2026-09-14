@@ -1,3 +1,34 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [SELECTIVE_SYNC_ARCHITECTURE]
+# Timestamp: 2026-09-09 12:00:00 +05:30
+# Issue / Context: Blanket overwrites of Naukri profiles wiped high-performing recruiter-optimized roles.
+# Changes Made: Built 5-step cognitive selective sync (Step A-E) generating isolated evaluation cards in output/profile_sync/naukri_cards/.
+# Rationale: Surgical updates only (KEEP_EXISTING vs UPDATE_REQUIRED vs ADD_NEW).
+# Preventative Notes: Never perform destructive full profile wipes; preserve user-verified live roles.
+#
+# [ENTRY #002]
+# Term: [DOM_BUGFIX_C16_C17]
+# Timestamp: 2026-09-11 14:30:00 +05:30
+# Issue / Context: Duplicate employment detection failed on multi-stint tenures at the same firm; Naukri modal scroll leaked to background.
+# Changes Made: Implemented Rule C16 (duplicate detection across Company + Designation + Tenure years) and isolated modal scroll container. Added zero-comma rule for key skills input.
+# Rationale: Prevented duplicate work history entries and browser navigation freezes.
+# Preventative Notes: Never match duplicates by company name alone; candidate can legitimately hold separate stints across different years.
+# ================================================================================
 """
 ================================================================================
 UNIVERSAL AUTONOMOUS CAREER AGENT: SURGICAL SELECTIVE NAUKRI PROFILE SYNC
@@ -755,4 +786,4 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Selective Naukri Profile Sync Engine")
     parser.add_argument("--profile", default=None, help="Path to candidate profile directory (optional)")
     args = parser.parse_args()
-    run(args.profile)
+    run(args.profile)

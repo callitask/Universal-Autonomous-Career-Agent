@@ -1,0 +1,42 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-09-12T18:25:00+05:30",
+  "platforms": {
+    "naukri": {
+      "search_routing": {
+        "preferred_strategy": "STRUCTURED_SEO_SLUG",
+        "slug_pattern": "https://www.naukri.com/{role_slug}-jobs-in-{loc_slug}",
+        "pagination_slug_pattern": "https://www.naukri.com/{role_slug}-jobs-in-{loc_slug}-{page_num}",
+        "query_params": {
+          "experience": "experience={years}",
+          "job_age": "jobAge={days}",
+          "ctc_filter": "ctcFilter={bracket}"
+        },
+        "prohibited_urls": [
+          "https://www.naukri.com/jobs?k=...",
+          "https://www.naukri.com/jobs-in-india?k=..."
+        ],
+        "routing_rationale": "Naukri server automatically redirects /jobs?k= to /jobs-in-india which fails to render job card tuples (0 results). Structured SEO slugs with query parameters reliably return 20 job cards per page."
+      },
+      "sanitization_standards": {
+        "zero_comma_rule": "Commas must be stripped from all query tokens, location strings, and input fields. Commas encode as %2C which Naukri parses literally as '2c', collapsing results to 0.",
+        "plain_text_slug_rule": "Slugification must be performed on raw plain text tokens (e.g. clean_q) using re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-'). Never call urllib.parse.quote before slugifying, which turns spaces into %20 and results in corrupted slugs like 'java-20technical-20lead'.",
+        "suggestor_trailing_comma_stripping": "Selecting suggestion chips in Naukri auto-appends ', '. In-DOM JavaScript must proactively strip trailing commas before executing search.",
+        "isolated_designation_rule": "Each search must execute exactly one single designation string. Multiple roles must NEVER be concatenated into the search field."
+      },
+      "dom_selectors": {
+        "tuple_wrapper": "div.srp-jobtuple-wrapper",
+        "tuple_alternates": "article.jobTuple, div.cust-job-tuple",
+        "save_button": "button#save-button, button.save-button, button:has-text('Save'), .styles_save-job-button__k2e8x, .save-job-button, [aria-label='save-job']",
+        "read_more_button": "span.styles_rm-link__RgrMs, .customReadMoreLabelClass, .styles_read-more-link__dD_5h, .read-more-label, span.rm-link, div[class*='read-more'] span, div[class*='read-more'] a",
+        "naukri_match_score_container": "div.styles_JDC__match-score__VnjLL, div[class*='match-score']",
+        "chatbot_drawer": ".chatbot_DrawerContentWrapper, div[class*='_chatbotContainer'], div[class*='chatbot_Drawer']",
+        "chatbot_submit_button": ".sendMsgbtn_container .send:not(.disabled) .sendMsg"
+      },
+      "circuit_breakers": {
+        "zero_experience_screening": "If candidate answers 0 years for a core technology named in the job title or >=50% of experience questions resolve to 0, abort application immediately without submitting.",
+        "naukri_keyskills_false": "If Naukri native match score container shows Keyskills: false (Red Cross), disqualify immediately unless candidate primary title matches."
+      }
+    }
+  }
+}

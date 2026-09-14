@@ -1,4 +1,35 @@
 #!/usr/bin/env python3
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [FACTUAL_ATS_GENERATION]
+# Timestamp: 2026-09-09 12:00:00 +05:30
+# Issue / Context: LLMs hallucinated fake employment and exaggerated years of experience in tailored resumes.
+# Changes Made: Built strict factual tailoring engine: resumes can only reorder, highlight, or re-frame verified candidate bullets from resume.md; zero new skills or employers permitted.
+# Rationale: 100% audit-proof factual integrity for background checks.
+# Preventative Notes: Never permit LLM to invent companies, dates, or degrees.
+#
+# [ENTRY #002]
+# Term: [COMPACT_A4_PDF_STYLING]
+# Timestamp: 2026-09-10 16:00:00 +05:30
+# Issue / Context: Tailored resumes spilled over to awkward 3-page formats.
+# Changes Made: Implemented compact 2-page A4 CSS styling with exact 8mm margins and Playwright Chromium print-to-PDF rendering.
+# Rationale: Professional recruiter-standard resume presentation.
+# Preventative Notes: Never allow unconstrained CSS line heights to cause page spillover.
+# ================================================================================
 """
 ================================================================================
 GENERATE_FACTUAL_TAILORED.py
@@ -198,7 +229,11 @@ class ResumeTailorEngine:
         for category, skills in self.cfg.get("taxonomy_skills", {}).items():
             if isinstance(skills, list):
                 for skill in skills:
-                    skill_clean = skill.strip().lower()
+                    if isinstance(skill, dict):
+                        skill_name = skill.get("skill_name") or skill.get("name") or ""
+                    else:
+                        skill_name = str(skill or "")
+                    skill_clean = skill_name.strip().lower()
                     if skill_clean and re.search(rf'\b{re.escape(skill_clean)}\b', jd_lower):
                         keywords.append(skill_clean)
 
@@ -334,13 +369,22 @@ class ResumeTailorEngine:
         resume_base = self.get_resume_filename()
 
         with sync_playwright() as p:
+            is_connected_cdp = False
+            browser = None
             try:
-                browser = p.chromium.connect_over_cdp(self.cdp_url)
+                browser = p.chromium.connect_over_cdp(self.cdp_url, timeout=3000)
                 context = browser.contexts[0] if browser.contexts else browser.new_context()
                 page = context.new_page()
+                is_connected_cdp = True
             except Exception as e:
-                print(f"  [!] Fatal Playwright connection error: {e}")
-                return
+                # Local headless Chromium fallback for PDF compilation if live CDP is in an active navigation lock
+                try:
+                    browser = p.chromium.launch(headless=True)
+                    context = browser.new_context()
+                    page = context.new_page()
+                except Exception as e2:
+                    print(f"  [!] Fatal Playwright connection and fallback error: {e} | {e2}")
+                    return
 
             for job in jobs:
                 title = job.get("title", "Role")

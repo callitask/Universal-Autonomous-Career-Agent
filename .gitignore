@@ -54,6 +54,8 @@ dom_audit_*.json
 # 5. Agent & IDE Caches / Scratch Directories
 scratch/
 .gemini/
+logs_dump.txt
+anshika_garg/
 
 # 6. OS Generated Files
 .DS_Store

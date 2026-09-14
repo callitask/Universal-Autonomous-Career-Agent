@@ -1,4 +1,27 @@
 #!/usr/bin/env python3
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [PERFORMANCE_OPTIMIZATION]
+# Timestamp: 2026-09-10 11:00:00 +05:30
+# Issue / Context: Full profile sync took 3-5 minutes per cycle just to update the candidate resume.
+# Changes Made: Created dedicated headless worker page (new_page()) that navigates directly to mnjuser/profile, injects the latest tailored ATS PDF via input file upload, and immediately detaches.
+# Rationale: Reduced resume injection latency to < 15 seconds without modifying any profile text fields.
+# Preventative Notes: Always call upload_page.bring_to_front() and close the dedicated tab after upload to avoid polluting the user's primary browsing session.
+# ================================================================================
 """
 ================================================================================
 UNIVERSAL AUTONOMOUS CAREER AGENT - FAST NAUKRI RESUME INJECTION

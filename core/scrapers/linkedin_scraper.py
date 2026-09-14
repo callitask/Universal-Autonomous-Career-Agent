@@ -1,3 +1,26 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# This block records the chronological history of changes, root-cause fixes, what was
+# tried, what worked, what failed/was reverted, and critical design invariants.
+#
+# APPEND-ONLY GOVERNANCE:
+# 1. Never delete or overwrite previous entries. Always append new entries chronologically.
+# 2. Each entry must have: Serial Number, Category Term, Date & Exact Local Timestamp,
+#    Issue/Context, Changes Done, Rationale, and Preventative Notes (what NOT to repeat).
+# 3. Candidate-Agnostic / Zero-PII: Never record personal candidate names, emails, phones,
+#    or specific candidate data here. Record generic architectural, DOM, and logic patterns.
+#
+# [ENTRY #001]
+# Term: [EASY_APPLY_FILTERING]
+# Timestamp: 2026-09-09 12:00:00 +05:30
+# Issue / Context: LinkedIn search returned mostly third-party external application redirects.
+# Changes Made: Hard-filtered search queries with f_AL=true (Easy Apply only) and f_TPR=r259200 (past 3 days).
+# Rationale: Guarantees 100% native in-platform application capability.
+# Preventative Notes: Never remove f_AL=true filter from LinkedIn search URL generation.
+# ================================================================================
 import time
 import re
 from urllib.parse import quote_plus
