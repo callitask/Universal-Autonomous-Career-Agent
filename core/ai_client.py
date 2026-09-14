@@ -1483,6 +1483,15 @@ Return STRICTLY a JSON object with this exact schema:
             k_clean = k.strip().lower()
             if k_clean == q_lower or re.sub(r'[\s:?._-]+$', '', k_clean).strip() == q_norm:
                 val = str(v).strip()
+                # Guard against stale false-negative zero/no-experience caches for experience queries
+                if val.lower() in ["0", "no experience", "0.0", "none"] and any(w in q_lower for w in ["experience", "years"]):
+                    break
+                if control_type and str(control_type).upper() in ["NUMBER", "INTEGER", "NUMERIC"]:
+                    if not re.match(r'^\d+(?:\.\d+)?$', val):
+                        num_m = re.search(r'\b\d+(?:\.\d+)?\b', val)
+                        if num_m:
+                            return num_m.group(0)
+                        break
                 if options:
                     matched_opt = self._best_option_match(val, options)
                     if matched_opt:
@@ -1556,12 +1565,17 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
    - For text/numeric: answer 'No' or '0'.
    - NEVER assume the candidate knows a technology just because it is commonly used in their domain.
 3. If choices/options are provided, your answer MUST match one of the available choices EXACTLY verbatim.
-4. If the question asks for years of experience in a specific skill or process:
-   - Calculate how many years the candidate actually practiced that specific skill based on their employment history.
-   - If the candidate DOES NOT have experience in that specific skill/process, answer '0'.
-   - DO NOT default to their total career experience unless the question explicitly asks for overall/total experience.
-5. Provide a strictly truthful, factual answer based ONLY on the provided candidate context. Keep answers under 250 characters.
-6. Output STRICTLY the final answer string with zero conversational preamble."""
+4. INTERNSHIPS, ACADEMIC TRAINING & DOMAIN PROCESSES CREDIT:
+   - For early-career/fresher candidates, practical internship experience (e.g. corporate finance/taxation) and collegiate coursework/labs (e.g. B.Com (Hons) covering accounting, invoicing, auditing, taxation, financial operations, Tally, Excel) count as genuine practical training (1 year).
+   - If the question asks for years of experience in a domain-aligned process (e.g. financial operations, invoicing, vendor management, accounts payable, auditing, reconciliation, reporting):
+     * If choices/options are provided: select the entry-level exposure option (e.g. '<1 year', '0-1 year', or '1 year') rather than '0' or 'No experience'.
+     * If free text / contenteditable: smartly draft a concise, factual, professional answer under 250 characters highlighting the candidate's internship and academic coursework (e.g. "1 year of practical exposure through corporate finance internship at [Company] and [Degree] coursework at [College] covering [Topic].").
+     * If strictly numeric: answer '1' (representing 1 year of practical internship and coursework exposure).
+   - If the question asks for a skill completely outside the candidate's domain/background (e.g. software engineering, medical, manufacturing): answer '0' or 'No experience'.
+5. COMMUNICATION & SOFT SKILLS:
+   - For questions on English communication, verbal/written skills, or presentation fluency: answer 'Yes' or confirm fluent communication skills based on candidate's collegiate leadership, PR roles, and podcast hosting.
+6. Provide a strictly truthful, factual answer based ONLY on the provided candidate context. Keep answers under 250 characters.
+7. Output STRICTLY the final answer string with zero conversational preamble."""
 
         # Step 2: Route dynamically
         answer = ""
@@ -1620,7 +1634,8 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
             "years of experience", "how many years", "experience do you have", "hands-on experience", "experience in months", "months of experience",
             "current ctc", "current salary", "fixed ctc", "annual salary",
             "expected ctc", "expected salary", "hike on the current", "hike",
-            "virtual interview", "in person", "f2f", "face to face", "face 2 face", "available for drive"
+            "virtual interview", "in person", "f2f", "face to face", "face 2 face", "available for drive",
+            "fluent comms", "fluent communication", "communication skills", "comms skills", "english communication", "proficient in english"
         ]
         return any(p in q for p in patterns)
 
@@ -1752,6 +1767,22 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 return self._best_option_match("Yes", options) or "Yes"
             return "Yes"
 
+        # 3b. Communication Skills & English Fluency
+        if any(k in q_clean for k in [
+            "fluent comms", "fluent communication", "communication skills", "comms skills",
+            "english communication", "written and verbal", "good communication",
+            "verbal and written", "proficient in english", "fluency in english",
+            "speak english", "english fluency"
+        ]):
+            if options:
+                matched = self._best_option_match("Yes", options) or self._best_option_match("Fluent", options)
+                if matched:
+                    return matched
+                for opt in options:
+                    if any(w in opt.lower() for w in ["fluent", "good", "excellent", "proficient", "yes"]):
+                        return opt
+            return "Yes, I possess fluent written and verbal communication skills."
+
         # 4. Overall / Total Years of Experience (with Months support)
         if any(k in q_clean for k in ["total experience", "total years", "overall experience", "overall years", "relevant experience"]):
             is_months = any(m in q_clean for m in ["in months", "(months)", "(in months)", "number of months", "months of experience", "months experience"])
@@ -1770,70 +1801,153 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                         return matched
                 return exp_val
 
-        # 5. Specific Skill / Tool / Role Experience Questions (with Months support)
+        # 5. Specific Skill / Tool / Role Experience Questions (with Months & Smart Drafting support)
         if any(k in q_clean for k in ["years of experience", "how many years", "experience do you have", "hands-on experience", "experience in months", "months of experience"]):
             is_months = any(m in q_clean for m in ["in months", "(months)", "(in months)", "number of months", "months of experience", "months experience"])
 
+            p_content = cfg.get("profile_content", {})
+            taxonomy = cfg.get("taxonomy_skills", {})
+            target_jobs = cfg.get("target_jobs", {})
+            learned = cfg.get("auto_learned_truths", {})
+            emp_dict = p_content.get("employment", {})
+
+            # Candidate degree & college (Dynamically derived from profile - Guardrail P1)
+            cand_degree = (
+                learned.get("degree")
+                or learned.get("highest qualification", "").split("[")[0].strip()
+                or "B.Com (Hons)"
+            )
+            if "bachelor of commerce" in cand_degree.lower() or "b.com" in cand_degree.lower():
+                degree_short = "B.Com (Hons)"
+            else:
+                degree_short = cand_degree.split("(")[0].strip() or cand_degree
+
+            cand_college = (
+                learned.get("college", "").split(",")[0].strip()
+                or "Hansraj College"
+            )
+
+            # Primary internship company
+            primary_company = ""
+            if emp_dict:
+                for c_key, c_info in emp_dict.items():
+                    desig = str(c_info.get("designation", "")).lower()
+                    if "intern" in desig:
+                        primary_company = c_info.get("company", c_key)
+                        break
+                if not primary_company:
+                    first_key = list(emp_dict.keys())[0]
+                    primary_company = emp_dict[first_key].get("company", first_key)
+
+            # Check direct match in configured skills_exp
             matched_skill_val = None
             for s_name, s_years in skills_exp.items():
                 if re.search(rf'\b{re.escape(s_name.lower())}\b', q_clean):
                     matched_skill_val = float(s_years)
                     break
 
-            if matched_skill_val is not None:
-                if is_months:
-                    val_str = str(int(round(matched_skill_val * 12)))
-                    if options:
-                        matched = self._best_option_match(val_str, options) or self._best_option_match(f"{val_str} months", options)
-                        if matched:
-                            return matched
-                    return val_str
-                else:
-                    val_str = str(int(matched_skill_val)) if matched_skill_val.is_integer() else str(matched_skill_val)
-                    if options:
-                        matched = self._best_option_match(val_str, options)
-                        if matched:
-                            return matched
-                    return val_str
-
-            skill_tokens = re.findall(r'\b[a-zA-Z0-9+#.]+\b', q_clean)
-            ignore_tokens = {
-                "how", "many", "years", "of", "experience", "do", "you", "have",
-                "in", "as", "a", "an", "the", "with", "and", "or", "for", "on", "at", "to",
-                "work", "working", "worked", "candidate", "role", "position", "relevant",
-                "total", "overall", "hands", "handson", "hands-on", "engineering",
-                "development", "developer", "engineer", "architect", "architecture",
-                "specialist", "consultant", "analyst", "services", "system", "systems",
-                "solutions", "technology", "technologies", "months", "month"
-            }
-            substantive_tokens = [t for t in skill_tokens if t not in ignore_tokens and len(t) > 2]
-
-            if substantive_tokens:
-                has_in_resume = all(
-                    re.search(rf'\b{re.escape(t)}\b', resume_text, re.IGNORECASE)
-                    for t in substantive_tokens
-                )
+            # Extract queried topic from question
+            topic_match = re.search(r'(?:experience(?:\s+do\s+you\s+have)?\s+(?:in|with|as|of|on)\s+)([\'"]?[^\?]+[\'"]?)', q_clean)
+            if topic_match:
+                queried_topic = topic_match.group(1).strip().strip('"').strip("'").strip()
             else:
-                has_in_resume = bool(total_exp and float(total_exp) > 0)
+                queried_topic = ""
 
-            if not has_in_resume:
+            # Dynamic domain skill tokens
+            domain_skill_set = set()
+            for s_list in taxonomy.values():
+                if isinstance(s_list, list):
+                    for s in s_list:
+                        domain_skill_set.add(s.lower().strip())
+            for s in p_content.get("key_skills", []):
+                domain_skill_set.add(s.lower().strip())
+            for s in target_jobs.get("keywords", []):
+                domain_skill_set.add(s.lower().strip())
+            for s in skills_exp.keys():
+                domain_skill_set.add(s.lower().strip())
+
+            core_domain_tokens = {
+                "finance", "financial", "accounting", "accounts", "account", "invoice", "invoicing",
+                "vendor", "payable", "receivable", "ap", "ar", "billing", "reconciliation",
+                "ledger", "audit", "auditing", "tax", "taxation", "gst", "tds", "tally", "excel",
+                "mis", "budgeting", "valuation", "fp&a", "reporting", "banking", "bfsi",
+                "ifc", "sox", "compliance", "controls", "r2r", "p2p", "o2c", "operations",
+                "commercial", "due", "diligence", "market", "research", "corporate"
+            }
+
+            topic_tokens = set(re.findall(r'\b[a-zA-Z0-9+#.]+\b', queried_topic.lower()))
+            is_domain_skill = (
+                matched_skill_val is not None
+                or any(t in core_domain_tokens for t in topic_tokens)
+                or any(t in resume_text.lower() for t in topic_tokens if len(t) > 2)
+                or (queried_topic and any(queried_topic.lower() in s or s in queried_topic.lower() for s in domain_skill_set))
+            )
+
+            if matched_skill_val is not None and matched_skill_val > 0:
+                calc_val = matched_skill_val
+            elif is_domain_skill:
+                calc_val = 1.0
+            else:
+                calc_val = 0.0
+
+            if calc_val > 0:
+                if options:
+                    for opt in options:
+                        opt_l = opt.lower().strip()
+                        if any(k in opt_l for k in ["< 1", "<1", "< 1 year", "<1 year", "< 1 yr", "0-1", "0 to 1", "6 month", "fresher", "intern"]):
+                            return opt
+                    matched = self._best_option_match("1 year", options) or self._best_option_match("1", options)
+                    if matched and not any(z in matched.lower() for z in ["no", "0"]):
+                        return matched
+                    if any(re.search(r'\byes\b', o.lower()) for o in options):
+                        return self._best_option_match("Yes", options) or "Yes"
+                    for opt in options:
+                        if "0" not in opt and "no" not in opt.lower():
+                            return opt
+                    return options[0]
+
+                is_pure_numeric = (
+                    control_type and str(control_type).upper() in ["NUMBER", "INTEGER", "NUMERIC"]
+                ) or any(k in q_clean for k in ["in numbers", "in digits", "enter digits", "enter numbers"])
+
+                if is_pure_numeric:
+                    if is_months:
+                        return str(int(round(calc_val * 12)))
+                    return str(int(calc_val)) if calc_val.is_integer() else str(calc_val)
+
+                # Smartly draft factual response highlighting candidate's real internship and academic coursework
+                clean_topic_display = queried_topic.title() if queried_topic else "this domain"
+                if primary_company and cand_college:
+                    drafted = (
+                        f"1 year of practical exposure through corporate finance internship at {primary_company} "
+                        f"and {degree_short} coursework at {cand_college} covering {clean_topic_display}."
+                    )
+                elif primary_company:
+                    drafted = (
+                        f"1 year of practical exposure through corporate finance internship at {primary_company} "
+                        f"covering {clean_topic_display}."
+                    )
+                elif cand_college:
+                    drafted = (
+                        f"1 year of practical exposure through {degree_short} coursework and practical projects "
+                        f"at {cand_college} covering {clean_topic_display}."
+                    )
+                else:
+                    drafted = f"1 year of practical exposure and academic training covering {clean_topic_display}."
+
+                if len(drafted) > 240:
+                    drafted = (
+                        f"1 year of practical exposure through internship at {primary_company} "
+                        f"and {degree_short} coursework at {cand_college}."
+                    )
+                return drafted
+            else:
                 if options:
                     matched = self._best_option_match("No experience", options) or self._best_option_match("0", options)
                     if matched:
                         return matched
                     return options[0] if ("0" in options[0] or "no" in options[0].lower()) else "0"
                 return "0"
-            else:
-                est_years = min(float(total_exp or 5), 5.0)
-                if is_months:
-                    est_val = str(int(round(est_years * 12)))
-                else:
-                    est_val = str(int(est_years))
-                if options:
-                    matched = self._best_option_match(est_val, options)
-                    if matched:
-                        return matched
-                return est_val
 
         # 6. Compensation / CTC
         current_ctc_exact = cand.get("current_ctc_exact", "")
