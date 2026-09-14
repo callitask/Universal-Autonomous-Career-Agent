@@ -1565,15 +1565,15 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
    - For text/numeric: answer 'No' or '0'.
    - NEVER assume the candidate knows a technology just because it is commonly used in their domain.
 3. If choices/options are provided, your answer MUST match one of the available choices EXACTLY verbatim.
-4. INTERNSHIPS, ACADEMIC TRAINING & DOMAIN PROCESSES CREDIT:
-   - For early-career/fresher candidates, practical internship experience (e.g. corporate finance/taxation) and collegiate coursework/labs (e.g. B.Com (Hons) covering accounting, invoicing, auditing, taxation, financial operations, Tally, Excel) count as genuine practical training (1 year).
-   - If the question asks for years of experience in a domain-aligned process (e.g. financial operations, invoicing, vendor management, accounts payable, auditing, reconciliation, reporting):
-     * If choices/options are provided: select the entry-level exposure option (e.g. '<1 year', '0-1 year', or '1 year') rather than '0' or 'No experience'.
-     * If free text / contenteditable: smartly draft a concise, factual, professional answer under 250 characters highlighting the candidate's internship and academic coursework (e.g. "1 year of practical exposure through corporate finance internship at [Company] and [Degree] coursework at [College] covering [Topic].").
-     * If strictly numeric: answer '1' (representing 1 year of practical internship and coursework exposure).
-   - If the question asks for a skill completely outside the candidate's domain/background (e.g. software engineering, medical, manufacturing): answer '0' or 'No experience'.
+4. INTERNSHIPS, ACADEMIC TRAINING & DOMAIN SKILLS CREDIT:
+   - For early-career/entry-level candidates, practical internship experience and collegiate degree coursework/laboratory training in their field count as genuine practical exposure (1 year).
+   - If the question asks for years of experience in a domain skill or process that aligns with the candidate's degree, coursework, internships, or listed skills:
+     * If choices/options are provided: select the lowest non-zero entry-level exposure option (e.g. '<1 year', '0-1 year', or '1 year') rather than '0' or 'No experience'.
+     * If free text / contenteditable: smartly draft a concise, factual, professional answer under 250 characters highlighting the candidate's real internship and academic coursework derived strictly from the Candidate Factual Database.
+     * If strictly numeric: answer '1' (representing 1 year of practical internship and academic training).
+   - If the question asks for a skill completely outside the candidate's field/background: answer '0' or 'No experience'.
 5. COMMUNICATION & SOFT SKILLS:
-   - For questions on English communication, verbal/written skills, or presentation fluency: answer 'Yes' or confirm fluent communication skills based on candidate's collegiate leadership, PR roles, and podcast hosting.
+   - For questions on English communication, verbal/written skills, or presentation fluency: answer 'Yes' or confirm fluent communication skills based on candidate profile.
 6. Provide a strictly truthful, factual answer based ONLY on the provided candidate context. Keep answers under 250 characters.
 7. Output STRICTLY the final answer string with zero conversational preamble."""
 
@@ -1811,33 +1811,33 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
             learned = cfg.get("auto_learned_truths", {})
             emp_dict = p_content.get("employment", {})
 
-            # Candidate degree & college (Dynamically derived from profile - Guardrail P1)
+            # Candidate degree & college (Dynamically derived from profile - Zero Hardcoding)
             cand_degree = (
                 learned.get("degree")
                 or learned.get("highest qualification", "").split("[")[0].strip()
-                or "B.Com (Hons)"
+                or ""
             )
-            if "bachelor of commerce" in cand_degree.lower() or "b.com" in cand_degree.lower():
-                degree_short = "B.Com (Hons)"
-            else:
-                degree_short = cand_degree.split("(")[0].strip() or cand_degree
-
             cand_college = (
                 learned.get("college", "").split(",")[0].strip()
-                or "Hansraj College"
+                or learned.get("university", "").split(",")[0].strip()
+                or ""
             )
 
-            # Primary internship company
+            # Primary internship company & designation (Dynamically derived from profile)
             primary_company = ""
+            primary_role = ""
             if emp_dict:
                 for c_key, c_info in emp_dict.items():
-                    desig = str(c_info.get("designation", "")).lower()
-                    if "intern" in desig:
-                        primary_company = c_info.get("company", c_key)
+                    desig = str(c_info.get("designation", "")).strip()
+                    comp = str(c_info.get("company", c_key)).strip()
+                    if "intern" in desig.lower():
+                        primary_company = comp
+                        primary_role = desig
                         break
                 if not primary_company:
                     first_key = list(emp_dict.keys())[0]
-                    primary_company = emp_dict[first_key].get("company", first_key)
+                    primary_company = str(emp_dict[first_key].get("company", first_key)).strip()
+                    primary_role = str(emp_dict[first_key].get("designation", "")).strip()
 
             # Check direct match in configured skills_exp
             matched_skill_val = None
@@ -1853,34 +1853,41 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
             else:
                 queried_topic = ""
 
-            # Dynamic domain skill tokens
-            domain_skill_set = set()
+            # Dynamic domain skill tokens extracted entirely from active profile
+            domain_tokens = set()
+            for text_source in [
+                target_jobs.get("department", ""),
+                target_jobs.get("functional_area_name", ""),
+                learned.get("specialization", ""),
+                cand_degree
+            ]:
+                if text_source:
+                    for t in re.findall(r'\b[a-zA-Z]{3,}\b', str(text_source).lower()):
+                        domain_tokens.add(t)
+
+            for item in target_jobs.get("keywords", []) + target_jobs.get("recommended_titles", []):
+                for t in re.findall(r'\b[a-zA-Z]{3,}\b', str(item).lower()):
+                    domain_tokens.add(t)
+
             for s_list in taxonomy.values():
                 if isinstance(s_list, list):
                     for s in s_list:
-                        domain_skill_set.add(s.lower().strip())
-            for s in p_content.get("key_skills", []):
-                domain_skill_set.add(s.lower().strip())
-            for s in target_jobs.get("keywords", []):
-                domain_skill_set.add(s.lower().strip())
-            for s in skills_exp.keys():
-                domain_skill_set.add(s.lower().strip())
+                        for t in re.findall(r'\b[a-zA-Z0-9+#.]{2,}\b', str(s).lower()):
+                            domain_tokens.add(t)
 
-            core_domain_tokens = {
-                "finance", "financial", "accounting", "accounts", "account", "invoice", "invoicing",
-                "vendor", "payable", "receivable", "ap", "ar", "billing", "reconciliation",
-                "ledger", "audit", "auditing", "tax", "taxation", "gst", "tds", "tally", "excel",
-                "mis", "budgeting", "valuation", "fp&a", "reporting", "banking", "bfsi",
-                "ifc", "sox", "compliance", "controls", "r2r", "p2p", "o2c", "operations",
-                "commercial", "due", "diligence", "market", "research", "corporate"
-            }
+            for s in p_content.get("key_skills", []):
+                for t in re.findall(r'\b[a-zA-Z0-9+#.]{2,}\b', str(s).lower()):
+                    domain_tokens.add(t)
+
+            for s in skills_exp.keys():
+                for t in re.findall(r'\b[a-zA-Z0-9+#.]{2,}\b', str(s).lower()):
+                    domain_tokens.add(t)
 
             topic_tokens = set(re.findall(r'\b[a-zA-Z0-9+#.]+\b', queried_topic.lower()))
             is_domain_skill = (
                 matched_skill_val is not None
-                or any(t in core_domain_tokens for t in topic_tokens)
+                or (topic_tokens and any(t in domain_tokens for t in topic_tokens))
                 or any(t in resume_text.lower() for t in topic_tokens if len(t) > 2)
-                or (queried_topic and any(queried_topic.lower() in s or s in queried_topic.lower() for s in domain_skill_set))
             )
 
             if matched_skill_val is not None and matched_skill_val > 0:
@@ -1917,29 +1924,35 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
 
                 # Smartly draft factual response highlighting candidate's real internship and academic coursework
                 clean_topic_display = queried_topic.title() if queried_topic else "this domain"
-                if primary_company and cand_college:
-                    drafted = (
-                        f"1 year of practical exposure through corporate finance internship at {primary_company} "
-                        f"and {degree_short} coursework at {cand_college} covering {clean_topic_display}."
-                    )
-                elif primary_company:
-                    drafted = (
-                        f"1 year of practical exposure through corporate finance internship at {primary_company} "
-                        f"covering {clean_topic_display}."
-                    )
-                elif cand_college:
-                    drafted = (
-                        f"1 year of practical exposure through {degree_short} coursework and practical projects "
-                        f"at {cand_college} covering {clean_topic_display}."
-                    )
+                components = []
+                if primary_company:
+                    if primary_role:
+                        components.append(f"internship as {primary_role} at {primary_company}")
+                    else:
+                        components.append(f"internship at {primary_company}")
+
+                if cand_college:
+                    if cand_degree:
+                        components.append(f"{cand_degree} coursework at {cand_college}")
+                    else:
+                        components.append(f"academic coursework at {cand_college}")
+                elif cand_degree:
+                    components.append(f"{cand_degree} coursework")
+
+                if components:
+                    context_str = " and ".join(components)
+                    drafted = f"1 year of practical exposure through {context_str} covering {clean_topic_display}."
                 else:
                     drafted = f"1 year of practical exposure and academic training covering {clean_topic_display}."
 
-                if len(drafted) > 240:
-                    drafted = (
-                        f"1 year of practical exposure through internship at {primary_company} "
-                        f"and {degree_short} coursework at {cand_college}."
-                    )
+                if len(drafted) > 245:
+                    if primary_company and cand_college:
+                        drafted = f"1 year of practical exposure through {primary_company} internship and coursework at {cand_college} covering {clean_topic_display}."
+                    elif primary_company:
+                        drafted = f"1 year of practical exposure through {primary_company} internship covering {clean_topic_display}."
+                    else:
+                        drafted = f"1 year of practical exposure covering {clean_topic_display}."
+
                 return drafted
             else:
                 if options:
