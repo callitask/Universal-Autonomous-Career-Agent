@@ -42,15 +42,23 @@ else:
 ---
 
 ### STEP 1 — Cold-Start Context Load (Read First, Before ANY User Task)
-Read the following files to prime yourself with the Architect's cognitive state before responding to anything:
+Read the following files IN ORDER to prime yourself with the Architect's cognitive state before responding to anything:
 
-1. **`F:\JOB AI AGENT\Sophron\understanding_master\macro_synthesis\current_week_trend.md`**
-   → Instantly informs you of the user's recent trajectory, active decisions, and mood without token bloat.
+1. **`F:\JOB AI AGENT\Sophron\understanding_master\macro_synthesis\BOOT_SUMMARY.md`** ← READ THIS FIRST
+   → Compact 200-token orientation: last known state, open issues, critical rules, current context.
+   → This is the navigation index. It tells you what you are walking into without reading 5 separate files.
 
-2. **`F:\JOB AI AGENT\Sophron\SYSTEM_PROMPT_INJECTION.md`**
+2. **`F:\JOB AI AGENT\.agents\rules\SCAR_TISSUE.md`** ← READ THIS SECOND
+   → Empirical record of actual violations with exact corrections.
+   → This is failure memory. Pattern-match against it before taking any action.
+
+3. **`F:\JOB AI AGENT\Sophron\understanding_master\macro_synthesis\current_week_trend.md`**
+   → Chronological bullet log of the user's decisions and insights this week.
+
+4. **`F:\JOB AI AGENT\Sophron\SYSTEM_PROMPT_INJECTION.md`**
    → The 5 core axioms and global operational rules. Internalize fully.
 
-3. **`F:\JOB AI AGENT\Sophron\interaction_history\reflections_index.json`**
+5. **`F:\JOB AI AGENT\Sophron\interaction_history\reflections_index.json`**
    → Know how many turns have been analyzed. The `last_turn_file` field tells you what was the last TURN reflection saved.
 
 ---
@@ -82,13 +90,31 @@ At every significant milestone during the session, you MUST autonomously:
 
 #### 4a. Write a Multidimensional Insight Card
 - Path: `F:\JOB AI AGENT\Sophron\understanding_master\learned_insights\insight_<YYYYMMDD>_<slug>.json`
-- Schema (immutable — never overwrite, always create new):
+- Schema v2 (immutable — never overwrite, always create new):
 ```json
 {
   "insight_id": "insight_<YYYYMMDD>_<slug>",
   "temporal_anchor": "<ISO8601 timestamp>",
+  "schema_version": "2.0",
+
+  "CONTEXT_CLASSIFICATION": {
+    "data_subject": "<USER | AGENT_CAREER | AGENT_SOPHRON | PROFILE_ANSHIKA | PROFILE_UDAYSAGAR | PROJECT_NEW>",
+    "workspace_origin": "<career_agent | sophron_architecture | new_project_X | global>",
+    "rule_tier": "<UNIVERSAL_AXIOM | WORKSPACE_RULE | PROFILE_SPECIFIC | SESSION_SPECIFIC>",
+    "is_cross_project_applicable": "<true|false>",
+    "context_at_time_of_insight": "<Brief sentence: what were we doing/discussing when this insight arose>"
+  },
+
+  "CONTEXT_TRANSITION": {
+    "was_there_a_context_switch": "<true|false>",
+    "previous_context": "<What we were doing before this turn — null if no switch>",
+    "trigger_for_switch": "<What event/observation/user message caused the context change — null if no switch>",
+    "new_context": "<What we are now focused on — null if no switch>",
+    "cognitive_load_at_switch": "<low|medium|high — null if no switch>"
+  },
+
   "psychological_state": {
-    "mood": "<calm|frustrated|exploratory|decisive|...>",
+    "mood": "<calm|frustrated|exploratory|decisive|corrective|investigatory|visionary|...>",
     "cognitive_load": "<low|medium|high>",
     "decision_style": "<description of how the user made decisions this turn>"
   },
@@ -106,10 +132,17 @@ At every significant milestone during the session, you MUST autonomously:
   "long_term_application": {
     "future_implication": "<how this insight should change future agent behavior>",
     "workspace_scope": "<which workspace(s) this applies to>",
+    "cross_project_note": "<if applicable: how this pattern appears in other projects — null otherwise>",
     "linked_insights": ["<insight_id_1>", "<insight_id_2>"]
   }
 }
 ```
+**CLASSIFICATION GUIDANCE**:
+- `data_subject`: Is this insight primarily about the USER's psychology? The CAREER AGENT system? The SOPHRON system? Or a specific candidate PROFILE? Always classify explicitly.
+- `rule_tier`: UNIVERSAL_AXIOM = applies in every workspace forever. WORKSPACE_RULE = applies only to this workspace. PROFILE_SPECIFIC = only for one candidate. SESSION_SPECIFIC = one-time context.
+- `is_cross_project_applicable`: Set true if you observe the same pattern in 2+ different workspaces/projects.
+- `was_there_a_context_switch`: Set true if the user's topic changed meaningfully since the last exchange. Record the trigger — this is how Sophron understands *why* the user shifted focus.
+
 
 #### 4b. Append to Macro Roll-Up
 - File: `F:\JOB AI AGENT\Sophron\understanding_master\macro_synthesis\current_week_trend.md`
@@ -156,11 +189,21 @@ print("graph_index.json rebuilt.")
 - Path: `F:\JOB AI AGENT\Sophron\interaction_history\turn_<NNNN>_turn-<NN>.json`
   - `<NNNN>` = zero-padded sequential file count
   - `<NN>` = the TURN number
-- Schema:
+- Schema v2:
 ```json
 {
   "turn_id": "TURN-<NN>",
   "timestamp": "<ISO8601>",
+  "schema_version": "2.0",
+  "data_subject": "<USER | AGENT_CAREER | AGENT_SOPHRON | PROFILE_ANSHIKA | PROFILE_UDAYSAGAR | PROJECT_NEW>",
+  "workspace_origin": "<career_agent | sophron_architecture | new_project_X | global>",
+  "context": "<One sentence: what we were working on at this turn>",
+  "context_transition": {
+    "was_there_a_context_switch": "<true|false>",
+    "previous_context": "<null if no switch>",
+    "trigger_for_switch": "<null if no switch>",
+    "new_context": "<null if no switch>"
+  },
   "user_intent": "<what the user was actually trying to accomplish>",
   "why_user_made_such_thinking": "<cognitive/psychological reason behind the request>",
   "why_user_performed_this_way": "<behavioral pattern or prior context driving this>",
@@ -309,3 +352,42 @@ This prevents two concurrent sessions writing the same insight twice (e.g. both 
 - Use plain `open()+json.dump()` for shared Sophron files (nodes.json, edges.json, graph_index.json, reflections_index.json) — always use `guard.safe_write_json()` to avoid race conditions
 - Skip `guard.register_session()` at start or `guard.deregister_session()` at end — the registry is how multi-session detection works
 - Skip the dedup check (`guard.is_duplicate_insight()`) before writing insight cards when multitasking is detected
+- Write insight/turn cards without the new `CONTEXT_CLASSIFICATION` and `CONTEXT_TRANSITION` fields (schema v2 required from 2026-09-14 onwards)
+- Forget to update `BOOT_SUMMARY.md` at session end — this is how context survives across sessions
+
+---
+
+## MID-SESSION COGNITIVE CHECKPOINT (Execute Silently Every 5 User Exchanges)
+
+This checkpoint fires automatically without user prompting. It takes under 10 seconds and zero user-visible output.
+
+1. **Re-read the active constraint block** (silently):
+   `F:\JOB AI AGENT\.agents\rules\ACTIVE_CONSTRAINT_BLOCK.md` — verify all 10 gates still apply to what you are about to do.
+
+2. **Sophron card audit**:
+   Have I written a Sophron insight or TURN card in the last 5 turns? If NO → write one now before proceeding.
+
+3. **Grounding check**:
+   Is my last response derived from: live DOM inspection, verified docs/, or resume.md? If I made any claim from memory alone → correct it now.
+
+4. **Context switch detection**:
+   Did the user's last message change the topic from the prior message? If YES → include `CONTEXT_TRANSITION` fields in the next Sophron card. Do NOT let a context switch go unrecorded.
+
+5. **PII / hardcoding check** (only if I just wrote or am about to write code):
+   Does the code I wrote or am about to write contain any candidate-specific literals? If YES → rewrite using ProfileContext dynamic resolution.
+
+---
+
+## SESSION END: BOOT_SUMMARY UPDATE (Mandatory)
+
+At the end of every session (before deregister_session()), update `BOOT_SUMMARY.md`:
+```
+F:\JOB AI AGENT\Sophron\understanding_master\macro_synthesis\BOOT_SUMMARY.md
+```
+Update the following fields:
+- **LAST KNOWN STATE**: reflect the final status of daemons, profiles, open work
+- **TOP OPEN ISSUES**: add any new issues discovered; mark resolved issues
+- **WHAT I AM WALKING INTO**: describe the context and user state at session end
+- **SOPHRON ARCHITECTURE STATE**: update node count, turn count, latest insight ID
+
+This ensures the next session cold-starts with accurate context in under 30 seconds.
