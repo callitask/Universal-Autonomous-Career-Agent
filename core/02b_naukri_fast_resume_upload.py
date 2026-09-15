@@ -21,6 +21,14 @@
 # Changes Made: Created dedicated headless worker page (new_page()) that navigates directly to mnjuser/profile, injects the latest tailored ATS PDF via input file upload, and immediately detaches.
 # Rationale: Reduced resume injection latency to < 15 seconds without modifying any profile text fields.
 # Preventative Notes: Always call upload_page.bring_to_front() and close the dedicated tab after upload to avoid polluting the user's primary browsing session.
+#
+# [ENTRY #002]
+# Term: [CODEBASE_PURITY_ENFORCEMENT]
+# Timestamp: 2026-09-15 16:03:27 +05:30
+# Issue / Context: Hardcoded 9222 CDP port fallback violated Rule 5.
+# Changes Made: Removed fallback.
+# Rationale: Ensure dynamic configuration.
+# Preventative Notes: Never hardcode these values again.
 # ================================================================================
 """
 ================================================================================
@@ -78,7 +86,7 @@ def run_fast_upload(profile_path: str):
         log(f"[!] Error reading search_manifest.json: {e}")
         return
 
-    cdp_url = config.get("candidate", {}).get("cdp_url", "http://127.0.0.1:9222")
+    cdp_url = config.get("candidate", {}).get("cdp_url", os.environ.get("CDP_URL"))
     resume_to_upload = None
 
     if manifest and isinstance(manifest, list) and len(manifest) > 0:

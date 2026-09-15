@@ -20,6 +20,14 @@
 # Changes Made: Hard-filtered search queries with f_AL=true (Easy Apply only) and f_TPR=r259200 (past 3 days).
 # Rationale: Guarantees 100% native in-platform application capability.
 # Preventative Notes: Never remove f_AL=true filter from LinkedIn search URL generation.
+#
+# [ENTRY #002]
+# Term: [CODEBASE_PURITY_ENFORCEMENT]
+# Timestamp: 2026-09-15 16:03:27 +05:30
+# Issue / Context: Hardcoded geographic location 'India' violated Rule 5.
+# Changes Made: Removed fallback.
+# Rationale: Locations must come from config.
+# Preventative Notes: Never hardcode these values again.
 # ================================================================================
 import time
 import re
@@ -30,7 +38,7 @@ class LinkedInScraper(JobBoardScraper):
     def build_urls(self):
         urls = []
         kw_str = quote_plus(" ".join(self.ctx.target_keywords[:4]))
-        for loc in (self.ctx.target_locations or ["India"]):
+        for loc in (self.ctx.target_locations or []):
             urls.append((f"https://www.linkedin.com/jobs/search/?f_AL=true&keywords={kw_str}&location={quote_plus(loc)}", loc))
         return urls
 

@@ -127,6 +127,37 @@
 # Changes Made: Calibrated is_pure_numeric to enforce integer format ('1' or '0') for explicit 'how many years' / 'years of experience' questions to satisfy portal regex validators, while preserving smart drafting text responses for descriptive, open-ended questions ('describe your experience', 'explain', etc.).
 # Rationale: Guarantees 100% submission pass rate across portal form validators while still leveraging smart drafting where text is expected.
 # Preventative Notes: Never submit sentence-length text to questions explicitly asking for 'how many years'.
+#
+# [ENTRY #015]
+# Term: [DISABILITY_SCREENING_HEURISTIC_GATE]
+# Timestamp: 2026-09-15 15:19:00 +05:30
+# Issue / Context: _heuristic_screening_answer() had no disability/PWD handler.
+#   Final blind fallback `if options: return options[0]` selected 'I have a disability'
+#   because it was options[0] in the chatbot list. Candidate was incorrectly declared
+#   as having a disability on a live job application.
+# Changes Made: Inserted explicit disability/PWD detector BEFORE the boolean Yes-No
+#   fallback (section 7) and the safe-default options[0] fallback (section 8).
+#   Reads `cand.get("has_disability", False)` from candidate_config.json.
+#   When False (field absent or False), picks the option that does NOT imply disability;
+#   tries "don't have", "do not have", "no disability", "none", "0%", "not applicable"
+#   sub-strings first; then picks the last option (industry convention: Yes=options[0], No=last);
+#   finally returns "0" for numeric disability-percentage questions.
+#   Also replaced hardcoded +3 year experience tolerance with dynamic max_experience_gap_years
+#   from target_jobs in candidate_config.json (default 2 if absent).
+# Rationale: Health/identity questions must never be guessed blindly. Default = No unless
+#   candidate explicitly declared has_disability: true in config. Fresher profiles need
+#   tighter experience gap gate; configurable gap prevents over-matching senior roles.
+# Preventative Notes: NEVER use options[0] as a blind fallback for identity or health
+#   questions. Always detect disability/PWD/health topic keywords and handle explicitly.
+#   NEVER hardcode experience gap tolerance — always read from candidate_config.json.
+#
+# [ENTRY #016]
+# Term: [CODEBASE_PURITY_ENFORCEMENT]
+# Timestamp: 2026-09-15 16:03:27 +05:30
+# Issue / Context: Hardcoded gemini model fallback violated Rule 5.
+# Changes Made: Removed fallback string for model.
+# Rationale: Ensure dynamic configuration.
+# Preventative Notes: Never hardcode these values again.
 # ================================================================================
 """
 ================================================================================
@@ -273,7 +304,7 @@ class AIClient:
             configured_model = self.profile_context.config.get("candidate", {}).get("gemini_model")
             if configured_model and str(configured_model).strip():
                 return str(configured_model).strip()
-        return os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
+        return os.environ.get("GEMINI_MODEL").strip()
 
     def load_platform_heuristics(self) -> Dict[str, Any]:
         """Loads shared global platform heuristics and merges profile-specific dynamic overrides."""
@@ -1074,10 +1105,15 @@ Return STRICTLY a JSON object:
             valid_exp_matches = [m for m in exp_matches if float(m[0]) <= max(20.0, cand_exp + 5.0)]
             if valid_exp_matches:
                 min_req_exp = float(valid_exp_matches[0][0])
-                if min_req_exp > cand_exp + 3:
+                # Read max_experience_gap_years from target_jobs config (default 2 if absent)
+                _max_gap = float(
+                    (self.profile_context.config.get("target_jobs", {}) if self.profile_context else {})
+                    .get("max_experience_gap_years", 2)
+                )
+                if min_req_exp > cand_exp + _max_gap:
                     return MatchResult(
                         score=0,
-                        reasoning=f"Rejected: Experience gap too wide for '{job_title}'. Role requires minimum {int(min_req_exp)} years, but candidate has {cand_exp} years (exceeds +3 year limit).",
+                        reasoning=f"Rejected: Experience gap too wide for '{job_title}'. Role requires minimum {int(min_req_exp)} years, but candidate has {cand_exp} years (exceeds +{_max_gap:.0f} year gap limit).",
                         matching_skills=[],
                         missing_skills=[f"Minimum {int(min_req_exp)} years experience"]
                     )
@@ -1139,6 +1175,23 @@ Return STRICTLY a JSON object:
                     matching_skills=[],
                     missing_skills=[f"Primary domain anchor ({', '.join(sample_anchors[:2])})"]
                 )
+
+        # 1.5.5 Strict Target Keyword Match
+        if target_keywords:
+            has_target = False
+            for tk in target_keywords:
+                tk_clean = str(tk).lower().strip()
+                if not tk_clean:
+                    continue
+                tokens = [t for t in re.split(r'[\s/,-]+', tk_clean) if len(t) > 2 and t not in generic_title_stopwords]
+                for tok in tokens:
+                    if re.search(rf'\b{re.escape(tok)}\b', title_lower) or desc_lower.count(tok) > 2:
+                        has_target = True
+                        break
+                if has_target:
+                    break
+            if not has_target:
+                return MatchResult(score=0, reasoning=f"Rejected: Role '{job_title}' does not strongly align with primary target keywords ({', '.join(target_keywords)}).", matching_skills=[], missing_skills=[f"Target Keyword Alignment ({target_keywords[0]})"])
 
         # 1.6 Portal Keyskills Advisory Signal (Rule C18 - Advisory Only)
         # Recruiter portal checkmarks are recorded as advisory signals, but never unilaterally disqualify.
@@ -1289,6 +1342,7 @@ Return STRICTLY a JSON object:
         # 2.4 Dual-Brain LLM Route (If Gemini API client is operational)
         if self.gemini_client:
             try:
+                primary_target_str = ", ".join(target_keywords[:3]) if target_keywords else "their target domain"
                 llm_prompt = f"""You are an elite talent recruiter evaluating whether a candidate genuinely qualifies for this job based on their ability to perform the work.
 CANDIDATE PROFILE:
 Current Title: {cand.get('current_title', '')}
@@ -1307,7 +1361,7 @@ EVALUATION CRITERIA:
 2. Factual Skill Match: Does candidate possess at least 60% of the core competencies/skills needed for this role? (0-35 points)
 3. Experience & Seniority Compatibility: Is the candidate's seniority level suitable for this role? (0-15 points)
 4. Domain & Title Alignment: (0-10 points)
-Passing threshold is strictly 60 points. If the candidate can perform the work and matches >= 60% skills, award 70-100 points. If the role requires a fundamentally different profession or technical vertical with 0 transferable background, score < 60.
+Passing threshold is strictly 60 points. CRITICAL RULE: The role MUST strongly align with the candidate's primary target domains ({primary_target_str}). If the primary technology/domain of the job does not match, or if it is an entry-level (I/II), infrastructure, or support role for a senior candidate, you MUST reject it immediately (score < 60). Think like a human: if it IS fundamentally an aligned role, 1 or 2 secondary technologies can be learned on the job or bypassed if the candidate's core responsibilities strongly align. Ensure to be intelligent and pragmatic while matching. If it is an aligned role and the candidate can perform the core work, award 70-100 points.
 
 OUTPUT FORMAT:
 Respond ONLY with a valid JSON object:
@@ -1361,8 +1415,9 @@ Description:
 
 QUALIFICATION CRITERIA:
 1. Job Description & Responsibilities Fit: Can this candidate perform the day-to-day duties and core work described in this JD based on their resume and experience?
-2. Does the role demand primary skills in non-matching domains or technologies where candidate has 0 background? If yes, score MUST be < 60.
-3. If genuine strong fit or >= 60% skills match, award 70-100 score. If inadequate fit or different primary domain/specialization, score must be < 60.
+2. CRITICAL RULE: The role MUST strongly align with the candidate's primary target domains (e.g. {', '.join(target_keywords[:3]) if target_keywords else cand_domain}). If the primary technology/domain of the job does not match, or if it is an entry-level (I/II), infrastructure, or support role for a senior candidate, score MUST be < 60.
+3. Think like a human: if it IS fundamentally an aligned role, 1 or 2 secondary technologies can be learned on the job or bypassed if the candidate's core responsibilities strongly align. Be intelligent and pragmatic while matching.
+4. If genuine strong fit for an aligned role, award 70-100 score. If inadequate fit, different primary domain, or junior/support role, score must be < 60.
 
 Return STRICTLY a JSON object:
 {{"score": <int 0-100>, "reasoning": "<concise explanation>", "matching_skills": [<skills>], "missing_skills": [<skills>]}}"""
@@ -2023,6 +2078,38 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 if matched:
                     return matched
             return str(expected_ctc) if expected_ctc else "0"
+
+        # 6b. DISABILITY / PWD / SPECIALLY-ABLED GATE
+        # Explicit handler must appear BEFORE generic boolean fallback and options[0] fallback.
+        # Reads has_disability from candidate_config.json; absent field = False (default: no disability).
+        # NEVER default to options[0] blindly for identity or health questions.
+        _disability_keys = [
+            "disability", "pwd", "specially abled", "differently abled",
+            "handicap", "impairment", "physically challenged",
+            "disability percentage", "type of disability", "kind of disability",
+            "health condition", "medical condition"
+        ]
+        if any(k in q_clean for k in _disability_keys):
+            declared_disability = bool(cand.get("has_disability", False))
+            if not declared_disability:
+                if options:
+                    # Prefer options that clearly state "no disability"
+                    _no_disability_markers = [
+                        "don't have", "do not have", "no disability",
+                        "none", "0%", "not applicable", "na", "n/a"
+                    ]
+                    for opt in options:
+                        if any(m in opt.lower() for m in _no_disability_markers):
+                            return opt
+                    # Fallback: return the option that does NOT imply having a disability
+                    for opt in options:
+                        opt_l = opt.lower().strip()
+                        if "have a disability" not in opt_l and not opt_l.startswith("yes"):
+                            return opt
+                    # Last resort: industry convention — "No" is typically the last option
+                    return options[-1]
+                # Numeric disability-percentage field (e.g. "disability percentage")
+                return "0"
 
         # 7. Boolean / Yes-No Fallback
         if options and len(options) == 2 and any(o.lower() in ["yes", "no"] for o in options):

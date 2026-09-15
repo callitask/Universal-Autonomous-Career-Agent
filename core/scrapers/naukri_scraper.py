@@ -20,6 +20,14 @@
 # Changes Made: Implemented dynamic SEO slugification ({kw}-jobs-in-{loc}) and URL fallback parameters.
 # Rationale: Direct portal URL access bypassing flaky search box input interaction.
 # Preventative Notes: Always clean punctuation from search keyword slugs.
+#
+# [ENTRY #002]
+# Term: [CODEBASE_PURITY_ENFORCEMENT]
+# Timestamp: 2026-09-15 16:03:27 +05:30
+# Issue / Context: Hardcoded geographic location 'india' violated Rule 5.
+# Changes Made: Removed fallback.
+# Rationale: Locations must come from config.
+# Preventative Notes: Never hardcode these values again.
 # ================================================================================
 import time
 import re
@@ -31,7 +39,7 @@ class NaukriScraper(JobBoardScraper):
         urls = []
         for kw in self.ctx.target_keywords[:3]:
             slug = "-".join(kw.lower().split())
-            for loc in (self.ctx.target_locations or ["india"]):
+            for loc in (self.ctx.target_locations or []):
                 loc_slug = loc.lower().replace(" ", "-")
                 urls.append((f"https://www.naukri.com/{slug}-jobs-in-{loc_slug}", loc, kw))
         return urls

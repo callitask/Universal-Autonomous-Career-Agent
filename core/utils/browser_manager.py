@@ -20,6 +20,14 @@
 # Changes Made: Built Playwright CDP browser manager attaching to active Chrome debug port (http://127.0.0.1:9222), reusing existing pages, and activating them via .bring_to_front().
 # Rationale: Preserves logged-in portal cookies and reduces memory consumption.
 # Preventative Notes: Never close the primary browser window; only close temporary worker tabs.
+#
+# [ENTRY #002]
+# Term: [CODEBASE_PURITY_ENFORCEMENT]
+# Timestamp: 2026-09-15 16:03:27 +05:30
+# Issue / Context: Hardcoded 9222 CDP port fallback violated Rule 5.
+# Changes Made: Removed default port args and rely on os.environ.
+# Rationale: Ensure dynamic configuration.
+# Preventative Notes: Never hardcode these values again.
 # ================================================================================
 """
 ================================================================================
@@ -42,8 +50,8 @@ class BrowserManager:
     Manages Playwright connection to an active Chrome instance via CDP.
     """
 
-    def __init__(self, cdp_url: str = "http://127.0.0.1:9222"):
-        self.cdp_url = cdp_url
+    def __init__(self, cdp_url: str = None):
+        self.cdp_url = cdp_url or os.environ.get("CDP_URL")
         self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -59,7 +67,7 @@ class BrowserManager:
             except Exception as e:
                 raise RuntimeError(
                     f"[BrowserManager] Failed to connect to Chrome at {self.cdp_url}. "
-                    f"Ensure Chrome is initialized with '--remote-debugging-port=9222'. Error: {e}"
+                    f"Ensure Chrome is initialized with the correct remote-debugging-port. Error: {e}"
                 )
 
         if self.browser.contexts:
@@ -94,7 +102,7 @@ class BrowserManager:
             pass
 
 
-def get_browser_context(cdp_url: str = "http://127.0.0.1:9222") -> BrowserContext:
+def get_browser_context(cdp_url: str = None) -> BrowserContext:
     """Functional helper for legacy cross-script invocations."""
     manager = BrowserManager(cdp_url=cdp_url)
     return manager.get_context()

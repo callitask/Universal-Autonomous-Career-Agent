@@ -20,6 +20,14 @@
 # Changes Made: Built completely standalone LinkedIn selective sync implementing independent DOM selectors and evaluation card generation under output/profile_sync/linkedin_cards/.
 # Rationale: Directive 5 (Portal Decoupling): Failure on one platform must never affect the other.
 # Preventative Notes: Never share browser tabs or selector logic between Naukri and LinkedIn engines.
+#
+# [ENTRY #002]
+# Term: [CODEBASE_PURITY_ENFORCEMENT]
+# Timestamp: 2026-09-15 16:03:27 +05:30
+# Issue / Context: Hardcoded 9222 CDP port fallback violated Rule 5.
+# Changes Made: Removed fallback.
+# Rationale: Ensure dynamic configuration.
+# Preventative Notes: Never hardcode these values again.
 # ================================================================================
 """
 ================================================================================
@@ -563,7 +571,7 @@ def run_sync(profile_path: Optional[str] = None):
     profile_content = config.get("profile_content", {})
     key_skills = profile_content.get("key_skills", [])
 
-    cdp_url = cand.get("cdp_url", "http://127.0.0.1:9222")
+    cdp_url = cand.get("cdp_url", os.environ.get("CDP_URL"))
     li_profile_url = cand.get("linkedin_profile_url", "")
     resume_text = ctx.resume_text
 
@@ -585,7 +593,7 @@ def run_sync(profile_path: Optional[str] = None):
         try:
             browser = p.chromium.connect_over_cdp(cdp_url)
         except Exception as e:
-            log(f"[!] CDP Connection Failed. Ensure Chrome is running on port 9222. Error: {e}")
+            log(f"[!] CDP Connection Failed. Ensure Chrome is running with correct CDP port. Error: {e}")
             return
 
         context = browser.contexts[0] if browser.contexts else browser.new_context()

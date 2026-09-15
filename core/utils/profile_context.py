@@ -44,6 +44,14 @@
 # Changes Made: Strictly isolated all dynamic runtime input and output to profiles/<profile_name>/, removed root logs_dump.txt write, guaranteed profiles/ directory auto-creation, and blocked profiles/ from git tracking.
 # Rationale: Guarantees candidate data is strictly contained within profiles/ and cannot be pushed to git.
 # Preventative Notes: Never write runtime output, logs, or state outside profiles/<profile_name>/.
+#
+# [ENTRY #005]
+# Term: [CODEBASE_PURITY_ENFORCEMENT]
+# Timestamp: 2026-09-15 16:03:27 +05:30
+# Issue / Context: Hardcoded Candidate name fallback and CDP ports violated Rule 5.
+# Changes Made: Replaced 'Candidate' with empty string. Removed 9222/9223 CDP fallbacks.
+# Rationale: Ensure dynamic configuration.
+# Preventative Notes: Never hardcode these values again.
 # ================================================================================
 """
 ================================================================================
@@ -606,7 +614,7 @@ class ProfileContext:
     @property
     def first_name(self) -> str:
         name = self.candidate_name.strip()
-        return name.split()[0] if name else "Candidate"
+        return name.split()[0] if name else ""
 
     @property
     def last_name(self) -> str:
@@ -615,9 +623,9 @@ class ProfileContext:
 
     @property
     def cdp_url(self) -> str:
-        configured = self.candidate.get("cdp_url", "http://127.0.0.1:9222")
+        configured = self.candidate.get("cdp_url", os.environ.get("CDP_URL"))
         # Fast health check with fallback auto-probe across standard ports (9222, 9223)
-        candidate_ports = [configured, "http://127.0.0.1:9222", "http://127.0.0.1:9223"]
+        candidate_ports = [configured] if configured else []
         seen = set()
         import urllib.request
         for url in candidate_ports:

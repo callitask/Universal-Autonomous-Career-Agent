@@ -66,6 +66,14 @@
 # Changes Made: Replaced single-parameter logic with a universal dictionary serializer that iterates through target_jobs.naukri_filters (or target_jobs.platform_filters.naukri), serializing any key-value pairs into query parameters (&{k}={v}). Expanded UI facet inspection to iterate over any candidate-configured semantic facets (facet_filters, department, functional_area_name, role_category, industry) to verify and click checkboxes dynamically.
 # Rationale: 100% universal and profile-agnostic. Any profile vertical (IT, Finance, HR, Marketing) can configure arbitrary portal filters without code changes in core/04_job_discovery.py.
 # Preventative Notes: Never hardcode platform-specific filter keys or values. Maintain generic serialization and dynamic DOM lookup.
+#
+# [ENTRY #008]
+# Term: [CODEBASE_PURITY_ENFORCEMENT]
+# Timestamp: 2026-09-15 16:03:27 +05:30
+# Issue / Context: Hardcoded parameters in discovery violated Rule 5.
+# Changes Made: Removed hardcoded times, companies, platforms, stopwords, ctc brackets, wfh params.
+# Rationale: Ensure dynamic configuration.
+# Preventative Notes: Never hardcode these values again.
 # ================================================================================
 """
 ================================================================================
@@ -259,7 +267,7 @@ def is_title_allowed(
             continue
         if neg_clean in title_lower if ' ' in neg_clean else re.search(rf'\b{re.escape(neg_clean)}\b', title_lower):
             # If negative keyword is a level/seniority term, allow through if title contains candidate domain skill
-            if neg_clean in {"senior", "lead", "manager", "assistant", "associate", "executive"}:
+            if neg_clean in set(target.get("seniority_passthrough_terms", [])):
                 cand_skills = []
                 if config:
                     for v in config.get("taxonomy_skills", {}).values():
@@ -271,7 +279,7 @@ def is_title_allowed(
             for cs in card_skills:
                 cs_lower = cs.lower().strip()
                 if neg_clean == cs_lower or re.search(rf'\b{re.escape(neg_clean)}\b', cs_lower):
-                    if neg_clean in {"senior", "lead", "manager", "assistant", "associate", "executive"}:
+                    if neg_clean in set(target.get("seniority_passthrough_terms", [])):
                         continue
                     return False
 
@@ -314,11 +322,7 @@ def is_title_allowed(
         return False
 
     stopwords = {
-        "and", "for", "the", "with", "lead", "senior", "junior", "manager",
-        "executive", "officer", "associate", "specialist", "staff", "principal",
-        "head", "director", "vp", "intern", "trainee", "expert", "consultant",
-        "general", "global", "regional", "assistant", "deputy", "group", "team",
-        "engineer", "developer", "engineering"
+        "and", "for", "the", "with"
     }
 
     # 3.2 Target Phrase Stem/Prefix Overlap
@@ -671,7 +675,7 @@ def run_batched_discovery(profile_path: str):
     negative_keywords = target.get("negative_keywords", [])
     negative_companies = [c.strip().lower() for c in target.get("negative_companies", []) if c and str(c).strip()]
     locations = target.get("locations", [])
-    platforms = [p.lower() for p in target.get("platforms", ["naukri"])]
+    platforms = [p.lower() for p in target.get("platforms", [])]
     max_applies = int(target.get("max_applies_per_day", 50))
     # Dynamic Experience Filter: If target_jobs.experience_years is explicitly configured >= 1, use it.
     # Otherwise, do NOT force URL experience parameter (avoids portal fresher/BPO dilution traps when experience=0)
@@ -701,45 +705,45 @@ def run_batched_discovery(profile_path: str):
         if nums:
             min_val = nums[0]
             if min_val >= 50:
-                ctc_param = "&ctcFilter=50to75"
+                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
             elif min_val >= 25:
-                ctc_param = "&ctcFilter=25to50"
+                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
             elif min_val >= 15:
-                ctc_param = "&ctcFilter=15to25"
+                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
             elif min_val >= 10:
-                ctc_param = "&ctcFilter=10to15"
+                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
             elif min_val >= 6:
-                ctc_param = "&ctcFilter=6to10"
+                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
             elif min_val >= 3:
-                ctc_param = "&ctcFilter=3to6"
+                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
             elif min_val > 0:
-                ctc_param = "&ctcFilter=0to3"
+                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
     elif cand.get("target_salary_min_lpa"):
         min_val = int(float(cand.get("target_salary_min_lpa", 0)))
         if min_val >= 50:
-            ctc_param = "&ctcFilter=50to75"
+            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
         elif min_val >= 25:
-            ctc_param = "&ctcFilter=25to50"
+            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
         elif min_val >= 15:
-            ctc_param = "&ctcFilter=15to25"
+            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
         elif min_val >= 10:
-            ctc_param = "&ctcFilter=10to15"
+            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
         elif min_val >= 6:
-            ctc_param = "&ctcFilter=6to10"
+            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
         elif min_val >= 3:
-            ctc_param = "&ctcFilter=3to6"
+            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
         elif min_val > 0:
-            ctc_param = "&ctcFilter=0to3"
+            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
             
     # Dynamic Candidate Preferences: Work Mode (WFH/Remote) & Direct Employers
     wfh_pref = str(target.get("work_mode") or target.get("wfh_type") or "").lower().strip()
     wfh_param = ""
     if "remote" in wfh_pref or "wfh" in wfh_pref:
-        wfh_param = "&wfhType=3"
+        wfh_param = f"&wfhType={target.get('wfh_type_id', '')}" if target.get("wfh_type_id") else ""
     elif "hybrid" in wfh_pref:
-        wfh_param = "&wfhType=2"
+        wfh_param = f"&wfhType={target.get('wfh_type_id', '')}" if target.get("wfh_type_id") else ""
     elif "office" in wfh_pref or "onsite" in wfh_pref:
-        wfh_param = "&wfhType=0"
+        wfh_param = f"&wfhType={target.get('wfh_type_id', '')}" if target.get("wfh_type_id") else ""
 
     direct_employers_only = target.get("direct_employers_only", False) or target.get("company_jobs_only", False)
     company_jobs_param = "&companyJobs=true" if direct_employers_only else ""
@@ -864,7 +868,7 @@ def run_batched_discovery(profile_path: str):
                             query_kw = urllib.parse.quote(clean_search_token(query_text))
                             query_loc = urllib.parse.quote(clean_search_token(primary_loc))
                             start_param = (page_num - 1) * 25
-                            query_url = f"https://www.linkedin.com/jobs/search/?keywords={query_kw}&location={query_loc}&f_AL=true&f_TPR=r259200&start={start_param}"
+                            query_url = f"https://www.linkedin.com/jobs/search/?keywords={query_kw}&location={query_loc}&f_AL=true&f_TPR=r{int(job_age_days * 86400)}&start={start_param}"
                             card_selector = "li.jobs-search-results__list-item, div.job-card-container"
                         else:
                             continue
@@ -1033,7 +1037,7 @@ def run_batched_discovery(profile_path: str):
                             ):
                                 continue
 
-                            # Negative Company Gating (e.g. TCS / Tata Consultancy Services)
+                            # Negative Company Gating (e.g. from config)
                             comp_lower = company.lower().strip()
                             if any(
                                 (nc in comp_lower if len(nc) > 3 else re.search(rf'\b{re.escape(nc)}\b', comp_lower))
