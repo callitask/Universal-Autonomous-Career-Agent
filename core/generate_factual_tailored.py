@@ -70,19 +70,19 @@ HTML_WRAPPER = """<!doctype html>
 <style>
   @page {
     size: A4;
-    margin: 8mm 10mm 8mm 10mm;
+    margin: 6mm 10mm 6mm 10mm;
   }
   body {
     font-family: 'Segoe UI', Calibri, Arial, Helvetica, sans-serif;
-    font-size: 8.8pt;
-    line-height: 1.32;
+    font-size: 8.3pt;
+    line-height: 1.26;
     color: #1a1a1a;
     margin: 0;
     padding: 0;
   }
   h1 {
-    font-size: 16pt;
-    margin: 0 0 2px 0;
+    font-size: 15pt;
+    margin: 0 0 1.5px 0;
     color: #0d233a;
     text-transform: uppercase;
     letter-spacing: 0.8px;
@@ -90,38 +90,39 @@ HTML_WRAPPER = """<!doctype html>
     font-weight: 700;
   }
   h2 {
-    font-size: 9.8pt;
-    margin: 6px 0 2.5px 0;
+    font-size: 9.4pt;
+    margin: 4.5px 0 2px 0;
     border-bottom: 1.2px solid #2b6cb0;
-    padding-bottom: 1.5px;
+    padding-bottom: 1px;
     text-transform: uppercase;
     color: #1a365d;
     font-weight: 700;
     letter-spacing: 0.3px;
   }
   h3 {
-    font-size: 9.2pt;
-    margin: 3.5px 0 1.5px 0;
+    font-size: 8.8pt;
+    margin: 3px 0 1px 0;
     color: #2d3748;
     font-weight: 600;
   }
   p {
-    margin: 2px 0 2.5px 0;
+    margin: 1.5px 0 2px 0;
   }
   h1 + p {
     text-align: center;
-    font-size: 8.2pt;
+    font-size: 8.0pt;
     color: #334155;
-    margin-bottom: 5px;
-    line-height: 1.3;
+    margin-bottom: 4px;
+    line-height: 1.25;
+    white-space: nowrap;
   }
   ul {
-    margin: 2px 0 3.5px 13px;
+    margin: 1.5px 0 2.5px 12px;
     padding: 0;
   }
   li {
-    margin-bottom: 1.8px;
-    line-height: 1.3;
+    margin-bottom: 1.2px;
+    line-height: 1.25;
   }
   strong {
     color: #0d233a;
@@ -433,7 +434,7 @@ class ResumeTailorEngine:
                         path=str(pdf_path),
                         format="A4",
                         print_background=True,
-                        margin={"top": "8mm", "bottom": "8mm", "left": "10mm", "right": "10mm"}
+                        margin={"top": "6mm", "bottom": "6mm", "left": "10mm", "right": "10mm"}
                     )
                     print(f"  [OK] Compiled ATS Tailored PDF (ATS Score: {ats_score}%): {folder.name}", flush=True)
                     job["tailored_pdf"] = str(pdf_path.resolve())

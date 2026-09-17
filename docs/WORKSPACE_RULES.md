@@ -224,6 +224,25 @@
     - Employment: `#lazyEmployment .emp-list` with `span.edit` -> `form#employmentForm` -> `textarea#jobDescription` -> cancel `form#employmentForm a.cancel-btn` -> save `button#submitEmployment`.
     Never target un-scoped generic `.edit` icons across the page.
 
+14. **Strategic Resume Tailoring Governance Standard:**
+    All resume generation across direct company portals and job engines must strictly adhere to [`docs/STRATEGIC_RESUME_TAILORING.md`](./STRATEGIC_RESUME_TAILORING.md):
+    - **Strategy Over Blind Keyword Stuffing**: Never blindly copy-paste text or buzzwords from the JD. Analyze the role archetype and align authentic candidate evidence.
+    - **Dual-Identity Principle**: Maintain the unified balance between Senior Architectural Leadership (quantifiable interview metrics, team management, IT governance, credential IDs) and Modern Hands-On AI Velocity (GitHub Copilot, prompt engineering, unit test synthesis).
+    - **Zero Truncation Rule**: Never collapse older roles (Navyug, Adobe, IBM) or internships into single vague lines to save space.
+    - **Strict 2-Page Budget**: Must compile to exactly 2 pages on A4 format with zero page spillover.
+    - **Single-Line Contact Header**: Candidate contact info (Phone, Email, Location, LinkedIn) MUST be rendered on **one single line** directly below the candidate's name (`**Phone:** +91-... | **Email:** ... | **Location:** ... | **LinkedIn:** ...`). Style with `white-space: nowrap;` and `8.0pt` to conserve vertical space and prevent multi-line header clutter.
+
+15. **Mandatory Section 1 Resume Upload & Page-by-Page Audit Hard Gate on Company ATS:**
+    When applying on enterprise ATS portals (Oracle Cloud HCM `CX_1001`, Workday, Greenhouse):
+    - **Upload Tailored Resume First**: Never advance past Section 1 without uploading the tailored resume PDF to `input.apply-flow-profile-import-awli__file-upload`.
+    - **Wait for Auto-Parse**: Must wait for `.apply-flow-profile-import-awli__success-message:has-text("Profile successfully imported.")` before inspecting or editing form fields.
+    - **Sequential Healing Across Sections**:
+      - **Section 1**: Audit Personal Details (Title: "Mr.", Name, Phone, Address, Official City: "Bengaluru, Karnataka", PIN: "560100", LinkedIn).
+      - **Section 2**: Answer disqualification questions; handle multiselect comboboxes via synthetic mouse events (`mousedown`, `mouseup`, `click`).
+      - **Section 3**: Inspect all 10 tiles. Heal missing Degree ("Fields to fix: 1" -> "Bachelor's Degree", "July 2015", "India", "Computer Science & Engineering"). For all 9 verified career roles, ensure Country ("India"), City ("Bangalore"/"Noida"/"Delhi"), Non-Internal ("No"), and bulleted achievements (`• `).
+      - **Section 4**: Verify supporting documents (Resume and Cover Letter both show green checkmarks and "REMOVE" buttons; click "Use" if pending). Verify Demographics and E-Signature.
+    - **Mandatory Submission Gate**: Always HALT on Section 4 before the `SUBMIT` button. Capture `submission_review_page.png` and save `answers.json`. Never click `SUBMIT` without human principal architect review.
+
 ---
 
 ## DIRECTIVE 6: LIVE LOGGING & RUNTIME TELEMETRY

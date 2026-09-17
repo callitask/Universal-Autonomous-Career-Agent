@@ -1,0 +1,1286 @@
+{
+  "detection": {
+    "platform_name": "oracle_cloud_hcm",
+    "platform_variant": "Oracle Cloud HCM Candidate Experience (ORC)",
+    "confidence": 1.0,
+    "url": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/210785498/apply/section/2",
+    "title": "Job Application Questions - Senior Lead Software Engineer - Java AWS Kafka Cassandra - JPMC Candidate Experience page Careers",
+    "honeypots_detected": 0,
+    "honeypot_identifiers": [],
+    "finger_class": "OracleCloudFinger"
+  },
+  "step_schema": {
+    "title": "Job Application Questions - Senior Lead Software Engineer - Java AWS Kafka Cassandra - JPMC Candidate Experience page Careers",
+    "url": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/210785498/apply/section/2",
+    "headings": [
+      "Work Summary",
+      "Senior Lead Software Engineer - Java AWS Kafka Cassandra application, step 2 of 4",
+      "Job application form",
+      "Import your profile",
+      "PERSONAL DETAILS",
+      "Address",
+      "Preferred Locations",
+      "Application Questions",
+      "Education",
+      "Experience",
+      "Resume or Additional Documents",
+      "Diversity Information",
+      "E-Signature",
+      "You're all set, Udaysagar!",
+      "Are You Still With Us?",
+      "Welcome Back"
+    ],
+    "inputs": [
+      {
+        "index": 0,
+        "tagName": "textarea",
+        "type": "textarea",
+        "name": "",
+        "id": "oda-work-summary-text-area|input",
+        "className": "oj-textarea-input oj-text-field-input oj-component-initnode",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "",
+        "value": "",
+        "checked": false,
+        "required": true,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:hidden; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 1,
+        "tagName": "input",
+        "type": "file",
+        "name": "",
+        "id": "",
+        "className": "apply-flow-profile-import-awli__file-upload",
+        "placeholder": "",
+        "ariaLabel": "Import your profile from resume",
+        "labelText": "Import your profile from resume",
+        "value": "",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:visible; opacity:0",
+        "is_honeypot": false
+      },
+      {
+        "index": 2,
+        "tagName": "input",
+        "type": "text",
+        "name": "firstName",
+        "id": "firstName-24",
+        "className": "input-row__control",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "First Name",
+        "value": "Udaysagar",
+        "checked": false,
+        "required": true,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:inline-block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 3,
+        "tagName": "input",
+        "type": "text",
+        "name": "middleNames",
+        "id": "middleNames-25",
+        "className": "input-row__control",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Middle Name",
+        "value": "",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:inline-block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 4,
+        "tagName": "input",
+        "type": "text",
+        "name": "lastName",
+        "id": "lastName-26",
+        "className": "input-row__control",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Last Name",
+        "value": "Kandpal",
+        "checked": false,
+        "required": true,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:inline-block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 5,
+        "tagName": "input",
+        "type": "email",
+        "name": "email",
+        "id": "email-27",
+        "className": "input-row__control communication-channel__email-control",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Email Address",
+        "value": "ukandpal2@gmail.com",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": true,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:visible; opacity:0.62",
+        "is_honeypot": false
+      },
+      {
+        "index": 6,
+        "tagName": "input",
+        "type": "text",
+        "name": "phoneNumber",
+        "id": "country-codes-dropdownphoneNumber",
+        "className": "cx-select-input \n                                \n                                \n                                \n                            ",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Phone Number",
+        "value": "+91",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:inline-block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 7,
+        "tagName": "input",
+        "type": "tel",
+        "name": "",
+        "id": "",
+        "className": "input-row__control phone-row__input",
+        "placeholder": "",
+        "ariaLabel": "Phone Number",
+        "labelText": "Phone Number",
+        "value": "9654258060",
+        "checked": false,
+        "required": true,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:inline-block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 8,
+        "tagName": "input",
+        "type": "text",
+        "name": "country",
+        "id": "country-21",
+        "className": "cx-select-input \n                                \n                                \n                                \n                            ",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Country\n            \n            *",
+        "value": "India",
+        "checked": false,
+        "required": true,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 9,
+        "tagName": "input",
+        "type": "text",
+        "name": "addressLine1",
+        "id": "addressLine1-29",
+        "className": "input-row__control",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Address Line 1",
+        "value": "103, SVR Pavithra, 12th Cross Road",
+        "checked": false,
+        "required": true,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:inline-block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 10,
+        "tagName": "input",
+        "type": "text",
+        "name": "addressLine2",
+        "id": "addressLine2-30",
+        "className": "input-row__control",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Address Line 2",
+        "value": "Ananath Nagar, Behind Dominos Anananth Nagar",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:inline-block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 11,
+        "tagName": "input",
+        "type": "text",
+        "name": "postalCode",
+        "id": "postalCode-31",
+        "className": "input-row__control",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Pin Code",
+        "value": "560100",
+        "checked": false,
+        "required": true,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:inline-block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 12,
+        "tagName": "input",
+        "type": "text",
+        "name": "city",
+        "id": "city-32",
+        "className": "cx-select-input \n                                cx-select-input--invalid\n                                \n                                \n                            ",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "City\n            \n            *",
+        "value": "",
+        "checked": false,
+        "required": true,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 13,
+        "tagName": "input",
+        "type": "text",
+        "name": "region2",
+        "id": "region2-33",
+        "className": "cx-select-input \n                                \n                                \n                                \n                            ",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "State\n            \n            *",
+        "value": "Karnataka",
+        "checked": false,
+        "required": true,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 14,
+        "tagName": "input",
+        "type": "text",
+        "name": "preferredLocations",
+        "id": "preferredLocations-20",
+        "className": "cx-multi-select-input \n                                \n                                \n                            ",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Preferred Location",
+        "value": "",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 15,
+        "tagName": "input",
+        "type": "text",
+        "name": "300052930132102",
+        "id": "300052930132102-19",
+        "className": "cx-multi-select-input \n                                \n                                \n                            ",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Do you have experience with any of the following programming languages? Choose your top 2.",
+        "value": "",
+        "checked": false,
+        "required": true,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": true,
+        "styleSnippet": "display:block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 16,
+        "tagName": "input",
+        "type": "file",
+        "name": "attachment-upload",
+        "id": "attachment-upload-4",
+        "className": "file-form-element__input upload-button",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Upload Cover Letter",
+        "value": "",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:visible; opacity:0",
+        "is_honeypot": false
+      },
+      {
+        "index": 17,
+        "tagName": "input",
+        "type": "url",
+        "name": "siteLink-1",
+        "id": "siteLink-1-22",
+        "className": "input-row__control",
+        "placeholder": "",
+        "ariaLabel": "Resume or Additional Documents Link 1",
+        "labelText": "Link 1",
+        "value": "https://linkedin.com/in/udaykandpal",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:inline-block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 18,
+        "tagName": "input",
+        "type": "text",
+        "name": "IN-STANDARD-ORA_ETHNICITY-STANDARD",
+        "id": "IN-STANDARD-ORA_ETHNICITY-STANDARD-6",
+        "className": "cx-select-input \n                                \n                                \n                                \n                            ",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Ethnicity",
+        "value": "Asian",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 19,
+        "tagName": "input",
+        "type": "text",
+        "name": "IN-STANDARD-ORA_GENDER-STANDARD",
+        "id": "IN-STANDARD-ORA_GENDER-STANDARD-7",
+        "className": "cx-select-input \n                                \n                                \n                                \n                            ",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Gender",
+        "value": "Male",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 20,
+        "tagName": "input",
+        "type": "text",
+        "name": "IN-DFF-indiaMilitaryStatus-ATTRIBUTE16",
+        "id": "IN-DFF-indiaMilitaryStatus-ATTRIBUTE16-8",
+        "className": "cx-select-input \n                                \n                                \n                                \n                            ",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Have you served in any of the below India Uniformed forces?",
+        "value": "No",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 21,
+        "tagName": "input",
+        "type": "text",
+        "name": "fullName",
+        "id": "fullName-5",
+        "className": "input-row__control",
+        "placeholder": "",
+        "ariaLabel": "",
+        "labelText": "Full Name",
+        "value": "Udaysagar Kandpal",
+        "checked": false,
+        "required": true,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:inline-block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      },
+      {
+        "index": 22,
+        "tagName": "textarea",
+        "type": "textarea",
+        "name": "",
+        "id": "oda-chat-user-text-input",
+        "className": "oda-chat-user-input oda-chat-disabled",
+        "placeholder": "Ask Me Something",
+        "ariaLabel": "",
+        "labelText": "Ask Me Something",
+        "value": "",
+        "checked": false,
+        "required": false,
+        "disabled": false,
+        "readOnly": false,
+        "isVisible": false,
+        "styleSnippet": "display:block; visibility:visible; opacity:1",
+        "is_honeypot": false
+      }
+    ],
+    "buttons": [
+      {
+        "index": 0,
+        "text": "Cancel",
+        "type": "",
+        "className": "app-dialog__close focused-tooltip",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 1,
+        "text": "Discard",
+        "type": "",
+        "className": "button app-dialog__footer-button",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 2,
+        "text": "Add Summary",
+        "type": "",
+        "className": "button app-dialog__footer-button",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 3,
+        "text": "Back to Job Details",
+        "type": "",
+        "className": "app-header-icon-button app-header__close",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 4,
+        "text": "Apply with",
+        "type": "button",
+        "className": "button apply-with-indeed-button__profile-import-block",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 5,
+        "text": "Resume",
+        "type": "button",
+        "className": "apply-flow-profile-import-awli__button",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 6,
+        "text": "Doctor",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 7,
+        "text": "Miss",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 8,
+        "text": "Mr.",
+        "type": "button",
+        "className": "cx-select-pill-section cx-select-pill-section--selected\n                                        ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 9,
+        "text": "Mrs.",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 10,
+        "text": "Ms.",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 11,
+        "text": "Edit email address",
+        "type": "button",
+        "className": "communication-channel__value-edit communication-channel__value-email-edit theme-color-1 focused-tooltip",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 12,
+        "text": "Remove value for the Country code field.",
+        "type": "button",
+        "className": "icon-clear focused-tooltip-left ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 13,
+        "text": "Open the drop-down list for Country code.",
+        "type": "button",
+        "className": "icon-dropdown-arrow ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 14,
+        "text": "Remove value for the Country field.",
+        "type": "button",
+        "className": "icon-clear focused-tooltip ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 15,
+        "text": "Open the drop-down list for Country.",
+        "type": "button",
+        "className": "icon-dropdown-arrow ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 16,
+        "text": "Open the drop-down list for City.",
+        "type": "button",
+        "className": "icon-dropdown-arrow ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 17,
+        "text": "Remove value for the State field.",
+        "type": "button",
+        "className": "icon-clear focused-tooltip ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 18,
+        "text": "Open the drop-down list for State.",
+        "type": "button",
+        "className": "icon-dropdown-arrow ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 19,
+        "text": "Open the drop-down list for Preferred Location.",
+        "type": "button",
+        "className": "icon-dropdown-arrow ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 20,
+        "text": "Remove 33436-JPMorgan Chase & Co Towers A ",
+        "type": "button",
+        "className": "cx-multi-select-pill__value-remove focused-tooltip-top",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 21,
+        "text": "Yes",
+        "type": "button",
+        "className": "cx-select-pill-section cx-select-pill-section--selected\n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 22,
+        "text": "No",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 23,
+        "text": "Yes",
+        "type": "button",
+        "className": "cx-select-pill-section cx-select-pill-section--selected\n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 24,
+        "text": "No",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 25,
+        "text": "Yes",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 26,
+        "text": "No",
+        "type": "button",
+        "className": "cx-select-pill-section cx-select-pill-section--selected\n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 27,
+        "text": "Yes",
+        "type": "button",
+        "className": "cx-select-pill-section cx-select-pill-section--selected\n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 28,
+        "text": "No",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 29,
+        "text": "Yes",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 30,
+        "text": "No",
+        "type": "button",
+        "className": "cx-select-pill-section cx-select-pill-section--selected\n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 31,
+        "text": "Yes",
+        "type": "button",
+        "className": "cx-select-pill-section cx-select-pill-section--selected\n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 32,
+        "text": "No",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 33,
+        "text": "No Prior Experience",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 34,
+        "text": "At least 1 year",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 35,
+        "text": "At least 2 years of experience",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 36,
+        "text": "At least 3 years of experience",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 37,
+        "text": "At least 5 years of experience",
+        "type": "button",
+        "className": "cx-select-pill-section cx-select-pill-section--selected\n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 38,
+        "text": "Applications Support/SRE/Devops",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 39,
+        "text": "Business Analysis",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 40,
+        "text": "Cybersecurity",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 41,
+        "text": "Data Engineering /Big Data/Data Science/AI&ML",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 42,
+        "text": "Infrastructure Development/Engineering",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 43,
+        "text": "Others/not listed above",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 44,
+        "text": "Product Management",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 45,
+        "text": "Project Execution/Scrum/Agile",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 46,
+        "text": "Quality Assurance/Testing",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 47,
+        "text": "Software Engineering",
+        "type": "button",
+        "className": "cx-select-pill-section cx-select-pill-section--selected\n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 48,
+        "text": "Fundamental",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 49,
+        "text": "Intermediate",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 50,
+        "text": "Advanced / Expert",
+        "type": "button",
+        "className": "cx-select-pill-section cx-select-pill-section--selected\n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 51,
+        "text": "C#/.NET",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 52,
+        "text": "Java Backend (Springboot, Hibernate, Microservices)",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 53,
+        "text": "Java Fullstack (Springboot, Hibernate, Microservices, React/Angular, Cloud)",
+        "type": "button",
+        "className": "cx-select-pill-section cx-select-pill-section--selected\n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 54,
+        "text": "Python (Django, Flask, Pandas, Numpy, FastAPI)",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 55,
+        "text": "UI/Frontend development (React, Angular, ReactNATIVE)",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 56,
+        "text": "Others/not listed above",
+        "type": "button",
+        "className": "cx-select-pill-section \n                                        ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 57,
+        "text": "Open the drop-down list for Do you have experience with any of the following programming languages?  Choose your top 2..",
+        "type": "button",
+        "className": "icon-dropdown-arrow ",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 58,
+        "text": "Remove JAVA\t",
+        "type": "button",
+        "className": "cx-multi-select-pill__value-remove focused-tooltip-top",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 59,
+        "text": "Remove SQL\t",
+        "type": "button",
+        "className": "cx-multi-select-pill__value-remove focused-tooltip-top",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 60,
+        "text": "Edit",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__edit-item-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 61,
+        "text": "Delete",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__delete-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 62,
+        "text": "Add Education",
+        "type": "button",
+        "className": "button apply-flow-profile-item-tile__new-tile",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 63,
+        "text": "Edit",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__edit-item-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 64,
+        "text": "Delete",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__delete-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 65,
+        "text": "Edit",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__edit-item-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 66,
+        "text": "Delete",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__delete-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 67,
+        "text": "Edit",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__edit-item-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 68,
+        "text": "Delete",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__delete-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 69,
+        "text": "Edit",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__edit-item-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 70,
+        "text": "Delete",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__delete-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 71,
+        "text": "Edit",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__edit-item-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 72,
+        "text": "Delete",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__delete-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 73,
+        "text": "Edit",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__edit-item-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 74,
+        "text": "Delete",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__delete-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 75,
+        "text": "Edit",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__edit-item-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 76,
+        "text": "Delete",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__delete-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 77,
+        "text": "Edit",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__edit-item-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 78,
+        "text": "Delete",
+        "type": "",
+        "className": "apply-flow-profile-item-tile__delete-icon",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 79,
+        "text": "Add Experience",
+        "type": "button",
+        "className": "button apply-flow-profile-item-tile__new-tile",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 80,
+        "text": "Udaysagar_Kandpal_Resume.pdf",
+        "type": "button",
+        "className": "attachment-upload-button__download",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 81,
+        "text": "Remove",
+        "type": "button",
+        "className": "attachment-upload-button__bottom-button",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 82,
+        "text": "Add Another Link",
+        "type": "button",
+        "className": "candidate-links__add-link theme-color-1",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 83,
+        "text": "Remove value for the Ethnicity field.",
+        "type": "button",
+        "className": "icon-clear focused-tooltip ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 84,
+        "text": "Open the drop-down list for Ethnicity.",
+        "type": "button",
+        "className": "icon-dropdown-arrow ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 85,
+        "text": "Remove value for the Gender field.",
+        "type": "button",
+        "className": "icon-clear focused-tooltip ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 86,
+        "text": "Open the drop-down list for Gender.",
+        "type": "button",
+        "className": "icon-dropdown-arrow ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 87,
+        "text": "Remove value for the Have you served in any of the below India Uniformed forces? field.",
+        "type": "button",
+        "className": "icon-clear focused-tooltip ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 88,
+        "text": "Open the drop-down list for Have you served in any of the below India Uniformed forces?.",
+        "type": "button",
+        "className": "icon-dropdown-arrow ",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 89,
+        "text": "BACK",
+        "type": "button",
+        "className": "button apply-flow-pagination__button text-color-secondary",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 90,
+        "text": "NEXT",
+        "type": "button",
+        "className": "button apply-flow-pagination__button theme-color-1 focused-tooltip",
+        "disabled": false,
+        "isVisible": true
+      },
+      {
+        "index": 91,
+        "text": "End Session",
+        "type": "",
+        "className": "button app-dialog__footer-button end-session-button",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 92,
+        "text": "Continue Working",
+        "type": "",
+        "className": "button app-dialog__footer-button theme-color-1",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 93,
+        "text": "Close",
+        "type": "",
+        "className": "app-dialog__close focused-tooltip",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 94,
+        "text": "Use My Profile",
+        "type": "",
+        "className": "button app-dialog__footer-button",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 95,
+        "text": "Import Profile from Indeed",
+        "type": "",
+        "className": "button app-dialog__footer-button theme-color-1 import-indeed-button",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 96,
+        "text": "",
+        "type": "button",
+        "className": "oda-chat-icon oda-chat-header-button oda-chat-flex",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 97,
+        "text": "",
+        "type": "button",
+        "className": "oda-chat-icon oda-chat-header-button oda-chat-flex",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 98,
+        "text": "",
+        "type": "button",
+        "className": "oda-chat-icon oda-chat-footer-button oda-chat-flex oda-chat-button-send oda-chat-none",
+        "disabled": true,
+        "isVisible": false
+      },
+      {
+        "index": 99,
+        "text": "",
+        "type": "button",
+        "className": "oda-chat-icon oda-chat-header-button oda-chat-webview-button-close oda-chat-flex",
+        "disabled": false,
+        "isVisible": false
+      },
+      {
+        "index": 100,
+        "text": "",
+        "type": "button",
+        "className": "oda-chat-button oda-chat-flex focused-tooltip-top",
+        "disabled": false,
+        "isVisible": false
+      }
+    ],
+    "detected_step": "unknown",
+    "platform": "oracle_cloud_hcm"
+  },
+  "timestamp": "2026-09-17 10:53:50"
+}

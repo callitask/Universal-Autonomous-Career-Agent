@@ -1,0 +1,24 @@
+{
+  "company_name": "JPMorgan Chase",
+  "portal_type": "oracle_cloud_hcm",
+  "site_code": "CX_1001",
+  "base_jobs_url": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs",
+  "selectors": {
+    "keyword_input": "#keyword",
+    "location_input": "#location",
+    "search_button": "button[aria-label='Search for Jobs']",
+    "job_tile": ".job-tile.job-grid-item.search-results",
+    "job_link": "a[href*='/job/']",
+    "job_title": ".job-tile__title, h2, h3, a.job-title, [class*='job-title']",
+    "job_location": ".job-tile__header--job-info-tags, .job-tile__location, [class*='location']",
+    "job_snippet": ".job-tile__snippet, [class*='description']",
+    "apply_button": "button:has-text('APPLY NOW'), a:has-text('APPLY NOW'), button.job-details__apply-button, button[class*='apply'], a[href*='apply']",
+    "detail_description": ".job-details__description, [class*='job-description']",
+    "detail_title": "h1",
+    "detail_subtitle": ".job-details__subtitle"
+  },
+  "default_filters": {
+    "category": "Software Engineering",
+    "location": "Bengaluru, Karnataka, India"
+  }
+}

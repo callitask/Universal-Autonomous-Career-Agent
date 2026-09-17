@@ -1,0 +1,22 @@
+{
+  "detection": {
+    "platform_name": "generic_adaptive",
+    "platform_variant": "Generic Adaptive Career Portal",
+    "confidence": 0.1,
+    "url": "chrome://new-tab-page/",
+    "title": "New Tab",
+    "honeypots_detected": 0,
+    "honeypot_identifiers": [],
+    "finger_class": "GenericAdaptiveFinger"
+  },
+  "step_schema": {
+    "title": "New Tab",
+    "url": "chrome://new-tab-page/",
+    "headings": [],
+    "inputs": [],
+    "buttons": [],
+    "detected_step": "adaptive_form_step",
+    "platform": "generic_adaptive"
+  },
+  "timestamp": "2026-09-17 10:48:47"
+}
