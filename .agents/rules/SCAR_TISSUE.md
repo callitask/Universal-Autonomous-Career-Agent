@@ -1,4 +1,4 @@
-﻿# SCAR TISSUE LOG - Append Only. Never Delete. Never Edit Prior Entries.
+# SCAR TISSUE LOG - Append Only. Never Delete. Never Edit Prior Entries.
 # Purpose: Empirical record of actual rule violations + exact corrections.
 #          This is more powerful than WORKSPACE_RULES.md because it is concrete, not abstract.
 #          Every entry is a scar from a real failure. Re-read at every session start.
@@ -61,6 +61,22 @@
 - **What happened**: User shifted context mid-session from monitoring the live job agent daemon to discussing Sophron architecture + rule enforcement. The Sophron card written after this did NOT record that a context switch occurred, why it occurred, or what the previous context was.
 - **Correct behavior**: Every insight card written after a context switch must include CONTEXT_TRANSITION fields: previous_context, trigger_for_switch, new_context, cognitive_load_at_switch.
 - **Never repeat**: If the user's message represents a topic change from the prior message - flag it. Include CONTEXT_TRANSITION in that card. This is how Sophron builds a true workflow record.
+
+---
+
+## [2026-09-17] SCREENING QUESTION KEYWORD LISTS HARDCODED IN PYTHON
+- **File**: `core/ai_client.py` → `_heuristic_screening_answer()` and `_is_standard_screening_query()`
+- **What happened**: 14+ Python literal lists (notice period triggers, relocation keywords, interview mode keywords, numeric question triggers, exclusions, etc.) were hardcoded inline in `ai_client.py`. The list `["describe","explain","projects",...]` in `numeric_question_exclusions` contained `"projects"`, blocking the question `"How many years of BFSI projects?"` from routing to the integer answer path.
+- **Correct behavior**: ALL screening question keyword lists MUST reside in `candidate_config.json["screening_heuristics"]`. Python reads them via `sh = cfg.get("screening_heuristics", {})` then `sh.get("key", [])`. Zero literals permitted. `"projects"` must be ABSENT from `numeric_question_exclusions`.
+- **Never repeat**: Before adding ANY `if any(k in q_clean for k in [...])` literal list in `ai_client.py` — STOP. Add the list as a new key in `screening_heuristics` in both config files and read it via `sh.get()`.
+
+---
+
+## [2026-09-17] HARDCODED "internship" IN EXPERIENCE FALLBACK TEMPLATE
+- **File**: `core/ai_client.py` → `_heuristic_screening_answer()` Section 5 draft text (×4 occurrences)
+- **What happened**: The fallback text template used the literal word `"internship"` when building experience descriptions. This caused the live bug where a Senior Associate at Cognizant (full-time employment) was described as `"internship as Senior Associate at Cognizant"` — factually wrong and professionally damaging on live job applications.
+- **Correct behavior**: The template label word must be `sh.get("fallback_text_label", "experience")`. Config value = `"experience"`. Template: `f"{_exp_label} as {primary_role} at {primary_company}"`.
+- **Never repeat**: Never hardcode the word `"internship"` (or any career level label) in Python templates. If the label needs to change per candidate, it lives in config.
 
 ---
 # INSTRUCTIONS FOR ADDING NEW ENTRIES:

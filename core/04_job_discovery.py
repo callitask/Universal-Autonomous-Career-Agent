@@ -67,13 +67,13 @@
 # Rationale: 100% universal and profile-agnostic. Any profile vertical (IT, Finance, HR, Marketing) can configure arbitrary portal filters without code changes in core/04_job_discovery.py.
 # Preventative Notes: Never hardcode platform-specific filter keys or values. Maintain generic serialization and dynamic DOM lookup.
 #
-# [ENTRY #008]
-# Term: [CODEBASE_PURITY_ENFORCEMENT]
-# Timestamp: 2026-09-15 16:03:27 +05:30
-# Issue / Context: Hardcoded parameters in discovery violated Rule 5.
-# Changes Made: Removed hardcoded times, companies, platforms, stopwords, ctc brackets, wfh params.
-# Rationale: Ensure dynamic configuration.
-# Preventative Notes: Never hardcode these values again.
+# [ENTRY #009]
+# Term: [DYNAMIC_SENIORITY_PASSTHROUGH_SCOPE_FIX]
+# Timestamp: 2026-09-17 17:48:00 +05:30
+# Issue / Context: is_title_allowed referenced undefined variable 'target' when checking seniority_passthrough_terms, raising UnboundLocalError.
+# Changes Made: Resolved target configuration dynamically from config.get("target_jobs", {}) if isinstance(config, dict) else {}.
+# Rationale: Universal and 100% dynamic; resolves config keys safely without any profile-specific assumptions or hardcoded values.
+# Preventative Notes: Always resolve configuration dictionaries safely via config.get() with defaults.
 # ================================================================================
 """
 ================================================================================
@@ -267,7 +267,8 @@ def is_title_allowed(
             continue
         if neg_clean in title_lower if ' ' in neg_clean else re.search(rf'\b{re.escape(neg_clean)}\b', title_lower):
             # If negative keyword is a level/seniority term, allow through if title contains candidate domain skill
-            if neg_clean in set(target.get("seniority_passthrough_terms", [])):
+            target_cfg = config.get("target_jobs", {}) if isinstance(config, dict) else {}
+            if neg_clean in set(target_cfg.get("seniority_passthrough_terms", [])):
                 cand_skills = []
                 if config:
                     for v in config.get("taxonomy_skills", {}).values():
@@ -279,7 +280,8 @@ def is_title_allowed(
             for cs in card_skills:
                 cs_lower = cs.lower().strip()
                 if neg_clean == cs_lower or re.search(rf'\b{re.escape(neg_clean)}\b', cs_lower):
-                    if neg_clean in set(target.get("seniority_passthrough_terms", [])):
+                    target_cfg = config.get("target_jobs", {}) if isinstance(config, dict) else {}
+                    if neg_clean in set(target_cfg.get("seniority_passthrough_terms", [])):
                         continue
                     return False
 

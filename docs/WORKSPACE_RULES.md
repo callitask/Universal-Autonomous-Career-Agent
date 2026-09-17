@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: WORKSPACE DEVELOPMENT & CODING RULES
 
-> **Document Version:** 3.1 — Post-Empirical DOM Reverse-Engineering & Telemetry Integration  
-> **Last Updated:** 2026-09-09  
+> **Document Version:** 3.2 — Zero-Hardcoding Screening Heuristics Purge + `screening_heuristics` Config Schema Enforced  
+> **Last Updated:** 2026-09-17  
 > **Authority:** These rules are ABSOLUTE and OVERRIDE all model defaults. Violations cause runtime crashes, data corruption, phantom applications, or account bans.  
 > **Workspace Root:** `F:\JOB AI AGENT`
 
@@ -26,14 +26,14 @@
    * `profiles/<profile_name>/resume.md`
 4. **Dynamic Directory Resolution:** The engine must automatically locate the active candidate profile directory from command-line arguments (`--profile`) or dynamically scan `profiles/` for existing candidate configurations without hardcoded fallback strings.
 5. **Isolated Output Paths:** All outputs (tailored resumes, PDF packages, trackers, search manifests, and screenshots) must write strictly to `profiles/<profile_name>/output/`.
-6. **No Hardcoded Regex Intercepts for Screening Questions:** Never match questions like `"notice period"`, `"experience"`, `"CTC"` to hardcoded numeric values. Every screening question must be routed through: exact cache match in `auto_learned_truths` → AI model analysis → terminal fallback. No shortcuts.
+6. **No Hardcoded Regex Intercepts or Question-Detection Keyword Lists:** Never match questions like `"notice period"`, `"experience"`, `"CTC"` to hardcoded numeric values, and never embed keyword detection lists (notice period triggers, relocation keywords, interview mode keywords, experience triggers, numeric question triggers, numeric exclusions, intern designation markers, fallback text labels) as Python literals in `core/*.py` or `scripts/*.py`. Every screening question keyword list MUST reside in the `"screening_heuristics"` section of `candidate_config.json`. Python reads them exclusively via `sh = cfg.get("screening_heuristics", {})` and `sh.get("key", [])`. Violations cause `verify_codebase_purity()` to halt the runtime.
 7. **No Hardcoded Model Names as Constants:** Model identifiers (e.g., `gemini-2.5-flash`) must be configurable via `candidate_config.json` (`gemini_model`) or environment variables (`GEMINI_MODEL`).
 8. **Zero-Hardcoding via Cognitive Profile Synthesis & AG Brain Push-Start:** Never hardcode domain words, vertical dictionaries, soft skill sets, role templates, seniority prefixes, or experience threshold branches (`if exp >= N:`) in Python code. Python scripts act strictly as an execution actuator / browser medium between job portals and the AG Brain. The AG Brain is the sole decider and talent strategist. At session start, the AG Brain analyzes the candidate's complete profile and push-starts `candidate_config.json` with high-yield target roles, recommended titles, and skills. All domain models, core vs. soft skill taxonomies, domain acronyms, and multi-cycle designation queues are synthesized dynamically by `AIClient.synthesize_cognitive_profile()` or read from `candidate_config.json`. Out-of-domain vertical checks and search cycles must read strictly from the candidate's cognitive profile.
 9. **Strict Developer Boundary vs. Runtime Sandbox Separation:**
    - **Developer Role:** In any development session, the AI assistant acts strictly as the **Principal Agent Developer**, modifying only the engine code (`core/`), documentation (`docs/`), utilities (`core/utils/`), and test harnesses.
    - **Hands Off `profiles/`:** The developer must **NEVER manually edit files inside the `profiles/` directory** (including `candidate_config.json`, `resume.md`, or candidate sandboxes).
    - **Autonomous Runtime Adaptation:** The agent code must be engineered so that **when the agent runs**, the agent itself autonomously and smartly reads, synthesizes, adapts, and updates candidate data (e.g. `cognitive_profile.json`, `processed_ledger.json`, `auto_learned_truths`, and `recommended_titles`) at runtime without human or developer manual file patching.
-10. **Guardrail P1 (Zero-Trust Codebase Purity Enforcer):** The `ProfileContext` class runs `ctx.verify_codebase_purity()` automatically on instantiation and pre-flight startup. It inspects all files under `core/*.py` and `scripts/*.py` to mathematically verify that zero candidate PII, candidate names, compensation values, hardcoded user paths (`C:\Users\...`), or hardcoded profile paths exist in code. Any purity violation triggers a fatal runtime halt (`CodebasePurityViolationError`).
+10. **Guardrail P1 (Zero-Trust Codebase Purity Enforcer):** The `ProfileContext` class runs `ctx.verify_codebase_purity()` automatically on instantiation and pre-flight startup. It inspects all files under `core/*.py` and `scripts/*.py` to mathematically verify that zero candidate PII, candidate names, compensation values, hardcoded user paths (`C:\Users\...`), or hardcoded profile paths exist in code. Additionally, no inline question-detection keyword lists (patterns used to detect notice period, relocation, interview, experience, or numeric answer questions) may exist as Python literals — they must reside in `candidate_config.json["screening_heuristics"]`. Any purity violation triggers a fatal runtime halt (`CodebasePurityViolationError`).
 
 ---
 
@@ -452,6 +452,22 @@ https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}-{page_num}?experience={ex
    - `Rationale`: Why this specific solution was chosen.
    - `Preventative Notes / Do Not Repeat`: Explicit guidance on what failed or was reverted, preventing future AI circular regressions.
 4. **Candidate-Agnostic / Zero-PII Invariant:** Never record personal candidate names, emails, phones, CTC amounts, or candidate-specific titles in the AI Context header. Only record generic, architectural, DOM, and engineering issues.
+
+
+### C26: `screening_heuristics` Config-Driven Keyword Lists (Zero-Literals Rule)
+**Rule:**
+1. **Never write question-detection keyword lists as Python literals in `ai_client.py`.** All keyword lists used to detect screening question categories (notice period, relocation willingness, interview mode, communication skills, total experience, skill/role experience, numeric format detection, numeric exclusions) MUST be stored in `candidate_config.json["screening_heuristics"]`.
+2. **Python reads only via:** `sh = cfg.get("screening_heuristics", {})` then `sh.get("key_name", [])`. No other access pattern is acceptable.
+3. **`intern_designation_markers`** replaces the literal `"intern" in desig.lower()` check. The config list controls which designation substrings mark a role as an internship. Default: `["intern", "trainee", "apprentice", "graduate trainee"]`.
+4. **`fallback_text_label`** controls the display word in experience draft templates. Must be `"experience"` (never `"internship"`). Causes the hallucination `"internship as Senior Associate at Cognizant"` if set wrong or read from hardcode.
+5. **`numeric_question_exclusions` MUST NOT contain `"projects"`.** The word `"projects"` as an exclusion blocks BFSI domain questions (`"How many years of BFSI projects?"`) from resolving to numeric integers, producing a wrong text answer instead.
+6. Every new candidate config (`profiles/<profile>/candidate_config.json`) MUST include the full `screening_heuristics` section. `profiles/default_user/candidate_config.json` is the canonical schema blueprint.
+
+### C27: Screening Fallback Template — Factual Experience Label Protocol
+**Rule:**
+1. When `_heuristic_screening_answer()` builds a free-text experience description for skill questions, the label word (e.g. "experience", "exposure") must come from `sh.get("fallback_text_label", "experience")`.
+2. The label `"internship"` is categorically prohibited as a hardcoded string in this template. Using it caused the live bug: `"1 year of practical exposure through internship as Senior Associate at Cognizant"` — a factually incorrect answer that misrepresented full-time work experience as an internship.
+3. The template now reads: `f"{_exp_label} as {primary_role} at {primary_company}"` where `_exp_label = sh.get("fallback_text_label", "experience")`.
 
 
 ---

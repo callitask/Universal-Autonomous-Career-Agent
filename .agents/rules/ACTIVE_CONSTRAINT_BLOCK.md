@@ -1,11 +1,11 @@
-﻿# ACTIVE CONSTRAINT BLOCK - Read Before Every Action (Non-Negotiable)
-# Version: 1.0 | Loaded: auto (global + workspace)
+# ACTIVE CONSTRAINT BLOCK - Read Before Every Action (Non-Negotiable)
+# Version: 1.1 | Updated: 2026-09-17 | Loaded: auto (global + workspace)
 # Token budget: ~200 tokens. Purposely minimal. Do NOT expand.
 
 ## 10 HARD GATES - Verify ALL before proceeding with any action:
 
 [GATE 1 - CODEBASE PURITY]
-Zero candidate PII in core/*.py or scripts/*.py. Names, emails, phones, CTCs, cities, model IDs, Windows user paths - ALL must resolve from candidate_config.json via ProfileContext. If you are about to write a literal string that belongs to a candidate, STOP and use dynamic resolution.
+Zero candidate PII in core/*.py or scripts/*.py. Names, emails, phones, CTCs, cities, model IDs, Windows user paths - ALL must resolve from candidate_config.json via ProfileContext. ALSO: Zero inline question-detection keyword lists (any `for k in ["notice period", ...]` or `for k in ["describe", ...]` literal lists in ai_client.py). ALL keyword lists live in candidate_config.json["screening_heuristics"] — read via sh.get(). If you are about to write any literal keyword list, STOP and add it to screening_heuristics config instead.
 
 [GATE 2 - FILE WRITE PRE-CHECK]
 Before editing ANY file in core/ or scripts/, read that file's # AI CONTEXT & CHANGE LOG header first. Then append a new entry when done. Never delete prior entries.

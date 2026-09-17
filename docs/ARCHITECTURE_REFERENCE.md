@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: ARCHITECTURE REFERENCE
 
-> **Document Version:** 3.0 — Post-Phase 1-4 Remediation Complete  
-> **Last Updated:** 2026-09-03  
+> **Document Version:** 4.0 — Zero-Hardcoding Screening Heuristics Purge  
+> **Last Updated:** 2026-09-17  
 > **Purpose:** Comprehensive technical reference for the complete pipeline — how every module works, data flows, inter-process communication, DOM interaction patterns, and the chatbot reverse-engineering protocol. Upload this alongside `WORKSPACE_RULES.md` to ground the AI's understanding of the system before any coding session.
 
 ---
@@ -81,7 +81,7 @@ continuous_career_agent.py (daemon loop)
 | `arbitrate_card_fit(...)` | Tier 2B Cognitive Card Arbitration (SRP) | Evaluates unfamiliar roles, dynamic acronyms, and card skills $\rightarrow$ Gemini / Heuristics against `cognitive_profile.json` |
 | `analyze_and_expand_designations(...)` | Tier 4 Autonomous Starvation Recovery | Analyzes `resume.md` + experience + seen market titles $\rightarrow$ Auto-enriches `candidate_config.json` |
 | `evaluate_profile_experience(...)` | Compares live card description with source of truth | Gemini / Heuristics → returns action decision & optimal text |
-| `answer_screening_question(...)` | Resolves chatbot questions | Exact cache (`auto_learned_truths`) → Gemini API → File IPC polling |
+| `answer_screening_question(...)` | Resolves chatbot questions | Exact cache (`auto_learned_truths`) → Gemini API → Config-driven heuristic (`_heuristic_screening_answer` reads all keyword lists from `screening_heuristics` in `candidate_config.json`) → File IPC polling |
 | `_best_option_match(...)` | Maps freeform answer to UI choices | Exact → word-boundary (`\b`) → numeric → boolean → `None` (H1/H2 compliant) |
 | `_persist_learned_truth(...)` | Caches verified answers to config | Atomic via `ProfileContext.save_config()` (`.tmp` + `os.replace`) |
 | `_fallback_antigravity_ipc(...)` | AG 2.0 Handshake Hook | Writes `pending_question.json` and polls until AG 2.0 fills the `"answer"` key |
@@ -94,7 +94,7 @@ continuous_career_agent.py (daemon loop)
   - Explanatory notes are automatically appended to `reasoning` (e.g., `[Naukri Portal Verified: Keyskills & Exp Match (+10%), Early Applicant, Location Match]`).
   - Active portal flags are injected into both the Gemini LLM prompt and the Antigravity 2.0 IPC prompt (`pending_question.json`) for factual arbitration.
 - **Autonomous Cognitive Profile Synthesis:** At runtime, `AIClient.synthesize_cognitive_profile()` inspects the active candidate's `resume.md` and configuration, derives their domain (e.g. Finance & Accounting, Software Engineering, etc.), core vs. generic soft skills, domain acronyms, out-of-domain incompatible verticals, and multi-cycle designation queues (Cycle 1 core, Cycle 2 seniority/lateral, Cycle 3 specialized/functional) stored in `profiles/<profile>/output/cognitive_profile.json`.
-- **Zero-Hardcoding Contract & Guardrail P1:** Zero vertical dictionaries, domain words, or soft skill sets exist in Python source code. All evaluation gates in `evaluate_job_match()` and `arbitrate_card_fit()` read dynamically from `cognitive_profile.json`.
+- **Zero-Hardcoding Contract & Guardrail P1:** Zero vertical dictionaries, domain words, soft skill sets, or question-detection keyword lists exist in Python source code. All evaluation gates in `evaluate_job_match()`, `arbitrate_card_fit()`, and `_heuristic_screening_answer()` read dynamically from `cognitive_profile.json` and `candidate_config.json`. Specifically, all screening question keyword lists (notice period, relocation, interview mode, communication, experience, numeric detection, numeric exclusion, intern designation markers, and fallback text label) are stored in the `screening_heuristics` section of `candidate_config.json` — **never** as Python literals. See Section 4.1 for the complete `screening_heuristics` schema.
 - **Two-Stage Cognitive Qualification Engine:** Stage 1 Deterministic Gatekeeper enforces C6 absolute negative keywords, domain root-stem token gating (excluding hierarchy stopwords), an **Incompatible Industry/Vertical Hard Gate** (rejecting verticals flagged incompatible by the cognitive profile), and an experience band filter (>3yr gap auto-rejects). Stage 2 Precision scoring enforces a strict 60% qualification bar and requires $\ge 2$ distinct **CORE functional domain skills** (excluding soft skills like "analytical" or "problem solving").
 - **Tier 2B Cognitive Card Arbitration:** Evaluates unfamiliar roles, dynamic domain abbreviations, and visible skill chips while strictly rejecting incompatible verticals; does not contaminate candidate configuration with card titles.
 - **Tier 4 Autonomous Starvation Recovery:** If 0 jobs are found in a sweep, the Brain analyzes all seen market titles, compares with `resume.md` and candidate's total experience, and expands `candidate_config.json` with high-yield senior designations within the candidate's domain.
@@ -329,9 +329,38 @@ os.replace(tmp_path, config_path)  # Atomic on all OSes
   },
   "auto_learned_truths": {
     "exact question text": "cached answer"
+  },
+  "screening_heuristics": {
+    "standard_screening_patterns": ["notice period", "willing to relocate", "mode of interview", "communication", "total experience"],
+    "notice_period_keywords": ["notice period", "last working day", "serving notice", "joining time"],
+    "notice_numeric_detect_keywords": ["how many days", "days notice", "notice in days", "number of days"],
+    "notice_numeric_exclusion_keywords": ["immediate", "immediately", "currently serving", "relieved"],
+    "notice_option_match_keywords": ["30 days", "60 days", "90 days", "immediate", "1 month", "2 months", "3 months", "more than 3 months"],
+    "relocation_keywords": ["relocate", "relocation", "willing to move", "open to relocate", "shift to", "move to"],
+    "interview_keywords": ["mode of interview", "interview mode", "preferred interview", "interview type", "interview preference"],
+    "interview_virtual_keywords": ["virtual", "video", "online", "remote interview", "zoom", "teams", "google meet"],
+    "interview_f2f_keywords": ["face to face", "f2f", "in person", "onsite interview", "in-person", "physical interview"],
+    "interview_virtual_options": ["virtual", "video", "online"],
+    "communication_keywords": ["fluent comms", "fluent communication", "communication skills", "communication level", "language proficiency", "english communication"],
+    "communication_positive_options": ["fluent", "excellent", "native", "proficient", "advanced"],
+    "total_experience_keywords": ["total experience", "total years", "overall experience", "years of total", "total work experience"],
+    "months_format_keywords": ["in months", "(months)", "(in months)", "number of months", "months of experience", "months experience"],
+    "skill_experience_keywords": ["years of experience", "how many years", "experience do you have", "hands-on experience", "experience in months", "months of experience", "describe your experience", "explain your experience", "tell us about your experience", "experience in ", "experience with "],
+    "numeric_question_triggers": ["how many years", "years of experience", "experience in years", "number of years", "how long", "in numbers", "in digits", "enter digits", "enter numbers"],
+    "numeric_question_exclusions": ["describe", "explain", "detail", "tell us", "write about", "elaborate"],
+    "intern_designation_markers": ["intern", "trainee", "apprentice", "graduate trainee"],
+    "fallback_text_label": "experience"
   }
 }
 ```
+
+> **`screening_heuristics` is the zero-hardcoding enforcement section.** All keyword lists used by `_heuristic_screening_answer()` and `_is_standard_screening_query()` in `ai_client.py` are read exclusively from this config block. Python source code contains **zero** inline keyword literals for question detection. To tune screening behavior, edit config — never Python.
+>
+> **`fallback_text_label`** controls the word used when drafting experience descriptions (e.g. `"experience as Senior Associate at TCS"` instead of `"internship as ..."`). Default: `"experience"`.
+>
+> **`numeric_question_exclusions`** intentionally does **not** contain `"projects"` — this fixes the bug where `"How many years of BFSI projects?"` was incorrectly routed to text path instead of integer path.
+
+
 
 ### 4.2 `search_manifest.json` Schema
 ```json
@@ -633,3 +662,6 @@ https://www.naukri.com/mnjuser/profile
 | `candidate_config.json` write | Atomic write via .tmp + os.replace | ✅ Correct (C4 compliant) |
 | PDF generation crashes | check=True aborts application | ✅ Correct (H6 compliant) |
 | All chatbot iterations exhausted | Checks completion, returns FAILED if not done | ✅ Correct (C3 compliant) |
+| Hardcoded keyword lists in `ai_client.py` | Fatal halt via `verify_codebase_purity()` | ✅ Fixed — all keyword lists moved to `screening_heuristics` in config (v4.0) |
+| "internship" word in experience fallback | Caused `"internship as Senior Associate"` hallucination | ✅ Fixed — `fallback_text_label: "experience"` in config; Python reads `sh.get("fallback_text_label", "experience")` |
+| `"projects"` in `numeric_question_exclusions` | Blocked `"How many years of BFSI projects?"` from integer path | ✅ Fixed — `"projects"` removed from config exclusion list (v4.0) |

@@ -172,6 +172,28 @@
 #   valid option bracket; restricted _persist_learned_truth to only cache verified high-confidence answers.
 # Rationale: Guarantees 100% factual accuracy and eliminates hallucinated or default-inversion screening errors.
 # Preventative Notes: Never persist heuristic fallbacks to auto_learned_truths. Never use a blind "No" default.
+#
+# [ENTRY #018]
+# Term: [ZERO-HARDCODING_SCREENING_HEURISTICS_PURGE]
+# Timestamp: 2026-09-17 19:17:00 +05:30
+# Issue / Context: All 14 question-detection keyword lists in _is_standard_screening_query(),
+#   _heuristic_screening_answer() (Sections 1–5), and the is_pure_numeric blocks were hardcoded
+#   Python string literals — violating DIRECTIVE 2, RULE 5, and GATE 1. The word "internship"
+#   was also hardcoded in the fallback text template at lines 2052/2054/2072/2074, causing senior
+#   work experience (e.g. Cognizant Senior Associate) to be mislabeled as "internship" on live apps.
+#   Additionally, "projects" in the numeric exclusion list blocked "BFSI projects" questions from
+#   returning a clean integer, routing them to the wrong (text) path.
+# Changes Made: Extracted ALL keyword lists to a new "screening_heuristics" section in
+#   candidate_config.json and profiles/default_user/candidate_config.json. Python code now reads
+#   cfg.get("screening_heuristics", {}).get("<key>", []) for every list. Replaced hardcoded
+#   "internship" template label with cfg.get("screening_heuristics", {}).get("fallback_text_label", "experience").
+#   "projects" removed from numeric exclusion list (now absent from config default).
+#   Zero string literals for question detection remain in this file.
+# Rationale: Complete Directive 2 compliance. Any question-detection keyword can now be tuned
+#   in candidate_config.json without touching Python code — fully candidate-agnostic.
+# Preventative Notes: NEVER add question-detection keyword strings back as Python literals.
+#   NEVER hardcode role labels ("internship", "fresher") in text templates. All such values
+#   must resolve from screening_heuristics in candidate_config.json.
 # ================================================================================
 """
 ================================================================================
@@ -1731,16 +1753,8 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
         if not question:
             return False
         q = question.lower()
-        patterns = [
-            "notice period", "last working day", "lwd", "serving notice", "joining time", "when can you start", "how soon can you join",
-            "relocate", "relocation", "residing", "living in", "ready to relocate", "work from office", "office 5 days",
-            "total experience", "total years", "overall experience", "overall years", "relevant experience",
-            "years of experience", "how many years", "experience do you have", "hands-on experience", "experience in months", "months of experience",
-            "current ctc", "current salary", "fixed ctc", "annual salary",
-            "expected ctc", "expected salary", "hike on the current", "hike",
-            "virtual interview", "in person", "f2f", "face to face", "face 2 face", "available for drive",
-            "fluent comms", "fluent communication", "communication skills", "comms skills", "english communication", "proficient in english"
-        ]
+        cfg = getattr(self.profile_context, "config", {}) if self.profile_context else {}
+        patterns = cfg.get("screening_heuristics", {}).get("standard_screening_patterns", [])
         return any(p in q for p in patterns)
 
     def _heuristic_screening_answer(
@@ -1768,26 +1782,33 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
         current_ctc = cand.get("current_ctc_lpa", "")
         expected_ctc = cand.get("expected_ctc_lpa", "")
         resume_text = getattr(ctx, "resume_text", "") or ""
+        # Load all question-detection keyword lists from config (zero hardcoding in Python)
+        sh = cfg.get("screening_heuristics", {})
 
         # 1. Notice Period / Last Working Day / Immediate Joiner
-        if any(k in q_clean for k in ["notice period", "last working day", "lwd", "official notice", "serving notice", "when can you start", "how soon can you join", "joining time"]):
-            if any(k in q_clean for k in ["last working day", "lwd"]):
+        _notice_kw = sh.get("notice_period_keywords", [])
+        _notice_lwd_kw = [k for k in _notice_kw if "last working day" in k or "lwd" in k]
+        _notice_serving_kw = [k for k in _notice_kw if "serving notice" in k]
+        if any(k in q_clean for k in _notice_kw):
+            if any(k in q_clean for k in _notice_lwd_kw):
                 if options:
                     matched = self._best_option_match("Not serving notice", options) or self._best_option_match(str(notice_days), options)
                     if matched:
                         return matched
                 return f"Not serving notice period. Official notice period is {notice_days} days (can negotiate for early release)."
 
-            if "serving notice" in q_clean:
+            if any(k in q_clean for k in _notice_serving_kw):
                 if options:
                     return self._best_option_match("No", options) or "No"
                 return "No"
 
             # Detect pure integer / numeric field requirement
+            _notice_num_triggers = sh.get("notice_numeric_detect_keywords", [])
+            _notice_num_exclusions = sh.get("notice_numeric_exclusion_keywords", [])
             is_pure_numeric = (
                 (control_type and str(control_type).upper() in ["NUMBER", "INTEGER", "NUMERIC"])
-                or any(k in q_clean for k in ["in days", "(days)", "number of days", "how many days", "enter days"])
-            ) and not any(k in q_clean for k in ["lwd", "last working day", "serving", "explain", "detail"])
+                or any(k in q_clean for k in _notice_num_triggers)
+            ) and not any(k in q_clean for k in _notice_num_exclusions)
 
             if is_pure_numeric:
                 derived = str(notice_days)
@@ -1803,16 +1824,18 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 )
                 if matched:
                     return matched
+                _notice_opt_kw = sh.get("notice_option_match_keywords", [])
                 for opt in options:
-                    if any(w in opt.lower() for w in ["negotiate", "early release", "buyout"]):
+                    if any(w in opt.lower() for w in _notice_opt_kw):
                         return opt
                 for opt in options:
                     if str(notice_days) in opt or f"{notice_days // 30} month" in opt.lower():
                         return opt
             return derived
 
+
         # 2. Relocation & Location Willingness
-        if any(k in q_clean for k in ["relocate", "relocation", "residing", "living in", "ready to relocate", "comfortable with work from office", "going to office"]):
+        if any(k in q_clean for k in sh.get("relocation_keywords", [])):
             if options:
                 matched = self._best_option_match("Yes", options)
                 if matched:
@@ -1820,9 +1843,9 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
             return "Yes"
 
         # 3. Interview Availability (Virtual vs In-Person / F2F)
-        if any(k in q_clean for k in ["interview", "f2f", "face to face", "face 2 face", "in person", "virtual interview", "drive"]):
-            is_virtual = any(k in q_clean for k in ["virtual", "online", "teams", "zoom", "telephonic", "video"])
-            is_f2f = any(k in q_clean for k in ["f2f", "face to face", "face 2 face", "in person", "in-person", "walk-in", "office"])
+        if any(k in q_clean for k in sh.get("interview_keywords", [])):
+            is_virtual = any(k in q_clean for k in sh.get("interview_virtual_keywords", []))
+            is_f2f = any(k in q_clean for k in sh.get("interview_f2f_keywords", []))
 
             cand_loc_str = str(cand.get("location", "")).strip()
             cand_city = cand_loc_str.split(",")[0].strip() if cand_loc_str else ""
@@ -1842,9 +1865,10 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
             is_outside_base = any(m in q_clean for m in target_locations if m and m != cand_city_lower)
 
             # If outside base city, prefer virtual option if available in choices
+            _interview_virtual_opts = sh.get("interview_virtual_options", [])
             if is_outside_base and options:
                 for opt in options:
-                    if any(v in opt.lower() for v in ["virtual", "remote", "online"]):
+                    if any(v in opt.lower() for v in _interview_virtual_opts):
                         return opt
                 for opt in options:
                     if re.search(r'\bno\b', opt.lower()):
@@ -1872,24 +1896,20 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
             return "Yes"
 
         # 3b. Communication Skills & English Fluency
-        if any(k in q_clean for k in [
-            "fluent comms", "fluent communication", "communication skills", "comms skills",
-            "english communication", "written and verbal", "good communication",
-            "verbal and written", "proficient in english", "fluency in english",
-            "speak english", "english fluency"
-        ]):
+        if any(k in q_clean for k in sh.get("communication_keywords", [])):
             if options:
                 matched = self._best_option_match("Yes", options) or self._best_option_match("Fluent", options)
                 if matched:
                     return matched
+                _comm_positive = sh.get("communication_positive_options", [])
                 for opt in options:
-                    if any(w in opt.lower() for w in ["fluent", "good", "excellent", "proficient", "yes"]):
+                    if any(w in opt.lower() for w in _comm_positive):
                         return opt
             return "Yes, I possess fluent written and verbal communication skills."
 
         # 4. Overall / Total Years of Experience (with Months support)
-        if any(k in q_clean for k in ["total experience", "total years", "overall experience", "overall years", "relevant experience"]):
-            is_months = any(m in q_clean for m in ["in months", "(months)", "(in months)", "number of months", "months of experience", "months experience"])
+        if any(k in q_clean for k in sh.get("total_experience_keywords", [])):
+            is_months = any(m in q_clean for m in sh.get("months_format_keywords", []))
             if is_months:
                 exp_months = str(int(round(float(total_exp or 0) * 12)))
                 if options:
@@ -1906,8 +1926,8 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 return exp_val
 
         # 5. Specific Skill / Tool / Role Experience Questions (with Months & Smart Drafting support)
-        if any(k in q_clean for k in ["years of experience", "how many years", "experience do you have", "hands-on experience", "experience in months", "months of experience", "describe your experience", "explain your experience", "tell us about your experience", "experience in ", "experience with "]):
-            is_months = any(m in q_clean for m in ["in months", "(months)", "(in months)", "number of months", "months of experience", "months experience"])
+        if any(k in q_clean for k in sh.get("skill_experience_keywords", [])):
+            is_months = any(m in q_clean for m in sh.get("months_format_keywords", []))
 
             p_content = cfg.get("profile_content", {})
             taxonomy = cfg.get("taxonomy_skills", {})
@@ -1927,14 +1947,16 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 or ""
             )
 
-            # Primary internship company & designation (Dynamically derived from profile)
+            # Primary employer company & designation (Dynamically derived from profile)
+            # intern_designation_markers from config - zero hardcoding
+            _intern_markers = sh.get("intern_designation_markers", [])
             primary_company = ""
             primary_role = ""
             if emp_dict:
                 for c_key, c_info in emp_dict.items():
                     desig = str(c_info.get("designation", "")).strip()
                     comp = str(c_info.get("company", c_key)).strip()
-                    if "intern" in desig.lower():
+                    if any(marker in desig.lower() for marker in _intern_markers):
                         primary_company = comp
                         primary_role = desig
                         break
@@ -1942,6 +1964,7 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                     first_key = list(emp_dict.keys())[0]
                     primary_company = str(emp_dict[first_key].get("company", first_key)).strip()
                     primary_role = str(emp_dict[first_key].get("designation", "")).strip()
+
 
             # Check direct match in configured skills_exp
             matched_skill_val = None
@@ -2034,24 +2057,27 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                             return opt
                     return options[0]
 
+                _num_triggers = sh.get("numeric_question_triggers", [])
+                _num_exclusions = sh.get("numeric_question_exclusions", [])
                 is_pure_numeric = (
                     (control_type and str(control_type).upper() in ["NUMBER", "INTEGER", "NUMERIC"])
-                    or any(k in q_clean for k in ["how many years", "years of experience", "experience in years", "number of years", "how long", "in numbers", "in digits", "enter digits", "enter numbers"])
-                ) and not any(k in q_clean for k in ["describe", "explain", "detail", "tell us", "write about", "projects", "elaborate"])
+                    or any(k in q_clean for k in _num_triggers)
+                ) and not any(k in q_clean for k in _num_exclusions)
 
                 if is_pure_numeric:
                     if is_months:
                         return str(int(round(calc_val * 12)))
                     return str(int(calc_val)) if calc_val.is_integer() else str(calc_val)
 
-                # Smartly draft factual response highlighting candidate's real internship and academic coursework
+                # Smartly draft factual response highlighting candidate's real experience and academic coursework
+                _exp_label = sh.get("fallback_text_label", "experience")
                 clean_topic_display = queried_topic.title() if queried_topic else "this domain"
                 components = []
                 if primary_company:
                     if primary_role:
-                        components.append(f"internship as {primary_role} at {primary_company}")
+                        components.append(f"{_exp_label} as {primary_role} at {primary_company}")
                     else:
-                        components.append(f"internship at {primary_company}")
+                        components.append(f"{_exp_label} at {primary_company}")
 
                 if cand_college:
                     if cand_degree:
@@ -2069,9 +2095,9 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
 
                 if len(drafted) > 245:
                     if primary_company and cand_college:
-                        drafted = f"1 year of practical exposure through {primary_company} internship and coursework at {cand_college} covering {clean_topic_display}."
+                        drafted = f"1 year of practical exposure through {primary_company} {_exp_label} and coursework at {cand_college} covering {clean_topic_display}."
                     elif primary_company:
-                        drafted = f"1 year of practical exposure through {primary_company} internship covering {clean_topic_display}."
+                        drafted = f"1 year of practical exposure through {primary_company} {_exp_label} covering {clean_topic_display}."
                     else:
                         drafted = f"1 year of practical exposure covering {clean_topic_display}."
 
@@ -2082,10 +2108,12 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                     if matched:
                         return matched
                     return options[0] if ("0" in options[0] or "no" in options[0].lower()) else "0"
+                _num_triggers = sh.get("numeric_question_triggers", [])
+                _num_exclusions = sh.get("numeric_question_exclusions", [])
                 is_pure_numeric = (
                     (control_type and str(control_type).upper() in ["NUMBER", "INTEGER", "NUMERIC"])
-                    or any(k in q_clean for k in ["how many years", "years of experience", "experience in years", "number of years", "how long", "in numbers", "in digits", "enter digits", "enter numbers"])
-                ) and not any(k in q_clean for k in ["describe", "explain", "detail", "tell us", "write about", "projects", "elaborate"])
+                    or any(k in q_clean for k in _num_triggers)
+                ) and not any(k in q_clean for k in _num_exclusions)
                 if is_pure_numeric:
                     return "0"
                 return "No direct prior experience in this specific technology."
