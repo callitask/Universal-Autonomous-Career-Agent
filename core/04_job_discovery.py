@@ -82,6 +82,24 @@
 # Changes Made: Added immediate pre-flight scan of highlights_list against candidate's configured negative_keywords right after DOM extraction. If a negative keyword matches on word boundaries (excluding stakeholder collaboration patterns), immediately log, record as domain_gated in processed_ledger, close page, and short-circuit to next job.
 # Rationale: Prevents wasting time scraping and AI-evaluating roles whose topmost highlights contain disqualifying requirements.
 # Preventative Notes: Never skip early highlights checks; Job Highlights on Naukri represent the recruiter's most critical dealbreakers.
+#
+# [ENTRY #011]
+# Term: [BUGFIX_C24_CARD_LEVEL_EXP_BAND_GATE]
+# Timestamp: 2026-09-19 01:13:00 +05:30
+# Issue / Context: Agent applied to a 4-9 yr experience role for a 0.5 yr fresher candidate. Root cause:
+#   the experience range "4-9 Yrs" was present in Naukri card metadata (exp_text) but absent from the
+#   scraped JD body text (JD was thin/partial). evaluate_job_match() experience regex found 0 matches
+#   in the JD body and silently awarded the 8-point "no restriction" bonus, allowing the job to score 71
+#   and pass the 65-point application threshold.
+# Changes Made: Added Guardrail C24 - Card-Level Experience Band Gating block after salary floor gate
+#   (line ~1113). Parses exp_text from the card-level metadata before initiating deep scan. If card-stated
+#   min experience > candidate actual exp + max_experience_gap_years, rejects immediately with status
+#   "experience_gap_gated". Mirrors structure of existing salary floor gate. Uses _prefixed local vars
+#   to avoid any naming collision with surrounding loop variables.
+# Rationale: Ensures experience seniority is always enforced from card metadata, not just from JD body
+#   text parsing. JD body can be sparse/partial; card metadata is always populated by Naukri's own engine.
+# Preventative Notes: Never rely solely on JD body text parsing for experience seniority gating.
+#   Naukri card exp_text is the ground truth. max_experience_gap_years must remain in candidate_config.json.
 # ================================================================================
 """
 ================================================================================
@@ -1111,6 +1129,44 @@ def run_batched_discovery(profile_path: str):
                                             ctx.add_to_processed_ledger(can_url, status="below_ctc_floor", metadata={"title": title, "company": company, "salary": salary_text})
                                             ctx.add_to_processed_ledger(composite_key, status="composite_below_ctc")
                                             continue
+
+                            # Card-Level Experience Band Gating (Guardrail C24)
+                            # Parses exp_text from Naukri card metadata (e.g. "4 - 9 Yrs") BEFORE deep scanning.
+                            # Prevents thin-JD false-positives where the experience band exists only in card metadata
+                            # and is absent from the scraped JD body, causing the evaluate_job_match() experience
+                            # regex to find 0 matches and silently award the 8-point "no restriction" bonus.
+                            # Mirrors structure of existing Candidate Salary Floor Gating above.
+                            _card_exp_text = str(job.get("exp_text") or "").strip()
+                            if _card_exp_text:
+                                # Match "4 - 9 Yrs", "4-9 Years", "4 to 9 Yrs", "4 Yrs" etc.
+                                _card_exp_range = re.findall(r'(\d+)\s*[-\u2013to]+\s*(\d+)\s*[Yy]', _card_exp_text)
+                                if not _card_exp_range:
+                                    _card_exp_single = re.findall(r'(\d+)\s*[Yy]', _card_exp_text)
+                                    _card_exp_range = [(_card_exp_single[0], '') for _ in [1]] if _card_exp_single else []
+                                if _card_exp_range:
+                                    _card_min_exp = float(_card_exp_range[0][0])
+                                    _cand_actual_exp = float(cand.get("total_experience_years", 0) or 0)
+                                    _max_exp_gap = float(
+                                        (config.get("target_jobs", {}) if isinstance(config, dict) else {})
+                                        .get("max_experience_gap_years", 2)
+                                    )
+                                    if _card_min_exp > _cand_actual_exp + _max_exp_gap:
+                                        print(
+                                            f"  -> Rejecting Over-Senior Job: {title} @ {company} "
+                                            f"[CARD EXP MIN: {_card_min_exp:.0f}yr | CANDIDATE: {_cand_actual_exp}yr | MAX GAP: +{_max_exp_gap:.0f}yr]",
+                                            flush=True
+                                        )
+                                        processed_ledger.add(url.lower())
+                                        processed_ledger.add(can_url)
+                                        if job_id: processed_ledger.add(job_id)
+                                        processed_ledger.add(composite_key)
+                                        ctx.add_to_processed_ledger(can_url, status="experience_gap_gated", metadata={
+                                            "title": title, "company": company,
+                                            "required_exp": _card_min_exp, "candidate_exp": _cand_actual_exp,
+                                            "exp_text": _card_exp_text
+                                        })
+                                        ctx.add_to_processed_ledger(composite_key, status="composite_exp_gap_gated")
+                                        continue
 
                             print(f"  -> Deep Scanning: {title} @ {company}...", flush=True)
                             nav_url = can_url if can_url else url

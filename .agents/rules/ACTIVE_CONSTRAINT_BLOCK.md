@@ -35,5 +35,11 @@ Career Agent (core/, scripts/, profiles/, docs/) and Sophron (Sophron/) are comp
 Write a Sophron card at every milestone. A milestone is: task completed, user corrects AI, topic switches, plan approved/rejected, a-ha moment. Not just at session end. Use guard.safe_write_json(). Include CONTEXT_CLASSIFICATION fields.
 
 ---
+## ACTIVE GUARDRAILS REFERENCE (C-Series)
+[C24] Card-Level Experience Band Gating: exp_text from SRP card MUST be parsed before deep scan. If card min_exp > candidate.total_experience_years + target_jobs.max_experience_gap_years → reject [experience_gap_gated]. ALL thresholds read from candidate_config.json — zero hardcoding in Python.
+[C32] Two-Stage Page Navigation Timeout Recovery.
+[C34] Radio Chip Option-Constrained Resolution.
+
+---
 ## QUICK REMINDER: The AG Brain is the SOLE talent strategist.
 ## Python scripts = dumb actuators. Zero heuristics, zero templates, zero branches on experience.

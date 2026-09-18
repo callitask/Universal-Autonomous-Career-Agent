@@ -78,6 +78,7 @@
 - **Correct behavior**: The template label word must be `sh.get("fallback_text_label", "experience")`. Config value = `"experience"`. Template: `f"{_exp_label} as {primary_role} at {primary_company}"`.
 - **Never repeat**: Never hardcode the word `"internship"` (or any career level label) in Python templates. If the label needs to change per candidate, it lives in config.
 
+
 ---
 # INSTRUCTIONS FOR ADDING NEW ENTRIES:
 # 1. Append at the bottom of this file (never edit or delete above)
@@ -85,3 +86,12 @@
 # 3. Include: File/context, what happened, correct behavior, "never repeat" directive
 # 4. Keep each entry under 10 lines
 # 5. This file must be re-read at every session start (part of STEP 1 cold-start load)
+
+---
+
+## [2026-09-19] THIN-JD EXPERIENCE BAND FALSE POSITIVE → SENIOR ROLE APPLICATION
+- **File**: `core/04_job_discovery.py` → card-level gating section; `core/ai_client.py` → `evaluate_job_match()` exp_matches block
+- **What happened**: Agent applied to a 4-9 yr experience role for a 0.5 yr fresher candidate (score: 71). Root cause: The job's JD body text was sparse/thin — the experience range "4-9 Yrs" existed only in Naukri card metadata (`exp_text`) but never appeared in the scraped `full_desc`. The `evaluate_job_match()` experience regex found `0 matches` in the body and silently awarded the 8-point "no restriction" default bonus. Additionally, `"Consultant"` was absent from `negative_keywords`, so the title gate also let it through.
+- **Correct behavior**: (1) Card-level experience band gating must run against `exp_text` BEFORE deep scanning, exactly mirroring the salary floor gate. If card min exp > candidate exp + max_experience_gap_years → reject immediately as `experience_gap_gated`. (2) Senior consulting titles (`Consultant`, `Process Excellence`, `Finance Transformation`) must be in `negative_keywords` for fresher profiles.
+- **Fix applied**: Added Guardrail C24 (card-level exp band gate) in `04_job_discovery.py`; added 6 negative keyword entries to `profiles/anshika_garg/candidate_config.json`.
+- **Never repeat**: Never trust JD body text alone for experience seniority enforcement. Naukri card `exp_text` is populated by the platform itself and is always authoritative. Always enforce seniority at card level before wasting tokens on deep scan.

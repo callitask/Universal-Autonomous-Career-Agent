@@ -1,8 +1,8 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: ARCHITECTURE REFERENCE
 
-> **Document Version:** 5.0 — Three-Daemon Operational Architecture & Two-Tier Early Job Highlights Gating Standard  
-> **Last Updated:** 2026-09-18  
-> **Purpose:** Comprehensive technical reference for the complete pipeline — how every module works, data flows, inter-process communication, DOM interaction patterns, multi-bullet regex isolation, two-tier early highlights gating, and the chatbot reverse-engineering protocol. Upload this alongside `WORKSPACE_RULES.md` to ground the AI's understanding of the system before any coding session.
+> **Document Version:** 5.1 — Guardrail C24 Card-Level Experience Band Gating  
+> **Last Updated:** 2026-09-19  
+> **Purpose:** Comprehensive technical reference for the complete pipeline — how every module works, data flows, inter-process communication, DOM interaction patterns, multi-bullet regex isolation, two-tier early highlights gating, card-level experience band gating (Guardrail C24), and the chatbot reverse-engineering protocol. Upload this alongside `WORKSPACE_RULES.md` to ground the AI's understanding of the system before any coding session.
 
 ---
 
@@ -47,6 +47,11 @@ continuous_career_agent.py (daemon loop)
        │    │
        │    ├── [Per Matched SRP Job Card]:
        │    │    ├── Scrape JD Detail Page
+       │    │    ├── [SRP Card-Level Pre-Scan Gates]:
+       │    │    │    ├── Salary Floor Gate: max_offered < target_salary_min_lpa → skip
+       │    │    │    └── [Guardrail C24] Experience Band Gate: card exp_text min > (total_experience_years + max_experience_gap_years) → skip [experience_gap_gated]
+       │    │    │         (all thresholds read from active profile's candidate_config.json — zero hardcoding)
+       │    │    ├── Deep Scan: Open JD Detail Page (tokens spent only on qualifying cards)
        │    │    ├── [Tier 1 Scraper Pre-Flight Gating]:
        │    │    │    Scrape ul.styles_JDC__job-highlight-list__QZC12 li
        │    │    │    If negative keyword detected -> Close Tab, Log [HIGHLIGHTS GATED], Skip to Next
