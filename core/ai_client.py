@@ -194,6 +194,36 @@
 # Preventative Notes: NEVER add question-detection keyword strings back as Python literals.
 #   NEVER hardcode role labels ("internship", "fresher") in text templates. All such values
 #   must resolve from screening_heuristics in candidate_config.json.
+#
+# [ENTRY #019]
+# Term: [JOB_HIGHLIGHTS_UNPREFIXED_STAGE1_GATING]
+# Timestamp: 2026-09-18 23:14:00 +05:30
+# Issue / Context: Negative keywords in Job Highlights (e.g. 'Passed both groups of CA Intermediate')
+#   bypassed Stage 1 Gatekeeper because negative checks on JD text were restricted to prefix
+#   regexes (hiring_target_match, mand_qual_match) requiring words like 'hiring for' or 'mandatory'.
+#   Additionally, 'job highlights' was treated as a duties header in _analyze_jd_work_capability(),
+#   awarding positive points for audit/accounting duties.
+# Changes Made:
+#   1. Added dedicated un-prefixed word-boundary scanner for 'Job Highlights:' in Stage 1
+#      Gatekeeper. Immediately returns score=0 if any negative_keyword matches.
+#   2. Removed 'job highlights' from resp_headers in _analyze_jd_work_capability(), ensuring
+#      highlights (which often summarize strict eligibility criteria) are not treated as duties.
+# Rationale: On portals like Naukri, Job Highlights represent the recruiter's topmost dealbreakers.
+#   Any negative keyword appearing in highlights must trigger immediate disqualification.
+# Preventative Notes: Never require prefixes like 'mandatory' when scanning Job Highlights;
+#   Job Highlights are already prime qualification statements.
+#
+# [ENTRY #020]
+# Term: [RADIO_CHIP_OPTION_CONSTRAINED_RESOLUTION]
+# Timestamp: 2026-09-19 00:15:00 +05:30
+# Issue / Context: When resolving recruiter screening questions with RADIO_CHIP options (e.g. ['Beginner', 'Intermediate', 'Expert'] for SAP experience), the heuristic resolver derived numeric '0', and when _best_option_match returned None, it returned raw '0'. In 05_apply_jobs.py, execute_chip_selection('0') failed because no radio button had label '0', leading to 3 repeat attempts and chatbot abortion (FAILED).
+# Changes Made:
+#   1. In _best_option_match(): Added proficiency level fallback for zero/novice targets (['beginner', 'basic', 'novice', 'entry', 'elementary', 'foundational', 'learning']).
+#   2. In _heuristic_screening_answer(): When options is present and candidate has 0 experience, match zero, then beginner, and default to options[0] rather than raw '0'.
+#   3. In answer_screening_question(): If options is non-empty and heuristic answer does not match any option, discard it (set to "") so it falls through to AI/IPC. At final return, if answer is not in options, map to _best_option_match or options[0] so a non-existent option string is never returned.
+#   4. In 05_apply_jobs.py: Added guardrail ensuring ans passed to execute_chip_selection is strictly one of options.
+# Rationale: On all job platforms, radio chips and dropdowns require choosing from available DOM elements. Returning an unconstrained string when options are constrained guarantees DOM selection failure.
+# Preventative Notes: Never return an unconstrained string when options list is non-empty. Always ensure returned value exists in options.
 # ================================================================================
 """
 ================================================================================
@@ -857,7 +887,7 @@ Return STRICTLY a JSON object:
         # 1. Check for bulleted duty lines or dedicated responsibility sections
         candidate_duties = []
         in_resp_section = False
-        resp_headers = ["responsibilities", "job description", "job highlights", "key responsibilities", "role overview", "what you will do", "duties", "scope of work", "accountabilities"]
+        resp_headers = ["responsibilities", "job description", "key responsibilities", "role overview", "what you will do", "duties", "scope of work", "accountabilities"]
 
         for raw_line in job_description.splitlines():
             line = raw_line.strip()
@@ -1017,6 +1047,26 @@ Return STRICTLY a JSON object:
         jd_intro = desc_lower[:2000]
         # Regex to detect stakeholder collaboration (exempt from negative role gating)
         stakeholder_collab_pattern = r'(?:working\s+(?:closely\s+)?with|collaborat\w*\s+with|liais\w*\s+with|coordinat\w*\s+with|partner\w*\s+with|interfac\w*\s+with|interact\w*\s+with|support(?:ing)?)\s+[^.\n]*'
+
+        # Check explicit "Job Highlights:" section un-prefixed (recruiter's topmost requirements & dealbreakers)
+        highlights_match = re.search(r'job highlights:\s*(.*?)(?=\n\n|\n[a-z\s]+:|\Z)', desc_lower, re.DOTALL)
+        if highlights_match:
+            highlights_content = highlights_match.group(1)
+            for h_line in highlights_content.splitlines():
+                h_line_clean = h_line.strip()
+                if not h_line_clean:
+                    continue
+                for neg in negative_keywords:
+                    if not neg or len(neg) < 2:
+                        continue
+                    if re.search(rf'\b{re.escape(neg.lower())}\b', h_line_clean):
+                        if not re.search(stakeholder_collab_pattern, h_line_clean):
+                            return MatchResult(
+                                score=0,
+                                reasoning=f"Rejected: Negative keyword '{neg}' detected in Job Highlights: '{h_line_clean}' (C6 Guardrail).",
+                                matching_skills=[],
+                                missing_skills=["Target domain alignment"]
+                            )
 
         for neg in negative_keywords:
             if not neg or len(neg) < 2:
@@ -1648,6 +1698,8 @@ Return STRICTLY a JSON object with this exact schema:
                     matched_opt = self._best_option_match(fast_ans, options)
                     if matched_opt:
                         fast_ans = matched_opt
+                    elif fast_ans not in options:
+                        fast_ans = ""
                 if fast_ans:
                     self._persist_learned_truth(q_clean, fast_ans)
                     return fast_ans
@@ -1691,13 +1743,11 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
    - For text/numeric: answer 'No' or '0'.
    - NEVER assume the candidate knows a technology just because it is commonly used in their domain.
 3. If choices/options are provided, your answer MUST match one of the available choices EXACTLY verbatim.
-4. INTERNSHIPS, ACADEMIC TRAINING & DOMAIN SKILLS CREDIT:
-   - For early-career/entry-level candidates, practical internship experience and collegiate degree coursework/laboratory training in their field count as genuine practical exposure (1 year).
-   - If the question asks for years of experience in a domain skill or process that aligns with the candidate's degree, coursework, internships, or listed skills:
-     * If choices/options are provided: select the lowest non-zero entry-level exposure option (e.g. '<1 year', '0-1 year', or '1 year') rather than '0' or 'No experience'.
-     * If free text / contenteditable: smartly draft a concise, factual, professional answer under 250 characters highlighting the candidate's real internship and academic coursework derived strictly from the Candidate Factual Database.
-     * If strictly numeric: answer '1' (representing 1 year of practical internship and academic training).
-   - If the question asks for a skill completely outside the candidate's field/background: answer '0' or 'No experience'.
+4. EXPERIENCE CALCULATIONS:
+   - Calculate the exact years of experience for the requested skill by referencing the Candidate Factual Database (e.g. `taxonomy_skills`, `total_experience_years`) or Master Resume.
+   - If the candidate has explicit years of experience listed for the skill, you MUST answer with that exact number.
+   - If the skill is present in their profile but lacks a specific year count, intelligently estimate the years based on their overall `total_experience_years` and how long they have worked in roles utilizing that skill.
+   - CRITICAL STRICT RULE: If the skill (e.g. Loan Origination System, Terraform, AWS) is completely missing from the candidate's profile, YOU MUST ANSWER '0'. DO NOT guess or award 1 year.
 5. COMMUNICATION & SOFT SKILLS:
    - For questions on English communication, verbal/written skills, or presentation fluency: answer 'Yes' or confirm fluent communication skills based on candidate profile.
 6. Provide a strictly truthful, factual answer based ONLY on the provided candidate context. Keep answers under 250 characters.
@@ -1734,6 +1784,8 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
             best_opt = self._best_option_match(answer, options)
             if best_opt:
                 answer = best_opt
+            elif answer not in options:
+                answer = options[0]
 
         if not options and len(answer) > 250:
             answer = answer[:250].strip()
@@ -2104,10 +2156,14 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 return drafted
             else:
                 if options:
-                    matched = self._best_option_match("No experience", options) or self._best_option_match("0", options)
+                    matched = (
+                        self._best_option_match("No experience", options)
+                        or self._best_option_match("0", options)
+                        or self._best_option_match("Beginner", options)
+                    )
                     if matched:
                         return matched
-                    return options[0] if ("0" in options[0] or "no" in options[0].lower()) else "0"
+                    return options[0]
                 _num_triggers = sh.get("numeric_question_triggers", [])
                 _num_exclusions = sh.get("numeric_question_exclusions", [])
                 is_pure_numeric = (
@@ -2271,6 +2327,12 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 if opt_digits == ["0"]:
                     return opt
 
+            # Proficiency tier fallback for zero/novice experience (e.g. ['Beginner', 'Intermediate', 'Expert'])
+            for opt in options:
+                opt_low = opt.lower().strip()
+                if opt_low in ["beginner", "basic", "novice", "entry", "elementary", "foundational", "learning"]:
+                    return opt
+
         # 4. Numeric extraction match
         if nums:
             target_num = nums[0]
@@ -2390,7 +2452,7 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
         print(">> AG Brain: Please write the answer to the 'answer' key in pending_question.json.", flush=True)
 
         start_time = time.time()
-        default_timeout = 15.0 if task_type == "STARVATION_EXPANSION" else 30.0
+        default_timeout = 60.0 if task_type == "STARVATION_EXPANSION" else 90.0
         timeout_seconds = float(kwargs.get("timeout_seconds", default_timeout))
         last_heartbeat = start_time
 

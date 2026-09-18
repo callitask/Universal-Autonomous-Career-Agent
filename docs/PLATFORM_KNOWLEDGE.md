@@ -65,6 +65,7 @@ When automating search via the Naukri global header (`execute_naukri_header_sear
 | Company Name | `a.comp-name, .comp-name` | Employer or recruitment firm |
 | Experience Metadata | `span.exp-wrap span.exp` | e.g. "8-12 Yrs" |
 | Match Score Box | `div.styles_JDC__match-score__VnjLL` | ATS fit signals (`Keyskills`, `Location`, `Experience`) |
+| Job Highlights List | `ul.styles_JDC__job-highlight-list__QZC12 li` | Recruiter eligibility prerequisites (pre-flight gated before unclamp) |
 | Unclamp JD | `span.styles_rm-link__RgrMs` | "Read More" button to reveal full description |
 | Native Apply Button | `button#apply-button, button.apply-button` | Triggers 1-click or chatbot drawer |
 | External Save Button | `button#save-button, .styles_save-job-button__k2e8x` | Bookmarks external company website roles |
@@ -118,4 +119,148 @@ When automating search via the Naukri global header (`execute_naukri_header_sear
    - `analyze_and_expand_designations()` and `synthesize_cognitive_profile()` use domain-aware mapping. For technical engineering tracks ($\ge 8$ years), senior roles map to *Principal / Staff / Solutions Architect*, completely eliminating corporate banking prefixes like *"Assistant Manager"*.
 3. **Multi-Type Skill Parsing:**
    - `taxonomy_skills` parser handles both primitive strings and structured dictionaries (`skill_name`), guaranteeing 100% crash resilience.
+
+---
+
+## 7. Two-Tier Job Highlights DOM Mechanics & Multi-Bullet Isolation Protocol
+
+### The Naukri Highlights Architecture
+Naukri renders a dedicated `Job Highlights` block situated immediately above the main Job Description container:
+```html
+<ul class="styles_JDC__job-highlight-list__QZC12">
+    <li>B.Com/M.Com/CA Inter with 2-5 years experience in accounting</li>
+    <li>Coordinate with statutory and internal auditors for quarterly reporting</li>
+</ul>
+```
+
+### Empirical Findings:
+1. **Prerequisite Nature of Highlights:**
+   - In Naukri's platform design, recruiters use the Highlights list for hard prerequisites (degrees, certifications, experience prerequisites).
+   - In the general JD body, terms like `"CA"` or `"Auditor"` may appear in collaborative contexts (*"liaise with CA firms"* or *"coordinate with internal auditors"*).
+   - In `Job Highlights`, however, bullet items are almost exclusively candidate qualifications.
+2. **Tier 1 Scraper Pre-Flight Gating:**
+   - Instead of immediately expanding the full JD via `span.styles_rm-link__RgrMs` (which costs 800–1200ms of layout thrashing), `04_job_discovery.py` extracts `ul.styles_JDC__job-highlight-list__QZC12 li` directly upon page load.
+   - It runs word-boundary regex checks against `candidate_config.json["target_jobs"]["negative_keywords"]`.
+   - If any negative keyword matches (e.g. `\bCA\b`, `\bCA Intermediate\b`), the page is closed immediately, `domain_gated` is recorded in `processed_ledger.json`, and the pipeline proceeds to the next card. This saves ~1.5 seconds per disqualified role.
+3. **The Multi-Bullet Regex Isolation Standard:**
+   - **The Bug:** Historically, evaluating exemption regexes (such as `re.search(r'\b(?:coordinate|liaise)\s+with\b', highlights_text)`) across the combined multiline highlights block caused a fatal flaw. Bullet 2's phrase `"coordinate with statutory auditors"` caused the entire highlights block to be treated as a collaboration context, exempting Bullet 1's `"CA Inter with 2-5 years experience"`.
+   - **The Live Fix:** All multiline blocks MUST be split into individual lines (`highlights_content.splitlines()`) and evaluated in strict isolation. An exemption in one bullet can never bleed into or exempt adjacent bullets.
+4. **Exclusion from Responsibility Headers:**
+   - In `_analyze_jd_work_capability()`, `"job highlights"` must never be included in `resp_headers`. Highlights are recruiter prerequisites, not day-to-day duties. Treating them as duties awards positive capability points to disqualified candidates.
+
+---
+
+## 8. Three-Daemon Architecture & The 90-Second Recruiter Question SLA
+
+To prevent background automation processes from freezing or timing out on novel recruiter screening questions, the system implements a Three-Daemon Architecture:
+
+### Daemon Topology
+1. **Daemon 1: Continuous Discovery & Application Runner (`continuous_career_agent.py`)**
+   - Connects to Chrome on port 9222 via CDP.
+   - Traverses SRP cards, un-clamps JDs, gates, renders tailored ATS PDF resumes, uploads resumes, and navigates chatbot drawers.
+   - When encountering a novel question not in `auto_learned_truths` or config heuristics:
+     - Writes the question, control type, options, and full prompt to `profiles/<profile>/output/pending_question.json`.
+     - Sets `"status": "PENDING"`.
+     - Polls `pending_question.json` at 0.5s intervals for up to 90 seconds without terminal blocking.
+2. **Daemon 2: Asynchronous IPC Signal Relay (`core/ipc_watcher.py`)**
+   - Lightweight, non-blocking process polling `pending_question.json` every 2.0 seconds.
+   - When `"status": "PENDING"` is observed, immediately outputs a structured, loud ASCII banner to stdout.
+   - Prints question text, options, control type, and prompt snippet.
+   - Serves as the real-time telemetry beacon for Daemon 3.
+3. **Daemon 3: AG Brain Cron Monitor (Recurring 1-Minute Awake Loop)**
+   - Operates as a scheduled recurring cron job (`* * * * *`) within the AG Brain agentic environment.
+   - Wakes up every 60 seconds, inspects Daemon 2 logs, and checks `pending_question.json`.
+   - Reads `resume.md` and `candidate_config.json` to synthesize an authentic, grounded, factual answer.
+   - Sets `"status": "ANSWERED"` and commits the answer string or JSON object.
+   - Guaranteed SLA: Daemon 1 receives the answer well before its 90-second timeout, unlinks the file, and submits the chatbot form.
+
+---
+
+## 9. Third-Party Syndicated Job Redirection Latency & Navigation Timeout Protocol
+
+### The Third-Party Redirect Hang
+Certain job listings aggregated on Naukri (e.g., outsourced postings via Purview India, Leading Client, or syndication brokers) route through intermediate redirects or external tracker gateways that either stall indefinitely or exceed default Playwright navigation limits.
+
+### Empirical Two-Stage Navigation Fallback Standard:
+1. **Stage 1 (`commit` - 12,000ms):**
+   - Wait until HTTP response headers are received and document navigation has committed.
+2. **Stage 2 (`domcontentloaded` - 15,000ms):**
+   - Wait until DOM content is loaded and available for interaction.
+3. **Resilience & State Recovery:**
+   - If either stage times out or throws an unhandled network error:
+     - Catch `PlaywrightTimeoutError` / `Exception` cleanly.
+     - Log `[ERROR] Page navigation failed to load job URL within timeout: <url>`.
+     - Record `FAILED` in `applications_tracker.csv`.
+     - Return control cleanly so the caller advances to the next job in the discovery manifest without browser crash or zombie tabs.
+
+---
+
+## 10. Negative Keywords: The Standalone Generic Noun Collision Trap
+
+### Root Cause Analysis:
+In domain-specific professions such as Finance, Accounting, Audit, and Compliance, job descriptions routinely list business software tools:
+- *"B.Com graduate with skills in Accounting Software, Tally, GST"*
+- *"Proficient in ERP Software, SAP, or Oracle Financials"*
+
+When a configuration includes broad standalone words like `"Software"` in `target_jobs.negative_keywords`:
+- Word-boundary regex `\bSoftware\b` matches the phrase *"Accounting Software"*.
+- The Gatekeeper falsely rejects ideal accounting postings with `[HIGHLIGHTS GATED: Negative keyword 'Software']`.
+
+### The Composite Term Standard:
+- Standalone generic nouns (such as `"Software"`, `"Developer"`, `"Engineer"`) are strictly prohibited in `negative_keywords`.
+- Role exclusion filters must always use composite, role-specific terms:
+  - `"Software Engineer"`
+  - `"Software Developer"`
+  - `"Software Development"`
+  - `"Full Stack Developer"`
+  - `"Backend Engineer"`
+- This cleanly excludes tech engineering jobs while preserving accounting and finance roles requiring business software tools.
+
+---
+
+## 11. Free-Text Screening Honesty & Candidate Non-Hallucination Standard
+
+### Chatbot Screening Ground Truth Invariant:
+When Naukri's application chatbot presents open-ended or free-text questions concerning tools or ERP systems (e.g. *"Which ERP systems do you have hands-on experience with?"* or *"Explain your experience with SAP/Oracle"*):
+1. **Never Hallucinate Unverified Tools:**
+   - The AG Brain must NEVER claim or fabricate hands-on experience in enterprise systems that are absent from `resume.md` and `candidate_config.json`.
+2. **Factual and Transparent Disclosures:**
+   - Clearly state the candidate's actual verified tool stack (e.g. Tally, Advanced MS Excel, Power BI).
+   - Honestly disclose lack of prior exposure to the specific platform asked (e.g. *"No direct prior experience in SAP/Oracle; proficient in Tally, Advanced MS Excel, and financial modeling with high adaptability to learn enterprise ERP systems"*).
+3. **Preserving Recruiter Trust:**
+   - Truthful disclosures ensure candidate integrity and prevent immediate disqualification during technical interview rounds.
+
+---
+
+## 12. Chatbot Radio Chip Constraints & Proficiency Tier Patterns
+
+### Empirical DOM Structure:
+On the Naukri chatbot drawer, single-select and multi-select questions are rendered using custom radio/checkbox containers:
+```html
+<div class="ssrc__radio-btn-container">
+    <input type="radio" class="ssrc__radio" id="opt_0" name="choice">
+    <label class="ssrc__label" for="opt_0">Beginner</label>
+</div>
+```
+- The Playwright selector strictly targets: `label.ssrc__label:has-text('{safe_opt}')` or `.ssrc__radio-btn-container:has-text('{safe_opt}') label.ssrc__label`.
+- Clicking the `<label>` reliably toggles the underlying `<input>` radio, activates React internal component state, and enables the `.send` button container.
+
+### The Proficiency Tiers Pattern & Zero Experience Dilemma:
+Recruiters frequently ask practical tool exposure questions with qualitative proficiency chips rather than numeric years:
+- Question: *"How much practical experience do you have working on SAP?"*
+- Choices: `['Beginner', 'Intermediate', 'Expert']` (no "None" or "0" option provided).
+
+**The Trap:**
+- If the AI or heuristic calculates `0` years and outputs `"0"`, `label.ssrc__label:has-text("0")` finds 0 elements.
+- The chatbot resolver falls back to typing `"0"` into an inactive or hidden contenteditable field.
+- The form stays unanswered, repeats 3 times, triggers Guardrail C7, and aborts the application as `FAILED`.
+
+**The Solution (Guardrail C34):**
+1. When options are constrained to proficiency levels, zero experience / novice exposure maps automatically to the lowest proficiency tier:
+   `["beginner", "basic", "novice", "entry", "elementary", "foundational", "learning"]`.
+2. The answer returned to `execute_chip_selection` MUST exist in `options`. If an un-matched string is returned, the engine forces `ans = options[0]`.
+3. If clicking the chosen option fails, the engine retries clicking `options[0]` before attempting any contenteditable fallback.
+
+
+
 

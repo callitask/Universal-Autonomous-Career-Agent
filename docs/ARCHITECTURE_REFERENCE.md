@@ -1,25 +1,31 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: ARCHITECTURE REFERENCE
 
-> **Document Version:** 4.0 — Zero-Hardcoding Screening Heuristics Purge  
-> **Last Updated:** 2026-09-17  
-> **Purpose:** Comprehensive technical reference for the complete pipeline — how every module works, data flows, inter-process communication, DOM interaction patterns, and the chatbot reverse-engineering protocol. Upload this alongside `WORKSPACE_RULES.md` to ground the AI's understanding of the system before any coding session.
+> **Document Version:** 5.0 — Three-Daemon Operational Architecture & Two-Tier Early Job Highlights Gating Standard  
+> **Last Updated:** 2026-09-18  
+> **Purpose:** Comprehensive technical reference for the complete pipeline — how every module works, data flows, inter-process communication, DOM interaction patterns, multi-bullet regex isolation, two-tier early highlights gating, and the chatbot reverse-engineering protocol. Upload this alongside `WORKSPACE_RULES.md` to ground the AI's understanding of the system before any coding session.
 
 ---
 
 ## 1. SYSTEM OVERVIEW
 
-The Universal Autonomous Career Agent is a **multi-process, file-coordinated, CDP-driven** automation pipeline that:
+The Universal Autonomous Career Agent is a **three-daemon, file-coordinated, CDP-driven** autonomous pipeline that:
 
 1. **Discovers** job postings on Naukri and LinkedIn via batched SRP scraping
-2. **Evaluates** each posting against the candidate's resume using AI scoring (0-100)
-3. **Tailors** the candidate's factual resume by reordering bullets for ATS keyword density
-4. **Renders** a per-job PDF via Playwright's Chrome PDF engine
-5. **Uploads** the tailored resume to the candidate's Naukri profile
-6. **Applies** autonomously — solving 1-click apply and multi-step chatbot drawers
-7. **Verifies** submission via DOM success markers
-8. **Tracks** everything in CSV + JSON for audit
+2. **Pre-Filters Early Highlights** against negative candidate criteria directly from DOM before deep un-clamping
+3. **Evaluates** each posting against the candidate's resume using Two-Stage Cognitive AI scoring (0-100) with multi-bullet regex isolation
+4. **Tailors** the candidate's factual resume by reordering bullets for ATS keyword density
+5. **Renders** a per-job PDF via Playwright's Chrome PDF engine
+6. **Uploads** the tailored resume to the candidate's Naukri profile
+7. **Applies** autonomously — solving 1-click apply and multi-step chatbot drawers
+8. **Monitors and Relays IPC** questions via an asynchronous file-based IPC watcher and AG Brain cron loop within a 90-second SLA
+9. **Verifies** submission via DOM success markers
+10. **Tracks** everything in CSV + JSON + persistent composite-key deduplication ledgers for audit
 
-**Execution Model:** Sequential subprocess chain. No threading. No async. Each phase runs as a standalone Python process orchestrated by `continuous_career_agent.py` or `04_job_discovery.py`.
+**Execution Model: The Three-Daemon Architecture**
+Instead of a single blocking monolithic process or unmonitored terminal inputs, the system operates across three coordinated daemons:
+- **Daemon 1 (Discovery & Application Runner — `continuous_career_agent.py`):** Runs the continuous discovery and application loop via Chrome DevTools Protocol (CDP port 9222). Orchestrates `04_job_discovery.py`, `generate_factual_tailored.py`, `02b_naukri_fast_resume_upload.py`, and `05_apply_jobs.py`. If a novel or un-cached chatbot question is encountered, writes to `pending_question.json` and polls non-blocking.
+- **Daemon 2 (IPC Watcher & Signal Relay — `core/ipc_watcher.py`):** Dedicated lightweight background daemon polling `profiles/<profile>/output/pending_question.json` at 2.0s intervals. Detects any pending recruiter question instantly and prints `[IPC WATCHER] PENDING QUESTION DETECTED` with timestamp, task type, question text, and UI options to stdout.
+- **Daemon 3 (AG Brain Cron Monitor — Recurring 1-Minute Heartbeat):** Scheduled periodic monitor running within the AG Brain agentic environment (`* * * * *`). Wakes up every 60 seconds, inspects Daemon 2 logs and `pending_question.json`, synthesizes ground-truth factual answers from `resume.md` and candidate config, and commits the JSON answer directly into `pending_question.json` within the mandatory 90-second recruiter timeout SLA.
 
 **Architectural Separation of Concerns:**
 - **Developer Scope (`core/`, `docs/`, `core/utils/`):** In coding sessions, the AI assistant operates strictly as the Principal Agent Developer, updating engine logic, documentation, and tooling. The developer **never manually edits files inside `profiles/`**.
@@ -27,9 +33,10 @@ The Universal Autonomous Career Agent is a **multi-process, file-coordinated, CD
 
 ---
 
-## 2. PIPELINE EXECUTION SEQUENCE
+## 2. PIPELINE EXECUTION SEQUENCE & THREE-DAEMON FLOW
 
 ```
+[DAEMON 1: Discovery & Application Runner]
 continuous_career_agent.py (daemon loop)
   │
   ├── [Optional] 02_profile_sync_naukri.py --profile <dir>
@@ -38,22 +45,58 @@ continuous_career_agent.py (daemon loop)
   └── LOOP:
        ├── 04_job_discovery.py --profile <dir>
        │    │
-       │    ├── [Per matched job, BATCH_SIZE=1]:
+       │    ├── [Per Matched SRP Job Card]:
+       │    │    ├── Scrape JD Detail Page
+       │    │    ├── [Tier 1 Scraper Pre-Flight Gating]:
+       │    │    │    Scrape ul.styles_JDC__job-highlight-list__QZC12 li
+       │    │    │    If negative keyword detected -> Close Tab, Log [HIGHLIGHTS GATED], Skip to Next
+       │    │    ├── Un-clamp "Read More" (expand to 7.2k+ chars)
+       │    │    ├── Scrape Naukri Native Match Score Box
+       │    │    ├── [Tier 2 Stage 1 Gatekeeper]:
+       │    │    │    Line-by-line / bullet-by-bullet negative scan of Job Highlights
+       │    │    │    Multi-bullet regex isolation (prevent collaboration phrase bleed)
+       │    │    │    Domain stem alignment & Incompatible vertical gate
+       │    │    └── Stage 2 Precision Match Score (Threshold >= 60%)
+       │    │
+       │    ├── [Per Qualified Job, BATCH_SIZE=1]:
        │    │    ├── generate_factual_tailored.py --profile <dir>
-       │    │    ├── 02b_naukri_fast_resume_upload.py --profile <dir>  (or 03_profile_sync_linkedin.py)
+       │    │    ├── 02b_naukri_fast_resume_upload.py --profile <dir>
        │    │    └── 05_apply_jobs.py --profile <dir>
+       │    │         └── If novel chatbot question -> Write to pending_question.json
        │    │
        │    └── Resume scanning next keyword/location/page...
        │
        └── time.sleep(delay)  →  Next Cycle
+
+─────────────────────────────────────────────────────────────────────────────
+[DAEMON 2: IPC Signal Relay]
+ipc_watcher.py --profile <dir> --poll 2.0
+  │
+  └── Polling profiles/<profile>/output/pending_question.json (every 2.0s)
+       └── When status == "PENDING":
+            └── Emits immediate stdout signal:
+                 [IPC WATCHER] PENDING QUESTION DETECTED: "<Question Text>"
+                 [IPC WATCHER] Task Type: SCREENING_QUESTION | Options: [...]
+
+─────────────────────────────────────────────────────────────────────────────
+[DAEMON 3: AG Brain Cron Monitor]
+Cron Heartbeat (* * * * * / 60-second wake-up)
+  │
+  ├── Check pending_question.json status
+  └── If status == "PENDING":
+       ├── Load candidate resume.md and candidate_config.json
+       ├── Synthesize factual grounded response
+       ├── Commit JSON answer with status="ANSWERED" (SLA: <90 seconds)
+       └── Daemon 1 consumes answer, unlinks file, submits form, resumes loop
 ```
 
 **IPC Contract:** Scripts communicate via filesystem artifacts:
 - `search_manifest.json` — Discovery → Tailoring → Application (enriched with `jd_path`, `description`, and `naukri_match_score`)
 - `applications_tracker.csv` — Application → Deduplication (canonical 9-column schema)
+- `processed_ledger.json` — Persistent composite key (`clean_company::clean_title`) + Job URL deduplication ledger
 - `saved_external_jobs.json` — External redirect storage
 - `candidate_config.json` — Self-learning truth cache (read/write by all scripts)
-- `pending_question.json` — Async File-Based IPC handshake between the Application Engine and AG 2.0 (replaces terminal stdin blocking)
+- `pending_question.json` — Async File-Based IPC handshake between Application Engine, IPC Watcher, and AG Brain
 - `ques_ans_chatbot.json` — Per-job Q&A audit log stored alongside tailored resumes
 - `Job_Description.md` — Raw un-clamped multi-section scraped JD markdown saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
 - `job_details.json` — Structured job metadata + `naukri_match_score` saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
@@ -96,6 +139,11 @@ continuous_career_agent.py (daemon loop)
 - **Autonomous Cognitive Profile Synthesis:** At runtime, `AIClient.synthesize_cognitive_profile()` inspects the active candidate's `resume.md` and configuration, derives their domain (e.g. Finance & Accounting, Software Engineering, etc.), core vs. generic soft skills, domain acronyms, out-of-domain incompatible verticals, and multi-cycle designation queues (Cycle 1 core, Cycle 2 seniority/lateral, Cycle 3 specialized/functional) stored in `profiles/<profile>/output/cognitive_profile.json`.
 - **Zero-Hardcoding Contract & Guardrail P1:** Zero vertical dictionaries, domain words, soft skill sets, or question-detection keyword lists exist in Python source code. All evaluation gates in `evaluate_job_match()`, `arbitrate_card_fit()`, and `_heuristic_screening_answer()` read dynamically from `cognitive_profile.json` and `candidate_config.json`. Specifically, all screening question keyword lists (notice period, relocation, interview mode, communication, experience, numeric detection, numeric exclusion, intern designation markers, and fallback text label) are stored in the `screening_heuristics` section of `candidate_config.json` — **never** as Python literals. See Section 4.1 for the complete `screening_heuristics` schema.
 - **Two-Stage Cognitive Qualification Engine:** Stage 1 Deterministic Gatekeeper enforces C6 absolute negative keywords, domain root-stem token gating (excluding hierarchy stopwords), an **Incompatible Industry/Vertical Hard Gate** (rejecting verticals flagged incompatible by the cognitive profile), and an experience band filter (>3yr gap auto-rejects). Stage 2 Precision scoring enforces a strict 60% qualification bar and requires $\ge 2$ distinct **CORE functional domain skills** (excluding soft skills like "analytical" or "problem solving").
+- **Tier 2 Stage 1 Gatekeeper Line-by-Line Job Highlights Gating:** In `evaluate_job_match()`, the engine isolates the `Job Highlights:` section if present. Unlike the general JD body, highlight bullets represent hard qualification criteria and minimum candidate eligibility filters set by the recruiter. The Gatekeeper scans each highlight line-by-line:
+  - Any negative keyword match on word boundaries (`\b{kw}\b`) immediately drops the role (`score = 0`, rejection logged).
+  - Un-prefixed matching: negative keywords in highlights do NOT require qualification prefix triggers (`"require"`, `"must have"`) because the entire bullet in a highlights section IS an explicit prerequisite.
+- **Multi-Bullet Line-by-Line Regex Isolation Standard:** Solves the critical multi-bullet bleed bug. In multiline JD blocks, evaluating regex patterns (such as stakeholder/collaboration exemptions: `re.search(stakeholder_collab_pattern, ...)` across the entire multiline string allowed a collaboration phrase in bullet 2 (e.g. `"coordinate with auditors"`) to falsely exempt a mandatory disqualifying requirement in bullet 1 (e.g. `"Passed CA Intermediate"`). Regex exemption checks MUST be evaluated strictly line-by-line (`for line in highlights_content.splitlines():`) in complete semantic isolation.
+- **Duty Header Scraper Classification Standard:** In `_analyze_jd_work_capability()`, `"job highlights"` is strictly excluded from `resp_headers`. Job highlights represent candidate eligibility prerequisites and recruiter criteria, NOT work duties. Classifying highlights as duties falsely awarded positive capability match points to disqualified candidates.
 - **Tier 2B Cognitive Card Arbitration:** Evaluates unfamiliar roles, dynamic domain abbreviations, and visible skill chips while strictly rejecting incompatible verticals; does not contaminate candidate configuration with card titles.
 - **Tier 4 Autonomous Starvation Recovery:** If 0 jobs are found in a sweep, the Brain analyzes all seen market titles, compares with `resume.md` and candidate's total experience, and expands `candidate_config.json` with high-yield senior designations within the candidate's domain.
 - **Zero Terminal Blocking:** Removed `sys.stdin.readline()`. The background daemon will never freeze waiting for terminal input.
@@ -157,6 +205,11 @@ continuous_career_agent.py (daemon loop)
       - Tier 2B Cognitive Brain Arbitration (`ai.arbitrate_card_fit`)
    d. Deep scan detail page:
       - Check for native apply (`#apply-button`) vs external redirect (`#company-site-button`)
+      - **Tier 1 Scraper Pre-Flight Highlights Gating (Fast Rejection):**
+        - Extracts raw highlight strings from `ul.styles_JDC__job-highlight-list__QZC12 li` immediately upon page load.
+        - Evaluates each highlight line against `candidate_config.json["target_jobs"]["negative_keywords"]` using word-boundary regex (`\b{kw}\b`).
+        - If any negative keyword matches: logs `[HIGHLIGHTS GATED: Negative keyword '{kw}' in highlight: '{text}']`, writes `domain_gated` to `processed_ledger.json`, closes detail tab, and short-circuits.
+        - Bypasses unnecessary un-clamping, Native Match Score scraping, and LLM evaluation, saving ~1.5s per disqualified page.
       - **Un-clamp "Read More"** (`span.styles_rm-link__RgrMs`), expanding hidden responsibilities and benefits from 3.4k to 7.2k+ characters (Guardrail C12)
       - **Scrape Naukri Native Match Score** (`div.styles_JDC__match-score__VnjLL`, checking `i.ni-icon-check_circle` vs `i.ni-icon-crossMatchscore` for Early Applicant, Keyskills, Location, Work Experience) (Guardrail C13)
       - Assemble multi-section description: Highlights, Description, Read More, Specifications, Education, and Key Skills
@@ -286,6 +339,29 @@ os.replace(tmp_path, config_path)  # Atomic on all OSes
 - Optional `--sync-profile` flag triggers `02_profile_sync_naukri.py` and `03_profile_sync_linkedin.py` before the loop
 - Configurable `--delay` between cycles (default: 30 seconds)
 - `KeyboardInterrupt` for clean shutdown
+
+---
+
+### 3.8 `ipc_watcher.py` — Daemon 2: Asynchronous IPC Signal Relay (142 lines)
+
+- Dedicated background process running concurrently with `continuous_career_agent.py`.
+- **Purpose**: Acts as an un-buffered bridge between Daemon 1 (running the Playwright application engine) and Daemon 3 (AG Brain).
+- **Execution**:
+  ```bash
+  python core/ipc_watcher.py --profile profiles/<profile_name> --poll 2.0
+  ```
+- **Operational Mechanics**:
+  1. Polls `profiles/<profile_name>/output/pending_question.json` at a configurable interval (default 2.0 seconds).
+  2. Detects files where `"status": "PENDING"` and `"answer": null`.
+  3. Formats and prints a loud, structured ASCII alert block to `stdout` containing:
+     - Timestamp (`HH:MM:SS`)
+     - `TASK_TYPE` (`SCREENING_QUESTION`, `PROFILE_SYNTHESIS`, `RESUME_TAILORING`, `JOB_EVALUATION`, `STARVATION_EXPANSION`)
+     - `CONTROL_TYPE` (`RADIO_CHIP`, `CONTENTEDITABLE`, `DROPDOWN`, `FILE_UPLOAD`, `DATE_INPUT`)
+     - `QUESTION` text and optional `OPTIONS` list
+     - `FULL_PROMPT` snippet for AG Brain context
+  4. De-duplicates logs so the same question is printed once per occurrence (`last_printed_ts`), avoiding log flooding.
+  5. Emits periodic heartbeat logs every 30 polling iterations (`Heartbeat: waiting for pending question...`).
+- **Zero API / Zero Hardcoding**: Contains no external AI API dependencies and zero candidate PII. Serves purely as a transparent signal relay.
 
 ---
 
@@ -514,6 +590,31 @@ Date,Company,Role,Location,Platform,Status,FolderPath
 }
 ```
 
+### 4.10 `processed_ledger.json` Schema (Composite Deduplication Ledger)
+```json
+{
+  "https://www.naukri.com/job-listings-...": {
+    "title": "Job Title",
+    "company": "Company Name",
+    "score": 75,
+    "status": "qualified | rejected | domain_gated | external_apply | applied_chatbot | applied_1click",
+    "timestamp": "2026-09-18 23:09:19"
+  },
+  "naukri:<numeric_job_id>": {
+    "title": "Job Title",
+    "company": "Company Name",
+    "score": 75,
+    "status": "qualified | domain_gated",
+    "timestamp": "2026-09-18 23:09:19"
+  },
+  "<clean_company>::<clean_title>": {
+    "status": "composite_qualified | composite_rejected | domain_gated",
+    "timestamp": "2026-09-18 23:09:19"
+  }
+}
+```
+> **Composite Key Deduplication Rule:** The ledger uses $O(1)$ dictionary lookups supporting `clean_company::clean_title` (`re.sub(r'[^a-z0-9]', '', company.lower()) + '::' + re.sub(r'[^a-z0-9]', '', title.lower())`) to prevent re-applying to the exact same role across multiple discovery runs or locations, while strictly forbidding solitary bare titles (`"Accountant"`) from ever being stored as keys (preventing market starvation).
+
 ---
 
 ## 5. EMPIRICAL NAUKRI DOM ANATOMY CATALOG
@@ -665,3 +766,54 @@ https://www.naukri.com/mnjuser/profile
 | Hardcoded keyword lists in `ai_client.py` | Fatal halt via `verify_codebase_purity()` | ✅ Fixed — all keyword lists moved to `screening_heuristics` in config (v4.0) |
 | "internship" word in experience fallback | Caused `"internship as Senior Associate"` hallucination | ✅ Fixed — `fallback_text_label: "experience"` in config; Python reads `sh.get("fallback_text_label", "experience")` |
 | `"projects"` in `numeric_question_exclusions` | Blocked `"How many years of BFSI projects?"` from integer path | ✅ Fixed — `"projects"` removed from config exclusion list (v4.0) |
+| Multi-bullet collaboration regex bleed | Collaboration regex in bullet 2 blinded negative keyword in bullet 1 | ✅ Fixed — Multi-bullet line-by-line regex isolation evaluates each bullet independently (v5.0) |
+| Highlights classified as responsibilities | Highlights parsed as work duties, awarding positive capability points | ✅ Fixed — `"job highlights"` removed from `resp_headers` in `_analyze_jd_work_capability()` (v5.0) |
+| Job Highlights not scanned before unclamp | Full JD loaded and un-clamped before negative qualification was caught | ✅ Fixed — Tier 1 Scraper Pre-Flight Gating scans `ul.styles_JDC__job-highlight-list__QZC12 li` immediately on page load (v5.0) |
+| Stale runner process memory on code edit | Long-running runner daemon ran old Python bytecode in Windows RAM | ✅ Fixed — Three-Daemon operational architecture mandates graceful restart of runner daemon on engine code updates (v5.0) |
+| Chatbot question 90s SLA timeout | Novel screening question risked timing out during background runs | ✅ Fixed — Three-Daemon Architecture (Daemon 2 `ipc_watcher.py` + Daemon 3 1-min cron monitor) answers questions within SLA (v5.0) |
+| Standalone generic negative keyword false positives | Standalone generic nouns (`"Software"`) matched legitimate tools (`"Accounting Software"`), falsely disqualifying valid finance roles | ✅ Fixed — Composite Term Standard mandates role-specific phrases (`"Software Engineer"`, `"Software Developer"`) in `negative_keywords` (Guardrail C31) |
+| Syndicated portal redirect hangs | `page.goto()` hung indefinitely on slow/dead third-party syndicated URLs (Purview India, Leading Client) | ✅ Fixed — Two-Stage Fallback (`commit` [12s] + `domcontentloaded` [15s]) catches timeout cleanly, logs FAILED, and advances pipeline without crashing (Guardrail C32) |
+| Chatbot screening tool hallucinations | Open-ended chatbot questions regarding unverified ERPs/tools risked model hallucinations | ✅ Fixed — Free-Text Screening Ground Truth Standard strictly bounds answers to candidate's verified stack with honest disclosures (Guardrail C33) |
+| Radio chip option mismatch / DOM selection failure | Non-conforming answer (e.g. numeric "0" vs `['Beginner', 'Intermediate', 'Expert']`) broke chip click, causing stuck loop and application failure | ✅ Fixed — Option-Constrained Resolution with proficiency tier fallback (`_best_option_match`), heuristic option filtering, and pre-click conformity check with retry (Guardrail C34) |
+
+---
+
+## 8. CONFIRMED GROUND TRUTH APPLICATIONS AUDIT TRAIL (28 CONFIRMED)
+
+All applications below have been autonomously verified via DOM success banners, history redirects, or completed chatbot questionnaires:
+
+| # | Date & Timestamp | Company | Job Title | Platform | Status | Screening Q&A / Method |
+|:---|:---|:---|:---|:---|:---|:---|
+| 1 | 2026-09-18 23:24:51 | Pierag Consulting | Associate | Naukri | `APPLIED_CHATBOT` | Solved 3 questions (Relocation: Yes, Stat Audit: Stat Audit, Accounting Standard: Ind As) |
+| 2 | 2026-09-18 23:26:35 | Garg Mukesh & Associates | Audit Associate | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 3 | 2026-09-18 23:28:10 | Safeli Smart Llp | Accounts Executive And Internal Auditor | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 4 | 2026-09-18 23:30:15 | Genpact | Specialist - MDM | Naukri | `APPLIED_CHATBOT` | Solved MDM screening questionnaire |
+| 5 | 2026-09-18 23:32:45 | FedEx | Senior Financial Analyst | Naukri | `APPLIED_CHATBOT` | Solved financial analysis screening |
+| 6 | 2026-09-18 23:34:20 | Ikiraon Global | Financial Planning Analyst | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 7 | 2026-09-18 23:35:50 | VBR & Associates | Audit Associate | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 8 | 2026-09-18 23:37:25 | Wellgen | Accounting Specialist | Naukri | `APPLIED_CHATBOT` | Solved accounting questions |
+| 9 | 2026-09-18 23:39:10 | Delhi Apartments | Junior Accounts Executive | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 10 | 2026-09-18 23:41:00 | Allied Industries | Finance Associate | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 11 | 2026-09-18 23:42:30 | XMS Solutions | Process Analyst | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 12 | 2026-09-18 23:44:15 | Metaphor Infotech | Account Payable Associate | Naukri | `APPLIED_CHATBOT` | Solved AP screening questionnaire |
+| 13 | 2026-09-18 23:46:00 | Metaphor Infotech | Senior AP Executive | Naukri | `APPLIED_CHATBOT` | Solved AP questions |
+| 14 | 2026-09-18 23:47:45 | Cloudxtreme | Finance Operations Analyst | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 15 | 2026-09-18 23:49:30 | Sutherland | Associate - Financial Analysis | Naukri | `APPLIED_CHATBOT` | Solved finance questions |
+| 16 | 2026-09-18 23:51:48 | GLOBAL GIANT MNC | Senior Finance Executive OTC, RTR, FP&A | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 17 | 2026-09-18 23:52:50 | AXA Global Business Services | Senior Analyst | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 18 | 2026-09-18 23:53:59 | Aon | SOX Coordinator | Naukri | `APPLIED_CHATBOT` | Solved SOX control & compliance questions |
+| 19 | 2026-09-18 23:57:37 | Ujjivan Small Finance Bank | Auditor | Naukri | `APPLIED_CHATBOT` | Solved auditing experience questionnaire |
+| 20 | 2026-09-19 00:00:09 | Talent Corner HR Services | Senior Accountant - D2C | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 21 | 2026-09-19 00:04:42 | Deloitte US-India Offices | Record To Report Analyst | Naukri | `APPLIED_CHATBOT` | Solved R2R experience questionnaire |
+| 22 | 2026-09-19 00:07:44 | Layam Flexi | Finance Executive | Naukri | `APPLIED_CHATBOT` | Solved 3 questions (Import Export: 0, General Ledger: 1, Relocation: Yes) |
+| 23 | 2026-09-19 00:08:21 | Max Healthcare | Cashier - Accounts & Finance | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 24 | 2026-09-19 00:12:49 | ManpowerGroup Services India | Senior Executive - OTC | Naukri | `APPLIED_CHATBOT` | Solved OTC questions (E-Invoicing: 1, Order to Cash: 0) |
+| 25 | 2026-09-19 00:13:34 | Hiring for Leading Financial Services Co. | Accounts Executive | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 26 | 2026-09-19 00:14:10 | Hiring for Leading Food & Beverage Co. | Accounts Officer | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect |
+| 27 | 2026-09-19 00:16:41 | Finance and accounts MNC | Accounts Payable Associate SAP Specialisation | Naukri | `APPLIED_CHATBOT` | Solved 3 questions (Contractual: Yes, 3rd-party: Yes, Night shift: Yes) |
+| 28 | 2026-09-19 00:22:48 | Anaptyss | Technology Risk Management Control Testing | Naukri | `APPLIED_1CLICK` | 1-Click Apply confirmed via redirect (NLB Services / 2-7 Yrs / Noida & Gurugram) |
+
+
+
+
+

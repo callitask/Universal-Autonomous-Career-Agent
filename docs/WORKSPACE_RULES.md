@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: WORKSPACE DEVELOPMENT & CODING RULES
 
-> **Document Version:** 3.2 — Zero-Hardcoding Screening Heuristics Purge + `screening_heuristics` Config Schema Enforced  
-> **Last Updated:** 2026-09-17  
+> **Document Version:** 4.0 — Three-Daemon Operational Standard, Two-Tier Highlights Gating & Multi-Bullet Isolation Enforced  
+> **Last Updated:** 2026-09-18  
 > **Authority:** These rules are ABSOLUTE and OVERRIDE all model defaults. Violations cause runtime crashes, data corruption, phantom applications, or account bans.  
 > **Workspace Root:** `F:\JOB AI AGENT`
 
@@ -469,6 +469,68 @@ https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}-{page_num}?experience={ex
 2. The label `"internship"` is categorically prohibited as a hardcoded string in this template. Using it caused the live bug: `"1 year of practical exposure through internship as Senior Associate at Cognizant"` — a factually incorrect answer that misrepresented full-time work experience as an internship.
 3. The template now reads: `f"{_exp_label} as {primary_role} at {primary_company}"` where `_exp_label = sh.get("fallback_text_label", "experience")`.
 
+### C28: Two-Tier Early Job Highlights Gating Architecture Standard
+**Rule:**
+1. **Recruiter Eligibility Truth:** On Naukri, the `Job Highlights` section (`ul.styles_JDC__job-highlight-list__QZC12 li`) represents hard minimum qualification criteria and recruiter gating prerequisites (e.g., `"CA Inter completed"`, `"B.Tech CS only"`, `"MBA required"`).
+2. **Tier 1 (Scraper Pre-Flight Gating — `core/04_job_discovery.py`):**
+   - Immediately upon navigating to the job details page, before clicking "Read More" to un-clamp or scraping the full body HTML, the discovery engine extracts all highlight bullets from `ul.styles_JDC__job-highlight-list__QZC12 li`.
+   - Each highlight string is evaluated against `target_jobs.negative_keywords` using word-boundary regex (`\b{kw}\b`).
+   - If any negative keyword matches: the engine logs `[HIGHLIGHTS GATED]`, writes `domain_gated` status into `processed_ledger.json`, immediately closes the detail tab, and short-circuits.
+   - Saves ~1.5s per disqualified job and eliminates redundant unclamping/evaluation.
+3. **Tier 2 (Gatekeeper Stage 1 Gating — `core/ai_client.py`):**
+   - In `evaluate_job_match()`, the Stage 1 Gatekeeper isolates the `Job Highlights:` section.
+   - Highlights bullets are evaluated without requiring qualification prefix triggers (`"require"`, `"must have"`) because every item in highlights is already an explicit prerequisite. Any negative keyword match on word boundaries immediately drops the score to 0.
+4. **Highlights Classification Standard:** Highlights must NEVER be included in duty/responsibility headers (`resp_headers`) in `_analyze_jd_work_capability()`. Doing so treats qualification prerequisites as work experience, falsely awarding capability points to disqualified candidates.
+
+### C29: Multi-Bullet Line-by-Line Regex Isolation Standard
+**Rule:**
+1. **The Multi-Bullet Bleed Bug:** When evaluating multiline text blocks containing multiple job duties or qualification bullets, regex exemption filters (such as `stakeholder_collab_pattern` intended to exempt phrases like `"collaborate with auditors"`) MUST NEVER be executed across the entire multiline string (`re.search(pattern, multiline_block)`).
+2. **The Forensic Trap:** In a multiline JD block, evaluating regex across multiple bullets caused a collaboration phrase in bullet 2 (e.g. `"coordinate with statutory auditors"`) to falsely match the collaboration exemption, which blinded the Gatekeeper to a fatal negative keyword in bullet 1 (e.g. `"Passed CA Intermediate"`). This allowed unqualified candidates to pass Stage 1 gating.
+3. **Line-by-Line Isolation Mandate:** All multiline text evaluation, especially within Job Highlights and Job Descriptions, MUST iterate line-by-line / bullet-by-bullet (`for line in text.splitlines():`) in complete semantic isolation. Exemption patterns matched on one line can ONLY exempt that specific line and must NEVER bleed into adjacent lines.
+
+### C30: Three-Daemon Operational Architecture & Process Memory Reload Invariant
+**Rule:**
+1. **Three-Daemon Continuous Operation:** Autonomous job applications MUST operate through three coordinated daemons:
+   - **Daemon 1 (Discovery & Application Runner):** `continuous_career_agent.py` executing discovery, un-clamping, ATS tailoring, PDF compilation, fast resume upload, and chatbot form solving via CDP port 9222.
+   - **Daemon 2 (IPC Signal Relay):** `core/ipc_watcher.py` polling `profiles/<profile>/output/pending_question.json` at 2.0s intervals, emitting structured ASCII alerts to stdout upon detecting `PENDING` recruiter questions.
+   - **Daemon 3 (AG Brain Cron Monitor):** Scheduled recurring 1-minute heartbeat (`* * * * *`) awake loop that inspects IPC logs, synthesizes factual answers from `resume.md` and candidate config, and writes the JSON answer before the 90-second SLA timeout.
+2. **Process Memory Reload Invariant (Windows Python Runtime):**
+   - Long-running Python processes on Windows do NOT reload imported `.py` modules when files on disk are edited.
+   - Whenever any developer or agent modifies files in `core/*.py` (e.g. `04_job_discovery.py`, `ai_client.py`, `05_apply_jobs.py`), any running runner daemon (Daemon 1) continues executing the old bytecode cached in RAM.
+   - **Mandatory Action:** After modifying any engine script in `core/`, the agent MUST locate and terminate the running runner daemon and restart it fresh to guarantee that live execution reflects the latest code fixes.
+
+### C31: Negative Keywords Composite Term Standard (Anti-False-Disqualification)
+**Rule:**
+1. **Generic Word Collision Trap:** Standalone generic nouns (e.g. `"Software"`, `"Developer"`, `"Engineer"`, `"Consultant"`) must NEVER be used as solitary negative keywords in `target_jobs.negative_keywords`.
+2. **Empirical Cause:** In non-technical professions (Finance, Accounting, Operations, Legal), job highlights routinely contain legitimate tool qualifications such as *"B.Com graduate with skills in Accounting Software, Tally, GST"*. A solitary negative keyword `"Software"` triggers regex `\bSoftware\b` and falsely gates ideal accounting roles.
+3. **Composite Term Mandate:** Unwanted profession filters MUST use composite, role-specific terms: `"Software Engineer"`, `"Software Developer"`, `"Software Development"`, `"Web Developer"`, `"Full Stack Developer"`, `"Java Developer"`. This isolates the unwanted engineering professions while preserving finance and accounting roles requiring business software tools.
+
+### C32: Page Navigation Timeout & Exception Recovery Protocol
+**Rule:**
+1. **Third-Party Portal Hangs:** Certain job listings on Naukri (specifically syndicated agencies like Purview India, Leading Client, or unverified recruiters) redirect through slow or non-responsive third-party gateways that hang indefinitely or exceed Playwright navigation limits.
+2. **Two-Stage Fallback Standard in `05_apply_jobs.py`:**
+   - Attempt stage 1 with `wait_until="commit"` (12,000ms timeout) to ensure HTTP response has been received.
+   - If commit succeeds, allow stage 2 with `wait_until="domcontentloaded"` (15,000ms timeout).
+   - If either stage times out or throws `PlaywrightTimeoutError` / `Error`, the engine must catch the exception cleanly, log `[ERROR] Page navigation failed to load job URL within timeout`, record `Status: FAILED` in `applications_tracker.csv`, and cleanly advance to the next card.
+3. **No Unhandled Crashes:** Navigation timeouts must NEVER crash the application loop or leave orphaned zombie detail pages.
+
+### C33: Free-Text Screening Honesty & Candidate Ground Truth Standard
+**Rule:**
+1. **Zero Hallucination of Unverified Tool Stacks:** When answering open-ended or free-text recruiter screening questions (e.g. *"Which ERP systems do you have hands-on experience with?"*, *"Explain your experience with SAP/Oracle"*):
+2. **Truthful Candidate Representation:** If the candidate's verified background in `resume.md` and `candidate_config.json` does NOT include the specific enterprise tool queried:
+   - The AG Brain must NEVER fabricate or claim hands-on expertise in tools the candidate has never used.
+   - The response must explicitly and honestly state the candidate's actual verified tool stack (e.g., Tally, Advanced MS Excel, Power BI) and truthfully clarify lack of prior exposure to the unverified platform (e.g. *"No direct hands-on experience in SAP/Oracle; proficient in Tally, Advanced MS Excel, and financial modeling with high adaptability to learn enterprise ERP systems"*).
+3. **Recruiter Trust & Audit Integrity:** Candidate integrity is paramount. Hallucinating enterprise systems on screening questionnaires causes immediate disqualification upon technical interview scrutiny.
+
+### C34: Radio Chip Option-Constrained Resolution & Proficiency Fallback Standard
+**Rule:**
+1. **The Option-Mismatch Failure Trap:** When a chatbot screening question is a `RADIO_CHIP` or `DROPDOWN`, the portal DOM strictly presents a finite list of selectable option labels (e.g. `['Beginner', 'Intermediate', 'Expert']` or `['Yes', 'No']`). If the resolver or heuristic returns an arbitrary or unconstrained string that does NOT exist verbatim in `options` (e.g. evaluating `"0"` for zero experience when the UI offers `['Beginner', 'Intermediate', 'Expert']`), the DOM selector (`label.ssrc__label:has-text(...)`) fails to locate any matching element.
+2. **The Contenteditable Fallback Cascade:** When chip selection fails, falling back to typing into a `contenteditable` container fails because no active text input exists for chip questions, triggering repeated attempts, burning the stuck loop budget (Guardrail C7), and failing the application (`FAILED`).
+3. **Multi-Layer Defensive Mandate:**
+   - **Layer 1 (Proficiency Matching in `_best_option_match`):** When the target answer is zero experience (`"0"`, `"no experience"`, `0.0`), the option matcher must search for zero-equivalent strings, and if none exist, map to the lowest proficiency tier: `["beginner", "basic", "novice", "entry", "elementary", "foundational", "learning"]`.
+   - **Layer 2 (Heuristic Gate in `answer_screening_question`):** If a candidate heuristic answer does not match any element in `options`, it must be discarded, allowing AI/IPC reasoning to arbitrate. Furthermore, the final returned answer for option-constrained queries must strictly exist in `options`, falling back to `options[0]`.
+   - **Layer 3 (Pre-Click Conformity & Retry in `05_apply_jobs.py`):** Before calling `execute_chip_selection(ans)`, the application engine verifies `ans in options`. If `ans not in options`, it resolves via `_best_option_match` or defaults to `options[0]`. If clicking `ans` fails, the engine retries clicking `options[0]` before attempting any contenteditable fallback.
+   - **Layer 4 (Zero Config Poisoning):** Never persist non-conforming answers (e.g. `"0"` for a `['Beginner', 'Intermediate', 'Expert']` question) into `candidate_config.json["auto_learned_truths"]`.
 
 ---
 
@@ -507,7 +569,8 @@ F:\JOB AI AGENT\
 │   ├── 04_job_discovery.py            # Batched job scraper + orchestrator
 │   ├── 05_apply_jobs.py               # Application engine + chatbot solver
 │   ├── generate_factual_tailored.py   # Resume tailoring + PDF generation
-│   ├── continuous_career_agent.py     # Daemon loop orchestrator
+│   ├── continuous_career_agent.py     # Daemon 1: Discovery & application runner
+│   ├── ipc_watcher.py                 # Daemon 2: Asynchronous IPC signal relay
 │   ├── utils/
 │   │   ├── profile_context.py         # Multi-user sandbox context manager & Purity Enforcer
 │   │   └── browser_manager.py         # CDP browser lifecycle manager
@@ -523,6 +586,7 @@ F:\JOB AI AGENT\
 │           │   ├── naukri_cards/      # Per-role JSON evaluation cards (KEEP/UPDATE/ADD)
 │           │   └── naukri_sync_report.json # Summary sync metrics
 │           ├── applications_tracker.csv
+│           ├── processed_ledger.json   # Persistent composite-key dedup ledger
 │           ├── search_manifest.json
 │           ├── saved_external_jobs.json
 │           └── logs/
@@ -542,5 +606,6 @@ F:\JOB AI AGENT\
 | `02b_naukri_fast_resume_upload.py` | `core.utils.profile_context.ProfileContext` |
 | `03_profile_sync_linkedin.py` | `google.genai` (separate SDK instance) |
 | `continuous_career_agent.py` | `subprocess` only (shell orchestration) |
+| `ipc_watcher.py` | Standard library only (`os`, `sys`, `json`, `time`, `pathlib`, `argparse`, `datetime`) |
 
 **WARNING:** `03_profile_sync_linkedin.py` uses `from google import genai` (new SDK) while all other scripts use `import google.generativeai as genai` (legacy SDK). These are **different packages**. Do not mix them.

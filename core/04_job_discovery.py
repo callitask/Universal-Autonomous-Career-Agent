@@ -74,6 +74,14 @@
 # Changes Made: Resolved target configuration dynamically from config.get("target_jobs", {}) if isinstance(config, dict) else {}.
 # Rationale: Universal and 100% dynamic; resolves config keys safely without any profile-specific assumptions or hardcoded values.
 # Preventative Notes: Always resolve configuration dictionaries safely via config.get() with defaults.
+#
+# [ENTRY #010]
+# Term: [JOB_HIGHLIGHTS_PREFLIGHT_GATING]
+# Timestamp: 2026-09-18 23:14:30 +05:30
+# Issue / Context: Scraper extracted highlights_list from DOM but proceeded with full-page scraping without early validation. Negative keywords in highlights (e.g., CA Intermediate, Articleship) were not checked until after full JD assembly.
+# Changes Made: Added immediate pre-flight scan of highlights_list against candidate's configured negative_keywords right after DOM extraction. If a negative keyword matches on word boundaries (excluding stakeholder collaboration patterns), immediately log, record as domain_gated in processed_ledger, close page, and short-circuit to next job.
+# Rationale: Prevents wasting time scraping and AI-evaluating roles whose topmost highlights contain disqualifying requirements.
+# Preventative Notes: Never skip early highlights checks; Job Highlights on Naukri represent the recruiter's most critical dealbreakers.
 # ================================================================================
 """
 ================================================================================
@@ -984,14 +992,6 @@ def run_batched_discovery(profile_path: str):
                                 
                                 session_seen_titles.add(title)
 
-                                card_info = f"Rating: {rating_text}" if rating_text else ""
-                                if reviews_text: card_info += f" ({reviews_text})"
-                                if exp_text: card_info += f" | Exp: {exp_text}"
-                                if loc_text: card_info += f" | Loc: {loc_text}"
-                                if sal_text: card_info += f" | Sal: {sal_text}"
-                                if posted_text: card_info += f" | Posted: {posted_text}"
-                                print(f"  [CARD] {title} @ {company}" + (f" [{card_info.strip(' |')}]" if card_info else ""), flush=True)
-                                
                                 if platform == "linkedin" and "/view/" in url:
                                     url = url.split("?")[0]
                                 elif platform == "naukri" and url and not url.startswith("http"):
@@ -999,11 +999,32 @@ def run_batched_discovery(profile_path: str):
                                     
                                 if url:
                                     can_url = canonical_job_url(url)
+                                    raw_url = url
+                                    job_id = extract_platform_job_id(raw_url, platform) or extract_platform_job_id(can_url, platform)
+                                    composite_key = make_composite_key(company, title)
+                                    
+                                    if (
+                                        url.lower() in processed_ledger
+                                        or raw_url.lower() in processed_ledger
+                                        or (can_url and can_url in processed_ledger)
+                                        or (job_id and job_id in processed_ledger)
+                                        or composite_key in processed_ledger
+                                    ):
+                                        continue
+
+                                    card_info = f"Rating: {rating_text}" if rating_text else ""
+                                    if reviews_text: card_info += f" ({reviews_text})"
+                                    if exp_text: card_info += f" | Exp: {exp_text}"
+                                    if loc_text: card_info += f" | Loc: {loc_text}"
+                                    if sal_text: card_info += f" | Sal: {sal_text}"
+                                    if posted_text: card_info += f" | Posted: {posted_text}"
+                                    print(f"  [CARD] {title} @ {company}" + (f" [{card_info.strip(' |')}]" if card_info else ""), flush=True)
+
                                     jobs_to_scan.append({
                                         "title": title,
                                         "company": company,
                                         "url": can_url if can_url else url,
-                                        "raw_url": url,
+                                        "raw_url": raw_url,
                                         "card_skills": skill_tags,
                                         "exp_text": exp_text,
                                         "rating": rating_text,
@@ -1269,6 +1290,34 @@ def run_batched_discovery(profile_path: str):
                                     # 3. Extract Job Highlights
                                     highlights_els = detail_page.locator("ul.styles_JDC__job-highlight-list__QZC12 li, ul[class*='job-highlight'] li").all()
                                     highlights_list = [h.inner_text().strip() for h in highlights_els if h.inner_text().strip()]
+
+                                    # 3b. Pre-flight scan Job Highlights against candidate negative keywords
+                                    neg_keywords = config.get("target_jobs", {}).get("negative_keywords", []) if isinstance(config, dict) else []
+                                    stakeholder_collab_pattern = r'(?:working\s+(?:closely\s+)?with|collaborat\w*\s+with|liais\w*\s+with|coordinat\w*\s+with|partner\w*\s+with|interfac\w*\s+with|interact\w*\s+with|support(?:ing)?)\s+[^.\n]*'
+                                    highlight_rejected_kw = None
+                                    highlight_rejected_text = ""
+                                    for h_text in highlights_list:
+                                        h_lower = h_text.lower()
+                                        for neg in neg_keywords:
+                                            if not neg or len(neg) < 2:
+                                                continue
+                                            if re.search(rf'\b{re.escape(neg.lower())}\b', h_lower):
+                                                if not re.search(stakeholder_collab_pattern, h_lower):
+                                                    highlight_rejected_kw = neg
+                                                    highlight_rejected_text = h_text
+                                                    break
+                                        if highlight_rejected_kw:
+                                            break
+
+                                    if highlight_rejected_kw:
+                                        print(f"     [HIGHLIGHTS GATED: Negative keyword '{highlight_rejected_kw}' in highlight: '{highlight_rejected_text}']", flush=True)
+                                        processed_ledger.add(url.lower())
+                                        processed_ledger.add(can_url)
+                                        if job_id: processed_ledger.add(job_id)
+                                        if page_job_id: processed_ledger.add(page_job_id)
+                                        processed_ledger.add(composite_key)
+                                        ctx.add_to_processed_ledger(can_url, status="domain_gated", metadata={"title": title, "company": company, "reason": f"Negative keyword in Job Highlights: {highlight_rejected_kw}"})
+                                        continue
 
                                     # 4. Extract Main Job Description
                                     desc_selector = ".styles_JDC__dang-inner-html__h0K4t, .dang-inner-html, .job-desc, section.job-desc, .styles_Jd__text__bWMxs"

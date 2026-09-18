@@ -68,6 +68,14 @@
 # Changes Made: Removed Naukri platform fallback, stripped domain-specific words from stopwords.
 # Rationale: Ensure dynamic configuration.
 # Preventative Notes: Never hardcode these values again.
+#
+# [ENTRY #008]
+# Term: [RADIO_CHIP_OPTION_CONSTRAINED_DISPATCH]
+# Timestamp: 2026-09-19 00:15:30 +05:30
+# Issue / Context: If an answer resolved for a RADIO_CHIP does not exist in the DOM options list (e.g. numeric '0' for ['Beginner', 'Intermediate', 'Expert']), execute_chip_selection failed, falling back to an inactive contenteditable textarea, repeating 3 times, and failing the application.
+# Changes Made: Added strict option conformity verification before execute_chip_selection, mapping non-conforming answers via _best_option_match or options[0], and retrying options[0] before contenteditable fallback.
+# Rationale: Guarantees that RADIO_CHIP questions always dispatch an existing option to the DOM.
+# Preventative Notes: Never dispatch an arbitrary string to a radio chip or dropdown handler without checking that it exists in the discovered options.
 # ================================================================================
 """
 ================================================================================
@@ -1673,8 +1681,17 @@ class ApplicationEngine:
                 else:
                     log_step("CHOICES", f"{options}")
                     ans = resolver.resolve_answer(active_q, options=options, control_type="RADIO_CHIP")
+                    # Strict option constraint guardrail: ans MUST exist in options
+                    if options and ans not in options:
+                        best = resolver.ai._best_option_match(ans, options) if hasattr(resolver.ai, "_best_option_match") else None
+                        ans = best or options[0]
                     log_step("ACTION", f"Selecting Option: \"{ans}\"")
                     selection_ok = resolver.execute_chip_selection(ans)
+                    if not selection_ok and options and ans != options[0]:
+                        log_step("WARNING", f"Click on '{ans}' failed. Retrying first option '{options[0]}'...")
+                        selection_ok = resolver.execute_chip_selection(options[0])
+                        if selection_ok:
+                            ans = options[0]
                     if not selection_ok:
                         log_step("WARNING", "Native click failed. Attempting contenteditable fallback...")
                         resolver.execute_contenteditable_input(ans)
