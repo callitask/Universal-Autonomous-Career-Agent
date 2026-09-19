@@ -1,4 +1,4 @@
-# ACTIVE CONSTRAINT BLOCK - Read Before Every Action (Non-Negotiable)
+﻿# ACTIVE CONSTRAINT BLOCK - Read Before Every Action (Non-Negotiable)
 # Version: 1.1 | Updated: 2026-09-17 | Loaded: auto (global + workspace)
 # Token budget: ~200 tokens. Purposely minimal. Do NOT expand.
 
@@ -35,6 +35,17 @@ Career Agent (core/, scripts/, profiles/, docs/) and Sophron (Sophron/) are comp
 Write a Sophron card at every milestone. A milestone is: task completed, user corrects AI, topic switches, plan approved/rejected, a-ha moment. Not just at session end. Use guard.safe_write_json(). Include CONTEXT_CLASSIFICATION fields.
 
 ---
+
+## GATE 11 — AG BRAIN SOLE EVALUATOR (G-BRAIN-01)
+Effective: 2026-09-19
+Python scripts MUST NOT make semantic match/reject decisions on job titles, JD content,
+highlights text, or any keyword pattern. All such decisions MUST route to AG Brain via
+JOB_CARD_EVALUATION or JOB_FULL_EVALUATION IPC task types.
+ALLOWED in Python: salary floor gate, C24 exp band gate (numeric), negative_companies (exact identity).
+PROHIBITED in Python: is_title_allowed(), negative_keywords matching, incompatible_verticals gate,
+highlights keyword scan, any regex/substring match on title or JD for accept/reject decisions.
+Violation: Any agent re-introducing keyword gating in Python without IPC routing is in breach of G-BRAIN-01.
+
 ## ACTIVE GUARDRAILS REFERENCE (C-Series)
 [C24] Card-Level Experience Band Gating: exp_text from SRP card MUST be parsed before deep scan. If card min_exp > candidate.total_experience_years + target_jobs.max_experience_gap_years → reject [experience_gap_gated]. ALL thresholds read from candidate_config.json — zero hardcoding in Python.
 [C32] Two-Stage Page Navigation Timeout Recovery.
@@ -43,3 +54,4 @@ Write a Sophron card at every milestone. A milestone is: task completed, user co
 ---
 ## QUICK REMINDER: The AG Brain is the SOLE talent strategist.
 ## Python scripts = dumb actuators. Zero heuristics, zero templates, zero branches on experience.
+

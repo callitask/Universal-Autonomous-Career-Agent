@@ -95,3 +95,14 @@
 - **Correct behavior**: (1) Card-level experience band gating must run against `exp_text` BEFORE deep scanning, exactly mirroring the salary floor gate. If card min exp > candidate exp + max_experience_gap_years → reject immediately as `experience_gap_gated`. (2) Senior consulting titles (`Consultant`, `Process Excellence`, `Finance Transformation`) must be in `negative_keywords` for fresher profiles.
 - **Fix applied**: Added Guardrail C24 (card-level exp band gate) in `04_job_discovery.py`; added 6 negative keyword entries to `profiles/anshika_garg/candidate_config.json`.
 - **Never repeat**: Never trust JD body text alone for experience seniority enforcement. Naukri card `exp_text` is populated by the platform itself and is always authoritative. Always enforce seniority at card level before wasting tokens on deep scan.
+
+[2026-09-19] KEYWORD-GATE ARCHITECTURE CAUSES FALSE POSITIVES AND FALSE NEGATIVES
+Root Cause: Python is_title_allowed() + highlights keyword gate used stale keyword lists to make
+semantic match/reject decisions on job cards. This caused: (1) False rejections — "manage" as verb
+in JD body blocked entry-level roles because "Manager" was in negative_keywords; (2) False acceptances
+— senior roles with novel title patterns not in any keyword list passed unchecked.
+Fix Applied: G-BRAIN-01 — Removed is_title_allowed() call from card loop. Removed highlights keyword
+gate. All semantic decisions now route to AG Brain via JOB_CARD_EVALUATION IPC. Python retains only
+objective numeric gates: salary floor, C24 exp band, negative_companies (exact identity).
+Principle: Python = arms and legs (data collection + actuation). AG Brain = sole decision-maker for
+all semantic job fit evaluations. Keyword lists in config are advisory context for AG Brain only.

@@ -100,6 +100,26 @@
 #   text parsing. JD body can be sparse/partial; card metadata is always populated by Naukri's own engine.
 # Preventative Notes: Never rely solely on JD body text parsing for experience seniority gating.
 #   Naukri card exp_text is the ground truth. max_experience_gap_years must remain in candidate_config.json.
+#
+# [ENTRY #012]
+# Term: [G_BRAIN_01_AG_BRAIN_SOLE_EVALUATOR]
+# Timestamp: 2026-09-19 15:30:00 +05:30
+# Issue / Context: Keyword-based Python gating (is_title_allowed, negative_keywords, incompatible_verticals,
+#   highlights keyword scan) caused two error classes: (1) False rejections — JD text with "manage" as
+#   a verb (e.g. "manage the audits") blocked legitimate entry-level roles matching "Manager" in
+#   negative_keywords; (2) False acceptances — senior roles with novel title patterns not in keyword
+#   lists passed through unchecked. Stale keyword lists cannot capture semantic nuance of role fit.
+# Changes Made: Removed is_title_allowed() call from card loop. Removed highlights keyword gate (3b).
+#   Added JOB_CARD_EVALUATION IPC block: Python writes card data + advisory context to pending_question.json,
+#   polls for AG Brain decision (DEEP_SCAN or SKIP), routes accordingly. is_title_allowed() function
+#   body retained as dead code with DEPRECATED marker. negative_keywords passed as advisory context
+#   to AG Brain (not executed by Python code). Only objective numeric gates remain in Python:
+#   salary floor, C24 exp band (card metadata), negative_companies (exact identity match).
+# Rationale: AG Brain (Antigravity 2.0) makes ALL semantic match/reject decisions. Python = data
+#   collector + actuator only. This eliminates keyword list staleness and false positive/negative errors.
+# Preventative Notes: NEVER re-introduce keyword-based semantic gating in Python. If a new gate is
+#   needed, it must be: (a) objective/numeric, OR (b) routed to AG Brain via IPC. Keyword lists in
+#   candidate_config.json are advisory context for AG Brain only — Python must not execute them as gates.
 # ================================================================================
 """
 ================================================================================
@@ -276,6 +296,14 @@ def is_title_allowed(
     ctx = None
 ) -> bool:
     """
+    !! DEPRECATED — G-BRAIN-01 (2026-09-19) !!
+    This function is DEAD CODE. It is no longer called from the card processing loop.
+    All semantic job match/reject decisions now route to the AG Brain via IPC
+    (JOB_CARD_EVALUATION task type). Python must not make keyword-based match decisions.
+    Retained for historical reference only. DO NOT re-enable or call this function.
+    See: AI CONTEXT ENTRY #012, SCAR_TISSUE.md [2026-09-19], ACTIVE_CONSTRAINT_BLOCK GATE 11.
+
+    Original purpose (historical):
     Tier 2 Multi-Pass Gating & Cognitive Arbitration:
     - 1. C6 Fix: Strictly rejects titles containing negative keywords unconditionally.
     - 2. Incompatible Vertical Gate: Detects and filters obvious out-of-domain verticals.
@@ -1093,24 +1121,90 @@ def run_batched_discovery(profile_path: str):
                                 ctx.add_to_processed_ledger(composite_key, status="composite_negative_company_gated")
                                 continue
                                 
-                            if not is_title_allowed(
-                                title,
-                                all_positive_targets,
-                                negative_keywords,
-                                card_skills=card_skills,
-                                exp_text=exp_text,
-                                ai_client=ai,
-                                config=config,
-                                ctx=ctx
-                            ):
-                                print(f"  -> Rejecting Irrelevant Job: {title} @ {company} [DOMAIN GATED]", flush=True)
+                            # ── AG BRAIN SOLE EVALUATOR (G-BRAIN-01) ──────────────────────────────
+                            # DEPRECATED (2026-09-19): is_title_allowed() keyword gate removed.
+                            # Reason: Keyword matching causes false positives (e.g. "manage" in JD
+                            # body blocks legitimate entry-level roles) and false negatives (novel
+                            # role titles not in keyword lists pass unchecked). Python must NOT make
+                            # any semantic match/reject decision. All such decisions route to AG Brain.
+                            # Only objective numeric gates (salary floor, C24 exp band, company
+                            # blacklist) may be enforced in Python without IPC.
+                            # See: SCAR_TISSUE.md [2026-09-19], ACTIVE_CONSTRAINT_BLOCK.md GATE 11
+                            # ─────────────────────────────────────────────────────────────────────
+                            # AG Brain Card Evaluation via IPC (JOB_CARD_EVALUATION)
+                            _ipc_card_payload = {
+                                "status": "PENDING",
+                                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                "task_type": "JOB_CARD_EVALUATION",
+                                "question": "Evaluate this job card for candidate fit.",
+                                "options": None,
+                                "control_type": "JSON",
+                                "max_characters": None,
+                                "prompt": json.dumps({
+                                    "candidate_summary": {
+                                        "total_experience_years": float(cand.get("total_experience_years", 0) or 0),
+                                        "seniority_level": ctx.load_cognitive_profile().get("seniority_level", "Fresher / Entry Level") if ctx and hasattr(ctx, "load_cognitive_profile") else "Fresher / Entry Level",
+                                        "domain": ctx.load_cognitive_profile().get("candidate_domain", "Finance") if ctx and hasattr(ctx, "load_cognitive_profile") else "Finance",
+                                        "active_search_titles": all_positive_targets[:8],
+                                        "advisory_avoid_terms": list(negative_keywords)[:30]
+                                    },
+                                    "card": {
+                                        "title": title,
+                                        "company": company,
+                                        "exp_text": exp_text,
+                                        "salary": str(job.get("salary") or ""),
+                                        "skills": card_skills[:15],
+                                        "posted": str(job.get("posted_date") or job.get("posted") or "")
+                                    }
+                                }),
+                                "answer": ""
+                            }
+                            _ipc_pending_path = profile_dir / "output" / "pending_question.json"
+                            try:
+                                import json as _json_ipc
+                                _ipc_pending_path.parent.mkdir(parents=True, exist_ok=True)
+                                _ipc_pending_path.write_text(_json_ipc.dumps(_ipc_card_payload, indent=2), encoding="utf-8")
+                            except Exception as _ipc_write_err:
+                                print(f"  [IPC WRITE ERROR] {_ipc_write_err} — skipping card conservatively", flush=True)
+                                continue
+
+                            # Poll for AG Brain decision (max 90s, 2s interval)
+                            _ipc_decision = None
+                            _ipc_reason = "timeout"
+                            for _ipc_poll in range(45):
+                                time.sleep(2)
+                                try:
+                                    _ipc_resp_raw = _ipc_pending_path.read_text(encoding="utf-8")
+                                    _ipc_resp = _json_ipc.loads(_ipc_resp_raw)
+                                    if _ipc_resp.get("status") == "PENDING":
+                                        continue
+                                    _ans_raw = _ipc_resp.get("answer", "")
+                                    if _ans_raw:
+                                        _ans = _json_ipc.loads(_ans_raw) if isinstance(_ans_raw, str) else _ans_raw
+                                        _ipc_decision = str(_ans.get("decision", "SKIP")).upper()
+                                        _ipc_reason = str(_ans.get("reason", ""))
+                                        break
+                                except Exception:
+                                    continue
+
+                            # Clean up IPC file after reading
+                            try:
+                                if _ipc_pending_path.exists():
+                                    _ipc_pending_path.unlink()
+                            except Exception:
+                                pass
+
+                            if _ipc_decision != "DEEP_SCAN":
+                                _skip_reason = _ipc_reason or "AG Brain: card not suitable"
+                                print(f"  -> [AG BRAIN SKIP] {title} @ {company} | {_skip_reason}", flush=True)
                                 processed_ledger.add(url.lower())
                                 processed_ledger.add(can_url)
                                 if job_id: processed_ledger.add(job_id)
                                 processed_ledger.add(composite_key)
-                                ctx.add_to_processed_ledger(can_url, status="domain_gated", metadata={"title": title, "company": company})
-                                ctx.add_to_processed_ledger(composite_key, status="composite_gated")
+                                ctx.add_to_processed_ledger(can_url, status="ag_brain_card_skipped", metadata={"title": title, "company": company, "reason": _skip_reason})
+                                ctx.add_to_processed_ledger(composite_key, status="composite_ag_brain_skipped")
                                 continue
+                            print(f"  -> [AG BRAIN APPROVED] {title} @ {company} | {_ipc_reason}", flush=True)
                                 
                             # Candidate Salary Floor Gating: Reject jobs explicitly offering below target floor
                             salary_text = str(job.get("salary") or "").strip()
@@ -1347,33 +1441,10 @@ def run_batched_discovery(profile_path: str):
                                     highlights_els = detail_page.locator("ul.styles_JDC__job-highlight-list__QZC12 li, ul[class*='job-highlight'] li").all()
                                     highlights_list = [h.inner_text().strip() for h in highlights_els if h.inner_text().strip()]
 
-                                    # 3b. Pre-flight scan Job Highlights against candidate negative keywords
-                                    neg_keywords = config.get("target_jobs", {}).get("negative_keywords", []) if isinstance(config, dict) else []
-                                    stakeholder_collab_pattern = r'(?:working\s+(?:closely\s+)?with|collaborat\w*\s+with|liais\w*\s+with|coordinat\w*\s+with|partner\w*\s+with|interfac\w*\s+with|interact\w*\s+with|support(?:ing)?)\s+[^.\n]*'
-                                    highlight_rejected_kw = None
-                                    highlight_rejected_text = ""
-                                    for h_text in highlights_list:
-                                        h_lower = h_text.lower()
-                                        for neg in neg_keywords:
-                                            if not neg or len(neg) < 2:
-                                                continue
-                                            if re.search(rf'\b{re.escape(neg.lower())}\b', h_lower):
-                                                if not re.search(stakeholder_collab_pattern, h_lower):
-                                                    highlight_rejected_kw = neg
-                                                    highlight_rejected_text = h_text
-                                                    break
-                                        if highlight_rejected_kw:
-                                            break
-
-                                    if highlight_rejected_kw:
-                                        print(f"     [HIGHLIGHTS GATED: Negative keyword '{highlight_rejected_kw}' in highlight: '{highlight_rejected_text}']", flush=True)
-                                        processed_ledger.add(url.lower())
-                                        processed_ledger.add(can_url)
-                                        if job_id: processed_ledger.add(job_id)
-                                        if page_job_id: processed_ledger.add(page_job_id)
-                                        processed_ledger.add(composite_key)
-                                        ctx.add_to_processed_ledger(can_url, status="domain_gated", metadata={"title": title, "company": company, "reason": f"Negative keyword in Job Highlights: {highlight_rejected_kw}"})
-                                        continue
+                                    # 3b. DEPRECATED: Highlights keyword gate removed (2026-09-19).
+                                    # G-BRAIN-01: AG Brain reads all highlights as part of full_desc
+                                    # in JOB_FULL_EVALUATION IPC. Python must NOT gate on keyword
+                                    # matches in highlights text. See: SCAR_TISSUE [2026-09-19].
 
                                     # 4. Extract Main Job Description
                                     desc_selector = ".styles_JDC__dang-inner-html__h0K4t, .dang-inner-html, .job-desc, section.job-desc, .styles_Jd__text__bWMxs"
