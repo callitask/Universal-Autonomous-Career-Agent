@@ -120,6 +120,42 @@
 # Preventative Notes: NEVER re-introduce keyword-based semantic gating in Python. If a new gate is
 #   needed, it must be: (a) objective/numeric, OR (b) routed to AG Brain via IPC. Keyword lists in
 #   candidate_config.json are advisory context for AG Brain only — Python must not execute them as gates.
+#
+# [ENTRY #013]
+# Term: [BATCH_ARCHITECTURE_V2]
+# Timestamp: 2026-09-20 19:45:00 +05:30
+# Issue / Context: Per-card serial IPC (90s × N cards) caused complete pipeline stall. Claude audit
+#   confirmed 40 cards × 90s = 60 min stall with 0 applications per designation. DAEMON_MODE=1 was
+#   also silently bypassing AI evaluation in evaluate_job_match(), confirmed by Claude audit.
+# Changes Made:
+#   1. Replaced per-card JOB_CARD_EVALUATION IPC block (lines 1124-1206 old) with BATCH architecture:
+#      ARM PHASE: Collect ALL cards from all pages for a designation first (no evaluation during collection).
+#      BRAIN PHASE: Send entire card batch to AG Brain via batch_card_evaluation_ipc() — 1 IPC call total.
+#      EXECUTE PHASE: Deep-scan only AG Brain APPROVED cards, tailor + apply.
+#   2. Added SearchStateManager designation rotation engine (search_state.json).
+#      Designations rotate sequentially; after full cycle, new jobs detected via processed_ledger dedup.
+#   3. Removed STARVATION_EXPANSION IPC trigger (replaced by rotation engine's natural cycle).
+#   4. Removed per-card pending_question.json IPC from this file entirely (still used by ai_client.py
+#      for resume tailoring, questionnaire, and evaluate_job_match IPC — unchanged).
+# Rationale: 1 IPC call per designation batch vs N per card. Token-efficient, AG Brain evaluates all
+#   cards at once with full context, no serial 90s blocks. Applications can now happen within minutes.
+# Preventative Notes:
+#   NEVER revert to per-card IPC for card triage. batch_question.json and batch_answer.json are
+#   the new IPC channel for card evaluation. Do not confuse with pending_question.json.
+#   Rotation index is managed entirely by SearchStateManager — do not advance it manually.
+#
+# [ENTRY #014]
+# Term: [JSON_SERIALIZATION_FIX]
+# Timestamp: 2026-09-20 21:18:00 +05:30
+# Issue / Context: process_batch() crashed with TypeError: Object of type Page is not JSON serializable
+#   at line 493 when serializing current_batch into search_manifest.json. Line 1444 had erroneously
+#   injected "detail_page": detail_page (a live Playwright Page instance) into current_batch.
+# Changes Made: Removed "detail_page": detail_page from current_batch dictionary. current_batch
+#   is strictly JSON-serializable primitives (strings, ints, lists, dicts) for search_manifest.json.
+# Rationale: Subprocesses downstream (generate_factual_tailored.py, 05_apply_jobs.py) read
+#   search_manifest.json as pure data; Playwright Page objects cannot be serialized to disk.
+# Preventative Notes: NEVER include in-memory handles, Playwright objects, sockets, or functions
+#   inside batch dictionaries destined for JSON manifest serialization.
 # ================================================================================
 """
 ================================================================================
@@ -167,6 +203,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from core.utils.profile_context import ProfileContext, canonical_job_url, extract_platform_job_id
 from core.ai_client import AIClient
+from core.utils.search_state_manager import SearchStateManager
 
 BATCH_SIZE = 1
 MAX_PAGES_PER_SEARCH = 3
@@ -684,18 +721,35 @@ def run_batched_discovery(profile_path: str):
     target = config.get("target_jobs", {})
     cdp_url = cand.get("cdp_url", "http://127.0.0.1:9222")
     
-    # Dynamic Search Cycles: Retrieve active cycle of 5-8 designations from Cognitive Brain
+    # ── BATCH ARCH V2: SearchStateManager Designation Rotation Engine ─────────
+    # Build the full designation list from cognitive profile + config + recommended titles
     active_cycle_keywords = ai.get_active_search_cycle()
     keywords = active_cycle_keywords if active_cycle_keywords else [k for k in (target.get("keywords") or []) if k and str(k).strip()]
-    print(f"[DISCOVERY CONTROLLER] Active Search Cycle contains {len(keywords)} designations: {keywords}", flush=True)
 
     recommended = [t for t in (target.get("recommended_titles") or []) if t and str(t).strip()]
     current_title = cand.get("current_title", "").strip() if cand.get("current_title") else ""
-    all_positive_targets = list(keywords) + list(recommended)
+    all_positive_targets = list(dict.fromkeys(list(keywords) + list(recommended)))
     if current_title and current_title not in all_positive_targets:
         all_positive_targets.append(current_title)
 
-    # Dynamic Multi-Strategy Matrix: Role-Only, Company-Only, and Role + Company
+    # Sync rotation state with full designation list
+    state_mgr = SearchStateManager(profile_dir)
+    state_mgr.sync_designations(all_positive_targets)
+
+    # ONE designation per daemon cycle — rotate deterministically
+    active_designation = state_mgr.get_current_designation()
+    if not active_designation:
+        print("[DISCOVERY CONTROLLER] No designations configured. Check candidate_config.json.", flush=True)
+        return
+
+    print(f"\n[DISCOVERY CONTROLLER] BATCH ARCH V2 — Single Designation Cycle", flush=True)
+    print(f"[DISCOVERY CONTROLLER] Active Designation: '{active_designation}'", flush=True)
+    print(f"[DISCOVERY CONTROLLER] Rotation [{state_mgr.get_current_index()}/{len(state_mgr.get_all_designations())-1}]", flush=True)
+
+    # Single search task: ROLE_ONLY for the active designation
+    search_tasks = [{"strategy": "ROLE_ONLY", "query": active_designation, "role": active_designation, "company": ""}]
+
+    # Dynamic Multi-Strategy: optionally also add company-targeted searches
     raw_target_companies = target.get("target_companies")
     if raw_target_companies is not None:
         target_companies = [c.strip() for c in raw_target_companies if c and str(c).strip()]
@@ -703,29 +757,17 @@ def run_batched_discovery(profile_path: str):
         cog_prof = ctx.load_cognitive_profile()
         target_companies = [c.strip() for c in (cog_prof.get("top_target_companies") or []) if c and str(c).strip()]
 
-    search_tasks = []
-    # 1. Broad / Target Designations & Keywords (Single Entity Only, never combined)
-    for kw in keywords:
-        search_tasks.append({
-            "strategy": "ROLE_ONLY",
-            "query": kw,
-            "role": kw,
-            "company": ""
-        })
-
-    # 2. Company Name Specific Searches (Targeted with Domain Role to prevent non-technical drift)
     if target_companies:
-        primary_kw = keywords[0] if keywords else ""
         for comp in target_companies:
-            query_text = f"{comp} {primary_kw}".strip() if primary_kw else comp
+            query_text = f"{comp} {active_designation}".strip()
             search_tasks.append({
-                "strategy": "COMPANY_TARGETED" if primary_kw else "COMPANY_ONLY",
+                "strategy": "COMPANY_TARGETED",
                 "query": query_text,
-                "role": primary_kw,
+                "role": active_designation,
                 "company": comp
             })
 
-    print(f"[DISCOVERY CONTROLLER] Single-Entity Search Matrix: {len(search_tasks)} tasks (Roles: {len(keywords)}, Companies: {len(target_companies)})", flush=True)
+    print(f"[DISCOVERY CONTROLLER] Search Matrix: {len(search_tasks)} tasks for '{active_designation}' (+ {len(target_companies)} company targets)", flush=True)
     
     match_threshold = int(target.get("match_threshold", MATCH_THRESHOLD))
     negative_keywords = target.get("negative_keywords", [])
@@ -843,6 +885,23 @@ def run_batched_discovery(profile_path: str):
     current_batch = []
     current_platform_exec = ""
     session_seen_titles = set()
+
+    # ── BATCH ARCH V2: Cross-page card accumulator ─────────────────────────────
+    # Cards collected from all pages are accumulated here before the single batch IPC call.
+    designation_batch_cards = []
+
+    # Build candidate_summary once (used in batch IPC payload)
+    _cog_prof = ctx.load_cognitive_profile() if hasattr(ctx, "load_cognitive_profile") else {}
+    candidate_summary_payload = {
+        "total_experience_years": float(cand.get("total_experience_years", 0) or 0),
+        "seniority_level": _cog_prof.get("seniority_level", "Mid-Senior"),
+        "domain": _cog_prof.get("candidate_domain", "Software Engineering"),
+        "core_skills": _cog_prof.get("core_domain_skills", [])[:20],
+        "active_search_titles": all_positive_targets[:8],
+        "advisory_avoid_terms": list(negative_keywords)[:30],
+        "negative_companies": negative_companies[:20]
+    }
+    # ─────────────────────────────────────────────────────────────────────────
     
     with sync_playwright() as p:
         try:
@@ -1081,569 +1140,379 @@ def run_batched_discovery(profile_path: str):
                                     })
                             except Exception:
                                 continue
-                                
-                        for job in jobs_to_scan:
-                            cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
-                            page = discovery_page
-                            url = job["url"]
-                            raw_url = job.get("raw_url", url)
-                            title = job["title"]
-                            company = job["company"]
-                            card_skills = job.get("card_skills", [])
-                            exp_text = job.get("exp_text", "")
-                            
-                            # Safe Multi-Tier Deduplication: Check Raw URL, Canonical URL, Platform Job ID, and Composite key
-                            composite_key = make_composite_key(company, title)
-                            can_url = canonical_job_url(url)
-                            job_id = extract_platform_job_id(raw_url, platform) or extract_platform_job_id(url, platform)
 
+                        # ── BATCH ARCH V2 — ARM PHASE: Accumulate cards, no per-card IPC ──────────
+                        # Cards are pre-gated only on OBJECTIVE NUMERIC CRITERIA (blacklist, salary,
+                        # exp band). All SEMANTIC decisions (role fit, domain match) are delegated
+                        # exclusively to AG Brain in the batch IPC call below (G-BRAIN-01).
+                        for job in jobs_to_scan:
+                            _url = job["url"]
+                            _raw_url = job.get("raw_url", _url)
+                            _title = job["title"]
+                            _company = job["company"]
+                            _can_url = canonical_job_url(_url)
+                            _job_id = extract_platform_job_id(_raw_url, platform) or extract_platform_job_id(_url, platform)
+                            _composite_key = make_composite_key(_company, _title)
+                            _exp_text_card = job.get("exp_text", "")
+                            _sal_text = str(job.get("salary") or "").strip()
+
+                            # Gate 1: Deduplication (objective identity gate)
                             if (
-                                url.lower() in processed_ledger
-                                or raw_url.lower() in processed_ledger
-                                or can_url in processed_ledger
-                                or (job_id and job_id in processed_ledger)
-                                or composite_key in processed_ledger
+                                _url.lower() in processed_ledger
+                                or _raw_url.lower() in processed_ledger
+                                or (_can_url and _can_url in processed_ledger)
+                                or (_job_id and _job_id in processed_ledger)
+                                or _composite_key in processed_ledger
                             ):
                                 continue
 
-                            # Negative Company Gating (e.g. from config)
-                            comp_lower = company.lower().strip()
+                            # Gate 2: Negative Company Blacklist (objective identity gate)
+                            _comp_lower = _company.lower().strip()
                             if any(
-                                (nc in comp_lower if len(nc) > 3 else re.search(rf'\b{re.escape(nc)}\b', comp_lower))
+                                (nc in _comp_lower if len(nc) > 3 else re.search(rf'\b{re.escape(nc)}\b', _comp_lower))
                                 for nc in negative_companies
                             ):
-                                print(f"  -> Rejecting Negative Company Job: {title} @ {company} [COMPANY EXCLUDED]", flush=True)
-                                processed_ledger.add(url.lower())
-                                processed_ledger.add(can_url)
-                                if job_id: processed_ledger.add(job_id)
-                                processed_ledger.add(composite_key)
-                                ctx.add_to_processed_ledger(can_url, status="negative_company_gated", metadata={"title": title, "company": company})
-                                ctx.add_to_processed_ledger(composite_key, status="composite_negative_company_gated")
-                                continue
-                                
-                            # ── AG BRAIN SOLE EVALUATOR (G-BRAIN-01) ──────────────────────────────
-                            # DEPRECATED (2026-09-19): is_title_allowed() keyword gate removed.
-                            # Reason: Keyword matching causes false positives (e.g. "manage" in JD
-                            # body blocks legitimate entry-level roles) and false negatives (novel
-                            # role titles not in keyword lists pass unchecked). Python must NOT make
-                            # any semantic match/reject decision. All such decisions route to AG Brain.
-                            # Only objective numeric gates (salary floor, C24 exp band, company
-                            # blacklist) may be enforced in Python without IPC.
-                            # See: SCAR_TISSUE.md [2026-09-19], ACTIVE_CONSTRAINT_BLOCK.md GATE 11
-                            # ─────────────────────────────────────────────────────────────────────
-                            # AG Brain Card Evaluation via IPC (JOB_CARD_EVALUATION)
-                            _ipc_card_payload = {
-                                "status": "PENDING",
-                                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                "task_type": "JOB_CARD_EVALUATION",
-                                "question": "Evaluate this job card for candidate fit.",
-                                "options": None,
-                                "control_type": "JSON",
-                                "max_characters": None,
-                                "prompt": json.dumps({
-                                    "candidate_summary": {
-                                        "total_experience_years": float(cand.get("total_experience_years", 0) or 0),
-                                        "seniority_level": ctx.load_cognitive_profile().get("seniority_level", "Fresher / Entry Level") if ctx and hasattr(ctx, "load_cognitive_profile") else "Fresher / Entry Level",
-                                        "domain": ctx.load_cognitive_profile().get("candidate_domain", "Finance") if ctx and hasattr(ctx, "load_cognitive_profile") else "Finance",
-                                        "active_search_titles": all_positive_targets[:8],
-                                        "advisory_avoid_terms": list(negative_keywords)[:30]
-                                    },
-                                    "card": {
-                                        "title": title,
-                                        "company": company,
-                                        "exp_text": exp_text,
-                                        "salary": str(job.get("salary") or ""),
-                                        "skills": card_skills[:15],
-                                        "posted": str(job.get("posted_date") or job.get("posted") or "")
-                                    }
-                                }),
-                                "answer": ""
-                            }
-                            _ipc_pending_path = profile_dir / "output" / "pending_question.json"
-                            try:
-                                import json as _json_ipc
-                                _ipc_pending_path.parent.mkdir(parents=True, exist_ok=True)
-                                _ipc_pending_path.write_text(_json_ipc.dumps(_ipc_card_payload, indent=2), encoding="utf-8")
-                            except Exception as _ipc_write_err:
-                                print(f"  [IPC WRITE ERROR] {_ipc_write_err} — skipping card conservatively", flush=True)
+                                print(f"  -> [PRE-GATE] Rejected Blacklisted Company: {_title} @ {_company}", flush=True)
+                                processed_ledger.add(_url.lower())
+                                processed_ledger.add(_can_url)
+                                if _job_id: processed_ledger.add(_job_id)
+                                processed_ledger.add(_composite_key)
+                                ctx.add_to_processed_ledger(_can_url, status="negative_company_gated", metadata={"title": _title, "company": _company})
+                                ctx.add_to_processed_ledger(_composite_key, status="composite_negative_company_gated")
                                 continue
 
-                            # Poll for AG Brain decision (max 90s, 2s interval)
-                            _ipc_decision = None
-                            _ipc_reason = "timeout"
-                            for _ipc_poll in range(45):
-                                time.sleep(2)
-                                try:
-                                    _ipc_resp_raw = _ipc_pending_path.read_text(encoding="utf-8")
-                                    _ipc_resp = _json_ipc.loads(_ipc_resp_raw)
-                                    if _ipc_resp.get("status") == "PENDING":
+                            # Gate 3: Salary Floor (objective numeric gate — only when salary is clearly stated)
+                            if min_target_ctc_floor > 0 and _sal_text:
+                                _sal_nums = [float(n) for n in re.findall(r'(\d+(?:\.\d+)?)', _sal_text)]
+                                if _sal_nums and ("lac" in _sal_text.lower() or "lakh" in _sal_text.lower()):
+                                    _max_offered = max(_sal_nums)
+                                    if _max_offered < min_target_ctc_floor:
+                                        print(f"  -> [PRE-GATE] Below-CTC: {_title} @ {_company} [Sal: {_sal_text} < {min_target_ctc_floor} LPA floor]", flush=True)
+                                        processed_ledger.add(_url.lower())
+                                        processed_ledger.add(_can_url)
+                                        if _job_id: processed_ledger.add(_job_id)
+                                        processed_ledger.add(_composite_key)
+                                        ctx.add_to_processed_ledger(_can_url, status="below_ctc_floor", metadata={"title": _title, "company": _company, "salary": _sal_text})
                                         continue
-                                    _ans_raw = _ipc_resp.get("answer", "")
-                                    if _ans_raw:
-                                        _ans = _json_ipc.loads(_ans_raw) if isinstance(_ans_raw, str) else _ans_raw
-                                        _ipc_decision = str(_ans.get("decision", "SKIP")).upper()
-                                        _ipc_reason = str(_ans.get("reason", ""))
-                                        break
-                                except Exception:
-                                    continue
 
-                            # Clean up IPC file after reading
-                            try:
-                                if _ipc_pending_path.exists():
-                                    _ipc_pending_path.unlink()
-                            except Exception:
-                                pass
-
-                            if _ipc_decision != "DEEP_SCAN":
-                                _skip_reason = _ipc_reason or "AG Brain: card not suitable"
-                                print(f"  -> [AG BRAIN SKIP] {title} @ {company} | {_skip_reason}", flush=True)
-                                processed_ledger.add(url.lower())
-                                processed_ledger.add(can_url)
-                                if job_id: processed_ledger.add(job_id)
-                                processed_ledger.add(composite_key)
-                                ctx.add_to_processed_ledger(can_url, status="ag_brain_card_skipped", metadata={"title": title, "company": company, "reason": _skip_reason})
-                                ctx.add_to_processed_ledger(composite_key, status="composite_ag_brain_skipped")
-                                continue
-                            print(f"  -> [AG BRAIN APPROVED] {title} @ {company} | {_ipc_reason}", flush=True)
-                                
-                            # Candidate Salary Floor Gating: Reject jobs explicitly offering below target floor
-                            salary_text = str(job.get("salary") or "").strip()
-                            if min_target_ctc_floor > 0 and salary_text:
-                                sal_nums = [float(n) for n in re.findall(r'(\d+(?:\.\d+)?)', salary_text)]
-                                if sal_nums:
-                                    max_offered = max(sal_nums)
-                                    # If stated salary is in Lakhs/Lacs and strictly less than candidate minimum threshold
-                                    if "lac" in salary_text.lower() or "lakh" in salary_text.lower():
-                                        if max_offered < min_target_ctc_floor:
-                                            print(f"  -> Rejecting Below-CTC Job: {title} @ {company} [SALARY {salary_text} < {min_target_ctc_floor} LPA FLOOR]", flush=True)
-                                            processed_ledger.add(url.lower())
-                                            processed_ledger.add(can_url)
-                                            if job_id: processed_ledger.add(job_id)
-                                            processed_ledger.add(composite_key)
-                                            ctx.add_to_processed_ledger(can_url, status="below_ctc_floor", metadata={"title": title, "company": company, "salary": salary_text})
-                                            ctx.add_to_processed_ledger(composite_key, status="composite_below_ctc")
-                                            continue
-
-                            # Card-Level Experience Band Gating (Guardrail C24)
-                            # Parses exp_text from Naukri card metadata (e.g. "4 - 9 Yrs") BEFORE deep scanning.
-                            # Prevents thin-JD false-positives where the experience band exists only in card metadata
-                            # and is absent from the scraped JD body, causing the evaluate_job_match() experience
-                            # regex to find 0 matches and silently award the 8-point "no restriction" bonus.
-                            # Mirrors structure of existing Candidate Salary Floor Gating above.
-                            _card_exp_text = str(job.get("exp_text") or "").strip()
-                            if _card_exp_text:
-                                # Match "4 - 9 Yrs", "4-9 Years", "4 to 9 Yrs", "4 Yrs" etc.
-                                _card_exp_range = re.findall(r'(\d+)\s*[-\u2013to]+\s*(\d+)\s*[Yy]', _card_exp_text)
-                                if not _card_exp_range:
-                                    _card_exp_single = re.findall(r'(\d+)\s*[Yy]', _card_exp_text)
-                                    _card_exp_range = [(_card_exp_single[0], '') for _ in [1]] if _card_exp_single else []
-                                if _card_exp_range:
-                                    _card_min_exp = float(_card_exp_range[0][0])
+                            # Gate 4: Experience Band (objective numeric gate — C24)
+                            if _exp_text_card:
+                                _exp_range = re.findall(r'(\d+)\s*[-\u2013to]+\s*(\d+)\s*[Yy]', _exp_text_card)
+                                if not _exp_range:
+                                    _exp_single = re.findall(r'(\d+)\s*[Yy]', _exp_text_card)
+                                    _exp_range = [(_exp_single[0], '')] if _exp_single else []
+                                if _exp_range:
+                                    _card_min_exp = float(_exp_range[0][0])
                                     _cand_actual_exp = float(cand.get("total_experience_years", 0) or 0)
                                     _max_exp_gap = float(
                                         (config.get("target_jobs", {}) if isinstance(config, dict) else {})
                                         .get("max_experience_gap_years", 2)
                                     )
                                     if _card_min_exp > _cand_actual_exp + _max_exp_gap:
-                                        print(
-                                            f"  -> Rejecting Over-Senior Job: {title} @ {company} "
-                                            f"[CARD EXP MIN: {_card_min_exp:.0f}yr | CANDIDATE: {_cand_actual_exp}yr | MAX GAP: +{_max_exp_gap:.0f}yr]",
-                                            flush=True
-                                        )
-                                        processed_ledger.add(url.lower())
-                                        processed_ledger.add(can_url)
-                                        if job_id: processed_ledger.add(job_id)
-                                        processed_ledger.add(composite_key)
-                                        ctx.add_to_processed_ledger(can_url, status="experience_gap_gated", metadata={
-                                            "title": title, "company": company,
-                                            "required_exp": _card_min_exp, "candidate_exp": _cand_actual_exp,
-                                            "exp_text": _card_exp_text
-                                        })
-                                        ctx.add_to_processed_ledger(composite_key, status="composite_exp_gap_gated")
+                                        print(f"  -> [PRE-GATE] Over-Senior: {_title} @ {_company} [CardExp:{_card_min_exp:.0f}yr > Cand:{_cand_actual_exp}yr+{_max_exp_gap:.0f}yr gap]", flush=True)
+                                        processed_ledger.add(_url.lower())
+                                        if _can_url: processed_ledger.add(_can_url)
+                                        if _job_id: processed_ledger.add(_job_id)
+                                        processed_ledger.add(_composite_key)
+                                        ctx.add_to_processed_ledger(_can_url or _url.lower(), status="experience_gap_gated", metadata={"title": _title, "company": _company, "exp_text": _exp_text_card})
                                         continue
 
-                            print(f"  -> Deep Scanning: {title} @ {company}...", flush=True)
-                            nav_url = can_url if can_url else url
-                            
-                            detail_page = context.new_page()
-                            tracked_pages.add(detail_page)
-                            scan_success = False
-                            full_desc = ""
-                            extracted_skills = []
-                            other_details_text = ""
-                            page_job_id = None
-                            page_can_url = ""
-                            naukri_match_score = {}
+                            # Card passed all objective pre-gates → add to batch for AG Brain evaluation
+                            job["_can_url"] = _can_url
+                            job["_job_id"] = _job_id
+                            job["_composite_key"] = _composite_key
+                            job["_platform"] = platform
+                            designation_batch_cards.append(job)
+                            print(f"  [BATCHED] {_title} @ {_company} [{_exp_text_card}]", flush=True)
+                        # ── END OF ARM ACCUMULATION PHASE ─────────────────────────────────────────
 
-                            try:
-                                try:
-                                    detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
-                                    detail_page.wait_for_timeout(1500)
-                                    # Anti-Blank Page Protection: verify body has rendered
-                                    if detail_page.locator("body").count() > 0 and len(detail_page.inner_text("body").strip()) < 50:
-                                        detail_page.wait_for_timeout(1000)
-                                        if len(detail_page.inner_text("body").strip()) < 50:
-                                            detail_page.reload(wait_until="domcontentloaded", timeout=25000)
-                                            detail_page.wait_for_timeout(1500)
-                                except Exception as parse_error:
-                                    time.sleep(1)
-                                    try:
-                                        detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
-                                        detail_page.wait_for_timeout(1500)
-                                    except Exception as e2:
-                                        print(f"     [ERROR READING FULL DESCRIPTION] Details: {str(e2)}", flush=True)
-                                        continue
+    # ─── BATCH ARCH V2 — BRAIN PHASE: AG Brain Batch Evaluation ──────────────────
+    # After collecting all cards from all pages, send the ENTIRE batch to AG Brain
+    # in a single IPC call. This replaces N×90s per-card IPC with 1×120s batch IPC.
+    # ─────────────────────────────────────────────────────────────────────────────
 
-                                # Re-verify opened page URL against ledger in case of redirects
-                                page_can_url = canonical_job_url(detail_page.url)
-                                page_job_id = extract_platform_job_id(detail_page.url, platform)
-                                if (
-                                    page_can_url in processed_ledger
-                                    or (page_job_id and page_job_id in processed_ledger)
-                                ):
-                                    print(f"     [ALREADY PROCESSED (REDIRECTED: {page_can_url})] Skipping.", flush=True)
-                                    continue
-
-                                # PRE-TAILORING NATIVE 1-CLICK APPLY VERIFICATION (Eliminates Token Waste)
-                                if platform == "naukri":
-                                    # Wait for apply button or already applied banner to render in DOM
-                                    for _ in range(8):
-                                        if (
-                                            detail_page.locator("button#apply-button, button.apply-button, button:has-text('Apply on Naukri'), button:has-text('Apply'), div.apply-button-container button, .styles_jds-apply-button__WbS2i button").count() > 0
-                                            or detail_page.locator("button:has-text('Apply on company website'), a:has-text('Apply on company website'), button:has-text('Apply on Company Site'), a:has-text('Apply on Company Site'), #company-site-button").count() > 0
-                                            or detail_page.locator("button:has-text('Already Applied'), span:has-text('Already Applied'), div:has-text('You have already applied'), button:has-text('Applied')").count() > 0
-                                        ):
-                                            break
-                                        time.sleep(0.5)
-
-                                    # 1. Already Applied Check
-                                    is_already_applied = detail_page.locator("button:has-text('Already Applied'), span:has-text('Already Applied'), div:has-text('You have already applied'), button:has-text('Applied')").count() > 0
-                                    if is_already_applied:
-                                        print("     [ALREADY APPLIED ON NAUKRI - SKIPPING]", flush=True)
-                                        processed_ledger.add(url.lower())
-                                        processed_ledger.add(can_url)
-                                        if job_id: processed_ledger.add(job_id)
-                                        if page_job_id: processed_ledger.add(page_job_id)
-                                        processed_ledger.add(composite_key)
-                                        ctx.add_to_processed_ledger(can_url, status="already_applied", metadata={"title": title, "company": company})
-                                        ctx.add_to_processed_ledger(composite_key, status="composite_already_applied")
-                                        continue
-
-                                    # 2. External Apply Check
-                                    is_external = detail_page.locator("button:has-text('Apply on company website'), a:has-text('Apply on company website'), button:has-text('Apply on Company Site'), a:has-text('Apply on Company Site'), #company-site-button").count() > 0
-                                    if is_external:
-                                        print("     [EXTERNAL APPLY DETECTED] Clicking native 'Save' button to bookmark role...", flush=True)
-                                        try:
-                                            save_btn = detail_page.locator("button#save-button, button.save-button, button:has-text('Save'), .styles_save-job-button__k2e8x, .save-job-button, [aria-label='save-job']").first
-                                            if save_btn.count() > 0 and save_btn.is_visible():
-                                                save_btn.click(force=True)
-                                                detail_page.wait_for_timeout(800)
-                                                print("     [SAVED ON PORTAL] Bookmarked external job in candidate's Saved Jobs.", flush=True)
-                                        except Exception as e_save:
-                                            print(f"     [SAVE NOTICE] Notice clicking save button: {e_save}", flush=True)
-
-                                        processed_ledger.add(url.lower())
-                                        processed_ledger.add(can_url)
-                                        if job_id: processed_ledger.add(job_id)
-                                        if page_job_id: processed_ledger.add(page_job_id)
-                                        processed_ledger.add(composite_key)
-                                        ctx.add_to_processed_ledger(can_url, status="saved_external", metadata={"title": title, "company": company})
-                                        ctx.add_to_processed_ledger(composite_key, status="composite_saved_external")
-                                        save_external_job_record(profile_dir, {"title": title, "company": company, "platform": platform, "url": can_url}, detail_page.url)
-                                        continue
-
-                                    # 3. Native Apply Check
-                                    has_native_apply = detail_page.locator("button#apply-button, button.apply-button, button:has-text('Apply on Naukri'), button:has-text('Apply'), div.apply-button-container button, .styles_jds-apply-button__WbS2i button").count() > 0
-                                    if not has_native_apply:
-                                        print("     [NO NATIVE APPLY BUTTON FOUND ON NAUKRI - SKIPPING]", flush=True)
-                                        processed_ledger.add(url.lower())
-                                        processed_ledger.add(can_url)
-                                        if job_id: processed_ledger.add(job_id)
-                                        if page_job_id: processed_ledger.add(page_job_id)
-                                        processed_ledger.add(composite_key)
-                                        ctx.add_to_processed_ledger(can_url, status="no_native_apply", metadata={"title": title, "company": company})
-                                        continue
-
-                                elif platform == "linkedin":
-                                    for _ in range(8):
-                                        if (
-                                            detail_page.locator("button:has-text('Easy Apply'), button.jobs-apply-button:has-text('Easy Apply')").count() > 0
-                                            or detail_page.locator(".jobs-s-apply__applied-date, span:has-text('Applied'), button:has-text('Applied')").count() > 0
-                                            or detail_page.locator("button:has-text('Apply')").count() > 0
-                                        ):
-                                            break
-                                        time.sleep(0.5)
-
-                                    # 1. Already Applied Check
-                                    is_already_applied = detail_page.locator(".jobs-s-apply__applied-date, span:has-text('Applied'), button:has-text('Applied')").count() > 0
-                                    if is_already_applied:
-                                        print("     [ALREADY APPLIED ON LINKEDIN - SKIPPING]", flush=True)
-                                        processed_ledger.add(url.lower())
-                                        processed_ledger.add(can_url)
-                                        if job_id: processed_ledger.add(job_id)
-                                        if page_job_id: processed_ledger.add(page_job_id)
-                                        processed_ledger.add(composite_key)
-                                        ctx.add_to_processed_ledger(can_url, status="already_applied", metadata={"title": title, "company": company})
-                                        ctx.add_to_processed_ledger(composite_key, status="composite_already_applied")
-                                        continue
-
-                                    # 2. Native Easy Apply Check
-                                    has_easy_apply = detail_page.locator("button:has-text('Easy Apply'), button.jobs-apply-button:has-text('Easy Apply')").count() > 0
-                                    if not has_easy_apply:
-                                        print("     [EXTERNAL APPLY ON LINKEDIN - ZERO TOKEN TAILORING]", flush=True)
-                                        processed_ledger.add(url.lower())
-                                        processed_ledger.add(can_url)
-                                        if job_id: processed_ledger.add(job_id)
-                                        if page_job_id: processed_ledger.add(page_job_id)
-                                        processed_ledger.add(composite_key)
-                                        ctx.add_to_processed_ledger(can_url, status="external_apply", metadata={"title": title, "company": company})
-                                        ctx.add_to_processed_ledger(composite_key, status="composite_external")
-                                        save_external_job_record(profile_dir, {"title": title, "company": company, "platform": platform, "url": can_url}, detail_page.url)
-                                        continue
-                                    
-                                if platform == "naukri":
-                                    # 1. Scrape Naukri Native Match Score (ATS Portal Signals)
-                                    try:
-                                        naukri_match_score = detail_page.evaluate("""() => {
-                                            const scores = {};
-                                            const container = document.querySelector('div.styles_JDC__match-score__VnjLL, div[class*="match-score"]');
-                                            if (!container) return scores;
-                                            const items = container.querySelectorAll('div.styles_MS__details__iS7mj, div[class*="MS__details"]');
-                                            items.forEach(it => {
-                                                const label = it.querySelector('span')?.innerText?.trim();
-                                                const isMatched = it.querySelector('i.ni-icon-check_circle') !== null;
-                                                if (label) {
-                                                    scores[label] = isMatched;
-                                                }
-                                            });
-                                            return scores;
-                                        }""")
-                                        if naukri_match_score:
-                                            print(f"     [NAUKRI MATCH SCORE] {json.dumps(naukri_match_score)}", flush=True)
-                                    except Exception:
-                                        naukri_match_score = {}
-
-                                    # 2. Click "Read More" to un-clamp full description and culture/benefits
-                                    try:
-                                        detail_page.evaluate("""() => {
-                                            const rmEls = Array.from(document.querySelectorAll('span.styles_rm-link__RgrMs, .customReadMoreLabelClass, .styles_read-more-link__dD_5h, .read-more-label, span.rm-link, div[class*="read-more"] span, div[class*="read-more"] a'));
-                                            for (const el of rmEls) {
-                                                if (el && el.innerText && el.innerText.toLowerCase().includes('read more')) {
-                                                    el.click();
-                                                }
-                                            }
-                                        }""")
-                                        detail_page.wait_for_timeout(600)
-                                    except Exception:
-                                        pass
-
-                                    # 3. Extract Job Highlights
-                                    highlights_els = detail_page.locator("ul.styles_JDC__job-highlight-list__QZC12 li, ul[class*='job-highlight'] li").all()
-                                    highlights_list = [h.inner_text().strip() for h in highlights_els if h.inner_text().strip()]
-
-                                    # 3b. DEPRECATED: Highlights keyword gate removed (2026-09-19).
-                                    # G-BRAIN-01: AG Brain reads all highlights as part of full_desc
-                                    # in JOB_FULL_EVALUATION IPC. Python must NOT gate on keyword
-                                    # matches in highlights text. See: SCAR_TISSUE [2026-09-19].
-
-                                    # 4. Extract Main Job Description
-                                    desc_selector = ".styles_JDC__dang-inner-html__h0K4t, .dang-inner-html, .job-desc, section.job-desc, .styles_Jd__text__bWMxs"
-                                    for _ in range(8):
-                                        if detail_page.locator(desc_selector).count() > 0 and len(detail_page.locator(desc_selector).first.inner_text().strip()) > 50:
-                                            break
-                                        time.sleep(1)
-                                    desc_el = detail_page.locator(desc_selector).first
-                                    main_desc = desc_el.inner_text().strip() if desc_el.count() else ""
-
-                                    # 5. Extract Extended Description (un-clamped by Read More)
-                                    ext_desc_el = detail_page.locator("div.styles_read-more__TFiRZ, div[class*='read-more-below-slides-desc']").first
-                                    ext_desc = ext_desc_el.inner_text().strip() if ext_desc_el.count() else ""
-
-                                    # 6. Extract Deduplicated Key Skills
-                                    skills_el = detail_page.locator("div.styles_key-skill__GIPn_ a span, a.styles_chip__7YqPJ span, .styles_chip__7YCfG span, .tags a, .job-tags a").all()
-                                    raw_skills = [sk.inner_text().strip() for sk in skills_el if sk.inner_text().strip()]
-                                    extracted_skills = list(dict.fromkeys(raw_skills))
-
-                                    # 7. Extract Specifications & Education
-                                    details_el = detail_page.locator("div.styles_other-details__oEN4O, div[class*='other-details'], div.other-details, div[class*='jds-details'], section[class*='job-desc-container'] [class*='details']").first
-                                    other_details_text = details_el.inner_text().strip() if details_el.count() else ""
-
-                                    edu_el = detail_page.locator("div.styles_education__KXFkO, div[class*='education']").first
-                                    edu_text = edu_el.inner_text().strip() if edu_el.count() else ""
-
-                                    # 8. Assemble Full Comprehensive JD
-                                    desc_sections = []
-                                    if highlights_list:
-                                        desc_sections.append("Job Highlights:\n" + "\n".join(f"- {h}" for h in highlights_list))
-                                    if main_desc:
-                                        desc_sections.append(f"Job Description:\n{main_desc}")
-                                    if ext_desc and ext_desc not in main_desc:
-                                        desc_sections.append(f"Additional Details & Benefits:\n{ext_desc}")
-                                    if other_details_text:
-                                        desc_sections.append(f"Job Specifications:\n{other_details_text}")
-                                    if edu_text:
-                                        desc_sections.append(f"Education Requirements:\n{edu_text}")
-                                    if extracted_skills:
-                                        desc_sections.append(f"Key Skills: {', '.join(extracted_skills)}")
-
-                                    full_desc = "\n\n".join(desc_sections) if desc_sections else main_desc
-                                else:
-                                    desc_selector = "div.jobs-description__content, div.description__text"
-                                    for _ in range(8):
-                                        if detail_page.locator(desc_selector).count() > 0:
-                                            break
-                                        time.sleep(1)
-                                    desc_el = detail_page.locator(desc_selector).first
-                                    skills_el = []
-                                    other_details_text = ""
-                                    full_desc = desc_el.inner_text().strip() if desc_el.count() else ""
-                                    extracted_skills = []
-
-                                scan_success = True
-                            finally:
-                                try:
-                                    if not detail_page.is_closed():
-                                        detail_page.close()
-                                except Exception:
-                                    pass
-                                tracked_pages.discard(detail_page)
-
-                            if not scan_success or not full_desc:
-                                if not full_desc and scan_success:
-                                    print("     [FAILED - NO DESCRIPTION FOUND ON PAGE]", flush=True)
-                                    processed_ledger.add(url.lower())
-                                    processed_ledger.add(can_url)
-                                    if job_id: processed_ledger.add(job_id)
-                                    if page_job_id: processed_ledger.add(page_job_id)
-                                    processed_ledger.add(composite_key)
-                                    ctx.add_to_processed_ledger(can_url, status="no_description", metadata={"title": title, "company": company})
-                                continue
-                                
-                            eval_res = ai.evaluate_job_match(
-                                title,
-                                full_desc,
-                                config,
-                                resume_text,
-                                naukri_match_score=naukri_match_score,
-                                is_daemon=True
-                            )
-                            score = eval_res.get("score", 0) if isinstance(eval_res, dict) else (eval_res[0] if isinstance(eval_res, tuple) else 0)
-                            
-                            if score >= match_threshold:
-                                print(f"     [MATCH QUEUED! Score: {score}%]", flush=True)
-
-                                clean_c = re.sub(r"[^\w\s-]", "", company).strip().replace(" ", "_")[:50]
-                                clean_t = re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_")[:50]
-                                app_folder = profile_dir / "output" / "applications" / f"{clean_c}_{clean_t}"
-                                app_folder.mkdir(parents=True, exist_ok=True)
-
-                                jd_file_path = app_folder / "Job_Description.md"
-                                jd_file_path.write_text(full_desc, encoding="utf-8")
-
-                                job_meta = {
-                                    "title": title,
-                                    "company": company,
-                                    "location": primary_loc,
-                                    "url": can_url if can_url else url,
-                                    "platform": platform,
-                                    "score": score,
-                                    "extracted_skills": extracted_skills,
-                                    "naukri_match_score": naukri_match_score,
-                                    "scraped_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                                }
-                                (app_folder / "job_details.json").write_text(json.dumps(job_meta, indent=2), encoding="utf-8")
-
-                                job_entry = {
-                                    "title": title,
-                                    "company": company,
-                                    "location": primary_loc,
-                                    "url": can_url if can_url else url,
-                                    "platform": platform,
-                                    "score": score,
-                                    "jd_path": str(jd_file_path.resolve()),
-                                    "description": full_desc,
-                                    "naukri_match_score": naukri_match_score
-                                }
-                                current_batch.append(job_entry)
-                                processed_ledger.add(url.lower())
-                                processed_ledger.add(can_url)
-                                if job_id: processed_ledger.add(job_id)
-                                if page_job_id: processed_ledger.add(page_job_id)
-                                processed_ledger.add(composite_key)
-                                ctx.add_to_processed_ledger(can_url, status="qualified", metadata={"title": title, "company": company, "score": score})
-                                ctx.add_to_processed_ledger(composite_key, status="composite_qualified")
-                                
-                                if len(current_batch) >= BATCH_SIZE:
-                                    process_batch(current_batch, profile_dir, current_platform_exec)
-                                    applied_count += len(current_batch)
-                                    current_batch.clear()
-                            else:
-                                print(f"     [FAILED. Score: {score}%]", flush=True)
-                                processed_ledger.add(url.lower())
-                                processed_ledger.add(can_url)
-                                if job_id: processed_ledger.add(job_id)
-                                if page_job_id: processed_ledger.add(page_job_id)
-                                processed_ledger.add(composite_key)
-                                ctx.add_to_processed_ledger(can_url, status="low_score", metadata={"title": title, "company": company, "score": score})
-                                
-                            if applied_count >= max_applies:
-                                break
-                        if applied_count >= max_applies:
-                            break
-                    if applied_count >= max_applies:
-                        break
-                if applied_count >= max_applies:
-                    break
-            if applied_count >= max_applies:
-                break
-                
     if current_batch:
         process_batch(current_batch, profile_dir, current_platform_exec)
         applied_count += len(current_batch)
         current_batch.clear()
-        
-    # Tier 4: Autonomous Starvation Recovery & Seniority Auto-Expansion
-    if applied_count == 0 and session_seen_titles:
-        print(f"\n=======================================================", flush=True)
-        print(f" [STARVATION DETECTED] 0 applications qualified across discovery sweep.", flush=True)
-        print(f" Triggering Autonomous Brain Starvation Analysis & Seniority Expansion...", flush=True)
-        print(f"=======================================================\n", flush=True)
-        try:
-            expanded_titles = ai.analyze_and_expand_designations(
-                resume_text=resume_text,
-                candidate_exp=float(exp_years or 0),
-                current_keywords=keywords,
-                market_seen_titles=list(session_seen_titles)
-            )
-            if expanded_titles:
-                current_recommended = ctx.config.setdefault("target_jobs", {}).setdefault("recommended_titles", [])
-                added = []
-                for et in expanded_titles:
-                    if et not in current_recommended and et not in keywords:
-                        current_recommended.append(et)
-                        added.append(et)
-                if added:
-                    ctx.save_config()
-                    print(f" [STARVATION AUTO-HEALED] Discovered {len(added)} senior designations matching candidate profile:", flush=True)
-                    for t in added:
-                        print(f"   + {t}", flush=True)
-                    print(f" Config updated atomically. Next discovery cycle will search with expanded target keywords.\n", flush=True)
-        except Exception as starvation_err:
-            logger.warning(f"Notice during starvation analysis: {starvation_err}")
 
-    # Advance search cycle for next run
+    print(f"\n{'='*70}", flush=True)
+    print(f"[BATCH IPC] ARM PHASE COMPLETE — {len(designation_batch_cards)} cards batched for '{active_designation}'", flush=True)
+    print(f"{'='*70}", flush=True)
+
+    approved_jobs = []
+
+    if designation_batch_cards:
+        # Assign sequential IDs to each card for AG Brain's decision mapping
+        for _bid, _bcard in enumerate(designation_batch_cards):
+            _bcard["id"] = _bid
+
+        # Single IPC call — AG Brain evaluates ALL cards at once
+        batch_decisions = ai.batch_card_evaluation_ipc(
+            cards=designation_batch_cards,
+            candidate_summary=candidate_summary_payload,
+            designation=active_designation,
+            timeout_seconds=float(target.get("batch_ipc_timeout_seconds", 120))
+        )
+
+        # Map decisions back to card objects
+        decisions_by_id = {d.get("id"): d for d in batch_decisions if isinstance(d, dict)}
+        for _bcard in designation_batch_cards:
+            _bid = _bcard.get("id")
+            _decision_obj = decisions_by_id.get(_bid, {})
+            _decision = str(_decision_obj.get("decision", "SKIP")).upper()
+            _reason = str(_decision_obj.get("reason", "No reason given"))
+            _bcard["_ag_decision"] = _decision
+            _bcard["_ag_reason"] = _reason
+            if _decision == "DEEP_SCAN":
+                approved_jobs.append(_bcard)
+                print(f"  [AG APPROVED] {_bcard['title']} @ {_bcard['company']} | {_reason}", flush=True)
+            else:
+                print(f"  [AG SKIPPED]  {_bcard['title']} @ {_bcard['company']} | {_reason}", flush=True)
+                # Log skipped cards to processed ledger to prevent re-evaluation next cycle
+                _skip_url = _bcard.get("_can_url") or _bcard.get("url", "")
+                _skip_composite = _bcard.get("_composite_key", "")
+                _skip_job_id = _bcard.get("_job_id")
+                if _skip_url:
+                    processed_ledger.add(_skip_url.lower())
+                    ctx.add_to_processed_ledger(_skip_url, status="ag_brain_batch_skipped", metadata={"title": _bcard["title"], "company": _bcard["company"], "reason": _reason})
+                if _skip_composite:
+                    processed_ledger.add(_skip_composite)
+    else:
+        print(f"[BATCH IPC] No cards survived pre-gating for '{active_designation}'. Nothing to evaluate.", flush=True)
+
+    print(f"\n[BATCH IPC] AG Brain approved {len(approved_jobs)}/{len(designation_batch_cards)} cards for deep scan.", flush=True)
+
+    # ─── BATCH ARCH V2 — EXECUTE PHASE: Deep Scan + Tailor + Apply ───────────────
+    # Only AG Brain-approved cards are opened. This is the "arm execute" phase.
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    with sync_playwright() as _exec_p:
+        try:
+            _exec_browser = _exec_p.chromium.connect_over_cdp(cdp_url)
+            _exec_context = _exec_browser.contexts[0] if _exec_browser.contexts else _exec_browser.new_context()
+            if _exec_context.pages:
+                _exec_page = _exec_context.pages[0]
+                for _extra in _exec_context.pages[1:]:
+                    try:
+                        if not _extra.is_closed():
+                            _extra.close()
+                    except Exception:
+                        pass
+            else:
+                _exec_page = _exec_context.new_page()
+            _exec_tracked = {_exec_page}
+        except Exception as _exec_err:
+            logger.error(f"Execute-phase CDP connection failed: {_exec_err}")
+            approved_jobs = []
+
+        for approved_job in approved_jobs:
+            if applied_count >= max_applies:
+                print(f"[EXECUTE] Max applies ({max_applies}) reached. Stopping.", flush=True)
+                break
+
+            cleanup_browser_tabs(_exec_context, _exec_tracked, active_page=_exec_page)
+            url = approved_job["url"]
+            raw_url = approved_job.get("raw_url", url)
+            title = approved_job["title"]
+            company = approved_job["company"]
+            card_skills = approved_job.get("card_skills", [])
+            exp_text = approved_job.get("exp_text", "")
+            can_url = approved_job.get("_can_url") or canonical_job_url(url)
+            job_id = approved_job.get("_job_id") or extract_platform_job_id(raw_url) or extract_platform_job_id(url)
+            composite_key = approved_job.get("_composite_key") or make_composite_key(company, title)
+            _exec_platform = approved_job.get("_platform", "naukri")
+
+            # Final dedup check before opening browser (in case it was added during this run)
+            if (
+                url.lower() in processed_ledger
+                or (can_url and can_url in processed_ledger)
+                or (job_id and job_id in processed_ledger)
+                or composite_key in processed_ledger
+            ):
+                print(f"  -> [ALREADY PROCESSED] {title} @ {company} — skipping.", flush=True)
+                continue
+
+            print(f"\n  -> [DEEP SCAN] {title} @ {company}...", flush=True)
+            nav_url = can_url if can_url else url
+
+            detail_page = _exec_context.new_page()
+            _exec_tracked.add(detail_page)
+            full_desc = ""
+            extracted_skills = []
+            other_details_text = ""
+            page_job_id = None
+            page_can_url = ""
+            naukri_match_score = {}
+
+            try:
+                try:
+                    detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
+                    detail_page.wait_for_timeout(1500)
+                    if detail_page.locator("body").count() > 0 and len(detail_page.inner_text("body").strip()) < 50:
+                        detail_page.wait_for_timeout(1000)
+                        if len(detail_page.inner_text("body").strip()) < 50:
+                            detail_page.reload(wait_until="domcontentloaded", timeout=25000)
+                            detail_page.wait_for_timeout(1500)
+                except Exception as _nav_err:
+                    time.sleep(1)
+                    try:
+                        detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
+                        detail_page.wait_for_timeout(1500)
+                    except Exception as _nav_err2:
+                        print(f"     [ERROR NAVIGATING] {_nav_err2}", flush=True)
+                        processed_ledger.add(url.lower())
+                        if can_url: processed_ledger.add(can_url)
+                        if job_id: processed_ledger.add(job_id)
+                        processed_ledger.add(composite_key)
+                        continue
+
+                # Re-verify opened page URL against ledger in case of redirects
+                page_can_url = canonical_job_url(detail_page.url)
+                page_job_id = extract_platform_job_id(detail_page.url, _exec_platform)
+                if (
+                    page_can_url in processed_ledger
+                    or (page_job_id and page_job_id in processed_ledger)
+                ):
+                    print(f"     [ALREADY PROCESSED (REDIRECT: {page_can_url})] Skipping.", flush=True)
+                    continue
+
+                # PRE-TAILORING APPLY VERIFICATION
+                if _exec_platform == "naukri":
+                    for _ in range(8):
+                        if (
+                            detail_page.locator("button.styles_apply-button__PLbNT, button[class*='apply'], a[class*='apply']").count() > 0
+                            or detail_page.locator("div.styles_already-applied__6jfPS, span[class*='applied']").count() > 0
+                            or detail_page.locator("div.jd-header-comp-name").count() > 0
+                        ):
+                            break
+                        time.sleep(0.5)
+
+                    if detail_page.locator("div.styles_already-applied__6jfPS, span[class*='already-applied'], span:text-is('Applied')").count() > 0:
+                        print(f"     [ALREADY APPLIED (NAUKRI BANNER)] {title} @ {company}", flush=True)
+                        processed_ledger.add(url.lower())
+                        if can_url: processed_ledger.add(can_url)
+                        if job_id: processed_ledger.add(job_id)
+                        processed_ledger.add(composite_key)
+                        ctx.add_to_processed_ledger(can_url or url, status="already_applied_banner", metadata={"title": title, "company": company})
+                        continue
+
+                # Scrape full JD for evaluate_job_match
+                _jd_selectors = [
+                    "div.styles_JD-section__umHEZ",
+                    "div.job-description",
+                    "section.job-detail",
+                    "div[class*='jd-desc']",
+                    "div[class*='job-desc']",
+                    "article",
+                    "main"
+                ]
+                for _sel in _jd_selectors:
+                    _jd_el = detail_page.locator(_sel).first
+                    if _jd_el.count() > 0:
+                        full_desc = _jd_el.inner_text().strip()
+                        if len(full_desc) > 100:
+                            break
+
+                # Extract skills from JD page
+                _skill_tags_els = detail_page.locator("a.styles_chip__7YCfG, div.chip, span.chip, li.chip, div[class*='skill-chip']").all()
+                extracted_skills = [_se.inner_text().strip() for _se in _skill_tags_els if _se.inner_text().strip()]
+                if not extracted_skills:
+                    extracted_skills = card_skills
+
+                # Evaluate job match with full JD (AG Brain IPC via evaluate_job_match — DAEMON_MODE bypass REMOVED)
+                combined_desc = f"{full_desc}\n{other_details_text}".strip() if other_details_text else full_desc
+                match_result = ai.evaluate_job_match(
+                    job_title=title,
+                    job_description=combined_desc or exp_text,
+                    matching_skills=extracted_skills or card_skills,
+                    profile_dir=profile_dir,
+                    enable_ipc=True
+                )
+                score = match_result.score if hasattr(match_result, "score") else (match_result.get("score", 0) if isinstance(match_result, dict) else 0)
+                reasoning = match_result.reasoning if hasattr(match_result, "reasoning") else (match_result.get("reasoning", "") if isinstance(match_result, dict) else "")
+
+                print(f"     [SCORE: {score}%] {reasoning[:100]}", flush=True)
+
+                if score >= match_threshold:
+                    print(f"     [QUALIFIED — TAILORING + APPLYING] {title} @ {company}", flush=True)
+                    processed_ledger.add(url.lower())
+                    if can_url: processed_ledger.add(can_url)
+                    if job_id: processed_ledger.add(job_id)
+                    if page_job_id: processed_ledger.add(page_job_id)
+                    processed_ledger.add(composite_key)
+                    ctx.add_to_processed_ledger(can_url or url, status="qualified", metadata={"title": title, "company": company, "score": score})
+                    ctx.add_to_processed_ledger(composite_key, status="composite_qualified")
+
+                    current_batch.append({
+                        "title": title,
+                        "company": company,
+                        "url": can_url or url,
+                        "raw_url": raw_url,
+                        "platform": _exec_platform,
+                        "full_desc": combined_desc,
+                        "score": score,
+                        "extracted_skills": extracted_skills,
+                        "naukri_match_score": naukri_match_score,
+                    })
+
+                    if len(current_batch) >= BATCH_SIZE:
+                        process_batch(current_batch, profile_dir, _exec_platform)
+                        applied_count += len(current_batch)
+                        current_batch.clear()
+                else:
+                    print(f"     [BELOW THRESHOLD ({score}% < {match_threshold}%)] {title} @ {company}", flush=True)
+                    processed_ledger.add(url.lower())
+                    if can_url: processed_ledger.add(can_url)
+                    if job_id: processed_ledger.add(job_id)
+                    if page_job_id: processed_ledger.add(page_job_id)
+                    processed_ledger.add(composite_key)
+                    ctx.add_to_processed_ledger(can_url or url, status="low_score", metadata={"title": title, "company": company, "score": score})
+
+            except Exception as _exec_loop_err:
+                logger.warning(f"Notice during execute-phase for '{title}': {_exec_loop_err}")
+                try:
+                    if not detail_page.is_closed():
+                        detail_page.close()
+                    _exec_tracked.discard(detail_page)
+                except Exception:
+                    pass
+
+        if current_batch:
+            process_batch(current_batch, profile_dir, _exec_platform if approved_jobs else current_platform_exec)
+            applied_count += len(current_batch)
+            current_batch.clear()
+
+        try:
+            cleanup_browser_tabs(_exec_context, _exec_tracked, active_page=_exec_page)
+        except Exception:
+            pass
+
+    # ─── BATCH ARCH V2 — ROTATION PHASE: Advance to next designation ─────────────
+    print(f"\n{'='*70}", flush=True)
+    print(f"[ROTATION] Designation '{active_designation}' complete. Applied: {applied_count}", flush=True)
+
+    # Record per-designation stats
+    state_mgr.record_stats(
+        designation=active_designation,
+        cards_found=len(designation_batch_cards),
+        cards_approved=len(approved_jobs),
+        cards_applied=applied_count
+    )
+
+    # Advance to next designation for the next daemon cycle
+    next_designation = state_mgr.advance()
+    print(f"[ROTATION] Next cycle will search: '{next_designation}'", flush=True)
+    print(f"[ROTATION] State: {state_mgr.get_stats()}", flush=True)
+    print(f"{'='*70}\n", flush=True)
+
+    # Keep ai.advance_search_cycle() for cognitive profile search cycle tracking
     try:
         ai.advance_search_cycle()
-    except Exception as e:
-        logger.warning(f"Notice advancing search cycle: {e}")
+    except Exception as _adv_err:
+        logger.warning(f"Notice advancing AI search cycle: {_adv_err}")
 
-    try:
-        # Tab Hygiene (Rule C20): Keep primary worker tab alive on completion, clean any secondary tabs
-        cleanup_browser_tabs(context, tracked_pages, active_page=discovery_page)
-    except Exception:
-        pass
-
-    print(f"\n=== BATCH DISCOVERY COMPLETE. Processed {applied_count} total applications. ===", flush=True)
+    print(f"\n=== BATCH DISCOVERY COMPLETE. Designation: '{active_designation}'. Applied: {applied_count}. ===", flush=True)
 
 
 if __name__ == "__main__":

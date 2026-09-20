@@ -158,7 +158,19 @@
     - `STARVATION_EXPANSION`: Designation queue expansion on 0 matches.
     The agent polls `pending_question.json` at 0.5s intervals and resumes immediately upon answer ingestion, unlinking the file. Terminal `stdin` is strictly prohibited.
 
-16. **LinkedIn Easy Apply Modal Automation Contract (`05_apply_jobs.py`):**
+16. **Batch Job Evaluation IPC Contract (`04_job_discovery.py` & `ipc_watcher.py`):**
+    Batch Architecture v2.0 introduces `batch_question.json` and `batch_answer.json`.
+    - ARM Phase collects all candidate job cards from search result pages into a batch.
+    - BRAIN Phase writes the batch to `batch_question.json` with task_type `BATCH_JOB_EVALUATION` and waits for 120s.
+    - AG Brain must evaluate all cards and write decisions to `batch_answer.json` (NOT pending_question.json).
+    - Format must be: `{"status": "ANSWERED", "task_type": "BATCH_JOB_EVALUATION", "decisions": [{"id": 0, "decision": "DEEP_SCAN" | "SKIP", "reason": "..."}]}`
+    - NEVER mix `pending_question.json` (single card/chatbot) with `batch_question.json` (discovery batch).
+
+17. **SearchStateManager Contract (`core/utils/search_state_manager.py`):**
+    Designation rotation is managed by `SearchStateManager`.
+    Each daemon cycle processes exactly ONE designation and records stats. The state is atomically persisted to `profiles/<profile>/output/search_state.json`. Never hardcode loops for multiple keywords.
+
+18. **LinkedIn Easy Apply Modal Automation Contract (`05_apply_jobs.py`):**
     `LinkedInApplyHandler` manages native LinkedIn Easy Apply multi-step modal automation:
     - Traverses modals inside `div.jobs-easy-apply-modal` or `div[data-test-modal]`.
     - Handles text inputs, phone fields, single-select radios, and native/custom dropdowns.

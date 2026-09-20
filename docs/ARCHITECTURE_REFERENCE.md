@@ -35,43 +35,44 @@ Instead of a single blocking monolithic process or unmonitored terminal inputs, 
 
 ## 2. PIPELINE EXECUTION SEQUENCE & THREE-DAEMON FLOW
 
+**Batch Architecture v2.0:**
+Instead of serial 90-second IPC blocking per job card, the system now uses an ARM->BRAIN->EXECUTE architecture per daemon cycle, processing exactly one designation per cycle.
+
 ```
 [DAEMON 1: Discovery & Application Runner]
 continuous_career_agent.py (daemon loop)
   │
-  ├── [Optional] 02_profile_sync_naukri.py --profile <dir>
-  ├── [Optional] 03_profile_sync_linkedin.py --profile <dir>
+  ├─► [Optional] 02_profile_sync_naukri.py --profile <dir>
+  ├─► [Optional] 03_profile_sync_linkedin.py --profile <dir>
   │
-  └── LOOP:
-       ├── 04_job_discovery.py --profile <dir>
+  └─► LOOP:
+       ├─► 04_job_discovery.py --profile <dir>
        │    │
-       │    ├── [Per Matched SRP Job Card]:
-       │    │    ├── Scrape JD Detail Page
-       │    │    ├── [SRP Card-Level Pre-Scan Gates]:
-       │    │    │    ├── Salary Floor Gate: max_offered < target_salary_min_lpa → skip
-       │    │    │    └── [Guardrail C24] Experience Band Gate: card exp_text min > (total_experience_years + max_experience_gap_years) → skip [experience_gap_gated]
-       │    │    │         (all thresholds read from active profile's candidate_config.json — zero hardcoding)
-       │    │    ├── Deep Scan: Open JD Detail Page (tokens spent only on qualifying cards)
-       │    │    ├── [Tier 1 Scraper Pre-Flight Gating]:
-       │    │    │    Scrape ul.styles_JDC__job-highlight-list__QZC12 li
-       │    │    │    If negative keyword detected -> Close Tab, Log [HIGHLIGHTS GATED], Skip to Next
-       │    │    ├── Un-clamp "Read More" (expand to 7.2k+ chars)
-       │    │    ├── Scrape Naukri Native Match Score Box
-       │    │    ├── [Tier 2 Stage 1 Gatekeeper]:
-       │    │    │    Line-by-line / bullet-by-bullet negative scan of Job Highlights
-       │    │    │    Multi-bullet regex isolation (prevent collaboration phrase bleed)
-       │    │    │    Domain stem alignment & Incompatible vertical gate
-       │    │    └── Stage 2 Precision Match Score (Threshold >= 60%)
+       │    ├─► [ARM PHASE]: Collect Job Cards
+       │    │    ├─► SearchStateManager selects ONE active designation
+       │    │    ├─► Scrape SRP (Search Results Pages 1-3)
+       │    │    ├─► SRP Card-Level Pre-Scan Gates (Salary Floor, Exp Band C24, Blacklist)
+       │    │    └─► Accumulate into designation_batch_cards
        │    │
-       │    ├── [Per Qualified Job, BATCH_SIZE=1]:
-       │    │    ├── generate_factual_tailored.py --profile <dir>
-       │    │    ├── 02b_naukri_fast_resume_upload.py --profile <dir>
-       │    │    └── 05_apply_jobs.py --profile <dir>
-       │    │         └── If novel chatbot question -> Write to pending_question.json
+       │    ├─► [BRAIN PHASE]: Batch IPC Evaluation
+       │    │    ├─► Write ALL cards to batch_question.json
+       │    │    ├─► Wait up to 120s for AG Brain to reply in batch_answer.json
+       │    │    └─► Parse [DEEP_SCAN, SKIP] decisions
        │    │
-       │    └── Resume scanning next keyword/location/page...
+       │    ├─► [EXECUTE PHASE]: Deep Scan & Apply (Approved Cards Only)
+       │    │    ├─► For each DEEP_SCAN card:
+       │    │    ├─► Deep Scan: Open JD Detail Page & Un-clamp "Read More"
+       │    │    ├─► Tier 2 Stage 1 & Stage 2 Precision Match Score
+       │    │    ├─► If score >= 50%:
+       │    │    │    ├─► generate_factual_tailored.py --profile <dir>
+       │    │    │    ├─► 02b_naukri_fast_resume_upload.py --profile <dir>
+       │    │    │    └─► 05_apply_jobs.py --profile <dir>
+       │    │
+       │    └─► [ROTATE PHASE]:
+       │         └─► SearchStateManager.record_stats() & advance() designation index
        │
        └── time.sleep(delay)  →  Next Cycle
+```
 
 ─────────────────────────────────────────────────────────────────────────────
 [DAEMON 2: IPC Signal Relay]

@@ -6,6 +6,7 @@ An enterprise-grade, fully autonomous AI agent designed to orchestrate the compl
 
 The agent is built on a strict, candidate-agnostic framework. Zero personal data is hardcoded; everything resolves dynamically at runtime from isolated profile sandboxes.
 
+*   **Batch Architecture v2.0:** Job discovery operates in an ARM->BRAIN->EXECUTE flow, collecting a batch of job cards for a rotating designation, waiting for a single batch IPC decision from AG Brain via atch_question.json, and then executing deep-scans only on approved cards.
 *   **Three-Daemon Autonomous Architecture:** The system coordinates three specialized daemons to ensure non-blocking continuous execution and sub-minute IPC response times:
     *   **Daemon 1 (Discovery & Apply Runner — `continuous_career_agent.py`):** Runs the CDP-connected discovery and application pipeline, un-clamping JDs, rendering tailored PDFs, uploading resumes, and solving application forms.
     *   **Daemon 2 (IPC Signal Relay — `core/ipc_watcher.py`):** Dedicated lightweight daemon continuously polling `pending_question.json` at 2s intervals, emitting real-time structured ASCII notifications upon detecting in-flight questions.

@@ -224,6 +224,19 @@
 #   4. In 05_apply_jobs.py: Added guardrail ensuring ans passed to execute_chip_selection is strictly one of options.
 # Rationale: On all job platforms, radio chips and dropdowns require choosing from available DOM elements. Returning an unconstrained string when options are constrained guarantees DOM selection failure.
 # Preventative Notes: Never return an unconstrained string when options list is non-empty. Always ensure returned value exists in options.
+#
+# [ENTRY #021]
+# Term: [BATCH_CARD_EVALUATION_IPC]
+# Timestamp: 2026-09-20 19:45:00 +05:30
+# Issue / Context: Batch Architecture v2.0 — per-card serial IPC (90s × N cards) caused pipeline
+#   stall. Claude audit confirmed 40 cards × 90s = 60 min wait with 0 applications.
+# Changes Made: Added batch_card_evaluation_ipc() method. Accepts list of card dicts, writes a
+#   single BATCH_JOB_EVALUATION IPC payload to batch_question.json, polls batch_answer.json for
+#   AG Brain's decisions array (one per card), returns list of {id, decision, reason} dicts.
+#   Also removed not is_daemon guard from evaluate_job_match (see Entry #019 context).
+# Rationale: 1 IPC call per designation instead of N per card. Token-efficient, zero blocking.
+# Preventative Notes: Never revert to per-card IPC for card triage. batch_question.json and
+#   batch_answer.json are separate from pending_question.json (used for resume/questionnaire IPC).
 # ================================================================================
 """
 ================================================================================
@@ -1478,10 +1491,14 @@ Respond ONLY with a valid JSON object:
                 print(f"[AI CLIENT] Gemini evaluation notice ({e}). Falling back to AG Brain IPC / calibrated scoring.", flush=True)
 
         # 2.5 AG Brain Authoritative Evaluation via Antigravity 2.0 Cognitive IPC
-        # Invoked for all qualifying candidates (total_score >= 50%) when IPC is enabled and not in unattended daemon mode
+        # Invoked for all qualifying candidates (total_score >= 50%) when IPC is enabled.
+        # [BATCH-ARCH-V2 FIX 2026-09-19] REMOVED the `not is_daemon` guard that was silently
+        # bypassing AI scoring in daemon mode — the exact mode this system runs in autonomously.
+        # The Claude audit (AUDIT_REPORT_2026-09-19) confirmed this as a critical architectural
+        # violation of G-BRAIN-01 (AG Brain = sole semantic decision-maker).
+        # evaluate_job_match() IPC now runs in ALL modes when enable_ipc=True.
         enable_ipc_eval = kwargs.get("enable_ipc", True)
-        is_daemon = kwargs.get("is_daemon", False) or os.environ.get("DAEMON_MODE", "0") == "1"
-        if enable_ipc_eval and not self.gemini_client and not is_daemon and total_score >= 50:
+        if enable_ipc_eval and not self.gemini_client and total_score >= 50:
             cand_title_val = current_title or cand.get("current_title", "")
             cand_domain_summary = f"{cand_title_val} ({', '.join(target_keywords[:3])})" if target_keywords else (cand_title_val or cand_domain or "Candidate Core Domain")
             ipc_eval_prompt = f"""You are the AG Brain. Evaluate candidate qualification for this job posting with high precision.
@@ -2495,6 +2512,148 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 except Exception:
                     pass
                 return ""
+
+    def batch_card_evaluation_ipc(
+        self,
+        cards: list,
+        candidate_summary: dict,
+        designation: str = "",
+        timeout_seconds: float = 120.0
+    ) -> list:
+        """
+        BATCH Architecture v2.0 — Single IPC call for an entire page-batch of job cards.
+
+        Writes all collected cards to batch_question.json in one shot.
+        AG Brain evaluates ALL cards at once and writes decisions to batch_answer.json.
+        Script polls batch_answer.json and returns a list of decisions.
+
+        Args:
+            cards: List of card dicts (id, title, company, skills, exp_text, salary, etc.)
+            candidate_summary: Dict with candidate_domain, seniority_level, core_skills, etc.
+            designation: The search designation/keyword used to find these cards.
+            timeout_seconds: Max time (default 120s) to wait for AG Brain batch evaluation.
+
+        Returns:
+            List of {id, decision (DEEP_SCAN|SKIP), reason} dicts.
+            On timeout: all cards default to SKIP (conservative safe default).
+        """
+        output_dir = getattr(self.profile_context, "output_dir", None)
+        if not output_dir:
+            print("[BATCH IPC] ERROR: No output_dir on profile context. Returning all SKIP.", flush=True)
+            return [{"id": c.get("id", i), "decision": "SKIP", "reason": "no_output_dir"} for i, c in enumerate(cards)]
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        question_file = output_dir / "batch_question.json"
+        answer_file = output_dir / "batch_answer.json"
+
+        # Clean up any stale answer file from previous run
+        try:
+            if answer_file.exists():
+                answer_file.unlink()
+        except Exception:
+            pass
+
+        # Assign sequential IDs if not present
+        for i, card in enumerate(cards):
+            if "id" not in card:
+                card["id"] = i
+
+        batch_payload = {
+            "status": "PENDING",
+            "task_type": "BATCH_JOB_EVALUATION",
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "designation": designation,
+            "total_cards": len(cards),
+            "candidate_summary": candidate_summary,
+            "cards": [
+                {
+                    "id": c.get("id", i),
+                    "title": c.get("title", ""),
+                    "company": c.get("company", ""),
+                    "exp_text": c.get("exp_text", ""),
+                    "salary": c.get("salary", ""),
+                    "skills": c.get("card_skills", [])[:15],
+                    "posted": c.get("posted_age", "")
+                }
+                for i, c in enumerate(cards)
+            ]
+        }
+
+        # Write batch question atomically
+        try:
+            tmp_q = question_file.with_suffix(".tmp")
+            tmp_q.write_text(json.dumps(batch_payload, indent=2), encoding="utf-8")
+            import os as _os
+            _os.replace(tmp_q, question_file)
+        except Exception as e:
+            print(f"[BATCH IPC] ERROR writing batch_question.json: {e}. Returning all SKIP.", flush=True)
+            return [{"id": c.get("id", i), "decision": "SKIP", "reason": "write_error"} for i, c in enumerate(cards)]
+
+        sep = "=" * 72
+        print(f"\n{sep}", flush=True)
+        print(f"[BATCH IPC] AWAITING AG BRAIN BATCH EVALUATION", flush=True)
+        print(f"[BATCH IPC] Designation: '{designation}' | Cards: {len(cards)}", flush=True)
+        print(f"[BATCH IPC] Question file: {question_file}", flush=True)
+        print(f"[BATCH IPC] Answer file:   {answer_file}", flush=True)
+        print(f"[BATCH IPC] Timeout: {int(timeout_seconds)}s", flush=True)
+        print(sep, flush=True)
+        print(f">> AG Brain: Please read batch_question.json, evaluate all {len(cards)} cards,", flush=True)
+        print(f">> then write decisions array to batch_answer.json.", flush=True)
+        print(sep, flush=True)
+
+        start_time = time.time()
+        last_heartbeat = start_time
+
+        while True:
+            time.sleep(1.0)
+            now = time.time()
+            elapsed = now - start_time
+
+            # Periodic heartbeat
+            if now - last_heartbeat >= 15.0:
+                print(f"[BATCH IPC] Waiting for AG Brain... ({int(elapsed)}s / {int(timeout_seconds)}s elapsed)", flush=True)
+                last_heartbeat = now
+
+            # Poll for answer file
+            if answer_file.exists():
+                try:
+                    raw = answer_file.read_text(encoding="utf-8")
+                    data = json.loads(raw)
+                    decisions = data.get("decisions", [])
+                    if isinstance(decisions, list) and len(decisions) > 0:
+                        print(f"[BATCH IPC] AG Brain answered: {len(decisions)} decisions received.", flush=True)
+                        # Clean up
+                        try:
+                            question_file.unlink(missing_ok=True)
+                            answer_file.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        # Merge expansion keywords if AG Brain provided them
+                        expansion_kws = data.get("expansion_keywords", [])
+                        if expansion_kws and self.profile_context:
+                            try:
+                                from core.utils.search_state_manager import SearchStateManager
+                                state_mgr = SearchStateManager(self.profile_context.profile_dir)
+                                added = state_mgr.append_designations(expansion_kws)
+                                if added:
+                                    print(f"[BATCH IPC] Added {added} expansion designations from AG Brain.", flush=True)
+                            except Exception as ex:
+                                print(f"[BATCH IPC] Notice appending expansion keywords: {ex}", flush=True)
+                        return decisions
+                except Exception:
+                    # File still being written, keep polling
+                    pass
+
+            # Timeout
+            if elapsed >= timeout_seconds:
+                print(f"[BATCH IPC] TIMEOUT after {int(elapsed)}s. Defaulting all {len(cards)} cards to SKIP.", flush=True)
+                try:
+                    question_file.unlink(missing_ok=True)
+                    answer_file.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                return [{"id": c.get("id", i), "decision": "SKIP", "reason": "timeout"} for i, c in enumerate(cards)]
 
     def arbitrate_card_fit(
         self,

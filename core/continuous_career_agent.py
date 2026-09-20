@@ -36,6 +36,22 @@
 # Changes Made: Injected os.environ["DAEMON_MODE"] = "1" at top of daemon orchestrator.
 # Rationale: Guarantees child discovery processes evaluate job fit instantaneously using calibrated semantic models.
 # Preventative Notes: Always ensure daemon processes propagate DAEMON_MODE=1 to subprocesses.
+#   NOTE (2026-09-20): DAEMON_MODE=1 no longer bypasses AI evaluation (Claude audit fix). It is
+#   kept as an env variable for legacy compatibility but has no functional effect on scoring.
+#
+# [ENTRY #004]
+# Term: [BATCH_ARCH_V2_ORCHESTRATION]
+# Timestamp: 2026-09-20 19:55:00 +05:30
+# Issue / Context: Batch Architecture v2.0 changes each daemon cycle to process ONE designation.
+#   SearchStateManager tracks which designation to search next, rotating automatically.
+#   Each cycle: collect cards → AG Brain batch eval → apply approved cards → rotate.
+# Changes Made: Added cycle logging for active designation from search_state.json.
+#   No structural changes to orchestration loop — discovery script itself handles rotation.
+#   DAEMON_MODE=1 kept for env compat but no longer bypasses AI scoring.
+# Rationale: Each daemon cycle = one designation = one batch IPC call. Clean, observable, debuggable.
+# Preventative Notes: Do NOT set a very short --delay between cycles during batch IPC wait.
+#   The batch IPC has a 120s timeout by default. Set --delay >= 60s so AG Brain has time.
+#   Rotation state is in search_state.json — do NOT reset it manually between cycles.
 # ================================================================================
 """
 continuous_career_agent.py
@@ -140,6 +156,20 @@ def main():
             logger.info(cycle_start)
             ctx.append_execution_log(cycle_start)
 
+            # Log current rotation state (Batch Arch v2.0 — SearchStateManager)
+            try:
+                from core.utils.search_state_manager import SearchStateManager
+                _sm = SearchStateManager(ctx.profile_path)
+                _active = _sm.get_current_designation()
+                _idx = _sm.get_current_index()
+                _total = len(_sm.get_all_designations())
+                _stats = _sm.get_stats()
+                logger.info(f"  [ROTATION] Cycle #{cycle}: designation [{_idx}/{_total-1}] = '{_active}'")
+                logger.info(f"  [ROTATION] Stats: {_stats}")
+                ctx.append_execution_log(f"[ROTATION] Designation: '{_active}' [{_idx}/{_total-1}]")
+            except Exception as _rot_err:
+                logger.debug(f"  [ROTATION] SearchStateManager not available yet: {_rot_err}")
+
             # The Interleaved Discovery engine now internally orchestrates tailoring and applying
             run_step("Interleaved Discovery & Application Engine", "04_job_discovery.py", profile_arg, ctx=ctx)
 
@@ -151,6 +181,7 @@ def main():
 
     except KeyboardInterrupt:
         logger.info("[STOP] Daemon stopped manually by user.")
+
 
 if __name__ == "__main__":
     main()
