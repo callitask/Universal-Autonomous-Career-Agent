@@ -1,5 +1,11 @@
 # Universal Autonomous Career Agent
 
+> **?? PROPRIETARY & CONFIDENTIAL ??**
+> 
+> This repository and its contents are closed-source and strictly confidential. 
+> No public license is granted. You may not copy, distribute, modify, or use this code without explicit written permission.
+
+
 An enterprise-grade, fully autonomous AI agent designed to orchestrate the complete job application lifecycle. Operating via a dual-brain architecture (Gemini Hosted Mode + Antigravity 2.0 File-Based IPC), this pipeline autonomously discovers roles, evaluates suitability, dynamically tailors ATS-compliant resumes, and executes multi-step applications across enterprise job portals.
 
 ## 🧠 System Architecture
