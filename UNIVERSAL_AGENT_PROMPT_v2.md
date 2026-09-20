@@ -42,6 +42,14 @@ F:\JOB AI AGENT\docs\
   └── GEMINI_WEB_AI_PROMPTS.md   ← Prompt guidelines and evaluation rubrics
 ```
 
+**0e. Review Knowledge Graph & Changelogs (for AI Development/Updates):**
+```
+F:\JOB AI AGENT\docs\
+  ├── KNOWLEDGE_GRAPH_CHANGELOG.md    ← Vector database & semantic graph memory (`Sophron/`) evolution log
+  └── DEPRECATED_SYSTEMS_CHANGELOG.md ← Systems downgraded/removed, preventing repetitive mistakes
+```
+→ Any changes to the `Sophron` semantic graph memory, vector structures, or architectures MUST be logged here before coding. You must review these on load to understand current architecture rules and regulations.
+
 ================================================================================
 ## PHASE 1: PROFILE SELECTION & ZERO-HARDCODING MANDATE
 ================================================================================
@@ -237,13 +245,13 @@ If any daemon dies (crash, cancellation, environment timeout):
 ## PHASE 6: WHAT NOT TO DO
 ================================================================================
 
-❌ **Never hardcode** candidate names, emails, skills, titles, salaries, or company names in any Python script  
-❌ **Never modify** `core/04_job_discovery.py` to fix keyword starvation — edit `candidate_config.json` instead  
-❌ **Never delete** the `processed_ledger.json` entirely — smart-reset only (preserve applied jobs)  
-❌ **Never apply** to a job where the JD's primary technology is completely absent from the candidate's resume  
-❌ **Never let** a PENDING IPC question expire unanswered — respond within 90 seconds  
-❌ **Never write** profile-specific data, logs, or temp files outside `profiles/$TARGET_PROFILE/`  
-❌ **Never commit** `profiles/` to git — verify `.gitignore` blocks it
+[ERROR] **Never hardcode** candidate names, emails, skills, titles, salaries, or company names in any Python script  
+[ERROR] **Never modify** `core/04_job_discovery.py` to fix keyword starvation — edit `candidate_config.json` instead  
+[ERROR] **Never delete** the `processed_ledger.json` entirely — smart-reset only (preserve applied jobs)  
+[ERROR] **Never apply** to a job where the JD's primary technology is completely absent from the candidate's resume  
+[ERROR] **Never let** a PENDING IPC question expire unanswered — respond within 90 seconds  
+[ERROR] **Never write** profile-specific data, logs, or temp files outside `profiles/$TARGET_PROFILE/`  
+[ERROR] **Never commit** `profiles/` to git — verify `.gitignore` blocks it
 
 ================================================================================
 ## EXECUTION MANDATE UPON PROMPT RECEIPT

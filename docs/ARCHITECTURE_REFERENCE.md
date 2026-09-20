@@ -753,34 +753,34 @@ https://www.naukri.com/mnjuser/profile
 
 | Failure Scenario | Current Behavior | Expected Behavior |
 |:---|:---|:---|
-| Candidate data in core/*.py | Fatal halt via `verify_codebase_purity()` | ✅ Correct (Guardrail P1) |
-| Lazy-loaded DOM not mounted | Pre-inspection `window.scrollTo(0, 1200)` hydrates cards | ✅ Correct (Guardrail C11) |
-| JD text truncated to 5 lines | Click `span.styles_rm-link__RgrMs` un-clamps full text | ✅ Correct (Guardrail C12) |
-| Portal match score ignored | Scrapes `div.styles_JDC__match-score__VnjLL`, awards +10% bonus | ✅ Correct (Guardrail C13) |
-| Profile edit modal targets fragile | Uses verified IDs (`#resumeHeadlineTxt`, `#submitEmployment`) | ✅ Correct (Guardrail C14) |
-| Chatbot submit clicked background | Strictly scoped to `.sendMsgbtn_container .send .sendMsg` | ✅ Correct (Guardrail C10) |
-| Gemini API key missing | Dispatches to `pending_question.json` File-Based IPC | ✅ Correct (H6 compliant) |
-| Gemini API rate limited | Dispatches to `pending_question.json` File-Based IPC | ✅ Correct (H6 compliant) |
-| CDP Chrome not running | Pre-flight check detects port 9222 down, logs instructions | ✅ Correct |
-| Naukri selector hash changed | Uses robust un-hashed fallback selectors | ✅ Handled |
-| Chatbot drawer never opens | Returns FAILED | ✅ Correct (C1 compliant) |
-| Unknown form control type | Scans interactive chips or dispatches to File IPC | ✅ Correct (Bug 4 fix) |
-| Active question stuck 3x | Halts loop, logs REQUIRES_MANUAL_INTERVENTION | ✅ Correct (C7 breaker) |
-| `candidate_config.json` write | Atomic write via .tmp + os.replace | ✅ Correct (C4 compliant) |
-| PDF generation crashes | check=True aborts application | ✅ Correct (H6 compliant) |
-| All chatbot iterations exhausted | Checks completion, returns FAILED if not done | ✅ Correct (C3 compliant) |
-| Hardcoded keyword lists in `ai_client.py` | Fatal halt via `verify_codebase_purity()` | ✅ Fixed — all keyword lists moved to `screening_heuristics` in config (v4.0) |
-| "internship" word in experience fallback | Caused `"internship as Senior Associate"` hallucination | ✅ Fixed — `fallback_text_label: "experience"` in config; Python reads `sh.get("fallback_text_label", "experience")` |
-| `"projects"` in `numeric_question_exclusions` | Blocked `"How many years of BFSI projects?"` from integer path | ✅ Fixed — `"projects"` removed from config exclusion list (v4.0) |
-| Multi-bullet collaboration regex bleed | Collaboration regex in bullet 2 blinded negative keyword in bullet 1 | ✅ Fixed — Multi-bullet line-by-line regex isolation evaluates each bullet independently (v5.0) |
-| Highlights classified as responsibilities | Highlights parsed as work duties, awarding positive capability points | ✅ Fixed — `"job highlights"` removed from `resp_headers` in `_analyze_jd_work_capability()` (v5.0) |
-| Job Highlights not scanned before unclamp | Full JD loaded and un-clamped before negative qualification was caught | ✅ Fixed — Tier 1 Scraper Pre-Flight Gating scans `ul.styles_JDC__job-highlight-list__QZC12 li` immediately on page load (v5.0) |
-| Stale runner process memory on code edit | Long-running runner daemon ran old Python bytecode in Windows RAM | ✅ Fixed — Three-Daemon operational architecture mandates graceful restart of runner daemon on engine code updates (v5.0) |
-| Chatbot question 90s SLA timeout | Novel screening question risked timing out during background runs | ✅ Fixed — Three-Daemon Architecture (Daemon 2 `ipc_watcher.py` + Daemon 3 1-min cron monitor) answers questions within SLA (v5.0) |
-| Standalone generic negative keyword false positives | Standalone generic nouns (`"Software"`) matched legitimate tools (`"Accounting Software"`), falsely disqualifying valid finance roles | ✅ Fixed — Composite Term Standard mandates role-specific phrases (`"Software Engineer"`, `"Software Developer"`) in `negative_keywords` (Guardrail C31) |
-| Syndicated portal redirect hangs | `page.goto()` hung indefinitely on slow/dead third-party syndicated URLs (Purview India, Leading Client) | ✅ Fixed — Two-Stage Fallback (`commit` [12s] + `domcontentloaded` [15s]) catches timeout cleanly, logs FAILED, and advances pipeline without crashing (Guardrail C32) |
-| Chatbot screening tool hallucinations | Open-ended chatbot questions regarding unverified ERPs/tools risked model hallucinations | ✅ Fixed — Free-Text Screening Ground Truth Standard strictly bounds answers to candidate's verified stack with honest disclosures (Guardrail C33) |
-| Radio chip option mismatch / DOM selection failure | Non-conforming answer (e.g. numeric "0" vs `['Beginner', 'Intermediate', 'Expert']`) broke chip click, causing stuck loop and application failure | ✅ Fixed — Option-Constrained Resolution with proficiency tier fallback (`_best_option_match`), heuristic option filtering, and pre-click conformity check with retry (Guardrail C34) |
+| Candidate data in core/*.py | Fatal halt via `verify_codebase_purity()` | [PASS] Correct (Guardrail P1) |
+| Lazy-loaded DOM not mounted | Pre-inspection `window.scrollTo(0, 1200)` hydrates cards | [PASS] Correct (Guardrail C11) |
+| JD text truncated to 5 lines | Click `span.styles_rm-link__RgrMs` un-clamps full text | [PASS] Correct (Guardrail C12) |
+| Portal match score ignored | Scrapes `div.styles_JDC__match-score__VnjLL`, awards +10% bonus | [PASS] Correct (Guardrail C13) |
+| Profile edit modal targets fragile | Uses verified IDs (`#resumeHeadlineTxt`, `#submitEmployment`) | [PASS] Correct (Guardrail C14) |
+| Chatbot submit clicked background | Strictly scoped to `.sendMsgbtn_container .send .sendMsg` | [PASS] Correct (Guardrail C10) |
+| Gemini API key missing | Dispatches to `pending_question.json` File-Based IPC | [PASS] Correct (H6 compliant) |
+| Gemini API rate limited | Dispatches to `pending_question.json` File-Based IPC | [PASS] Correct (H6 compliant) |
+| CDP Chrome not running | Pre-flight check detects port 9222 down, logs instructions | [PASS] Correct |
+| Naukri selector hash changed | Uses robust un-hashed fallback selectors | [PASS] Handled |
+| Chatbot drawer never opens | Returns FAILED | [PASS] Correct (C1 compliant) |
+| Unknown form control type | Scans interactive chips or dispatches to File IPC | [PASS] Correct (Bug 4 fix) |
+| Active question stuck 3x | Halts loop, logs REQUIRES_MANUAL_INTERVENTION | [PASS] Correct (C7 breaker) |
+| `candidate_config.json` write | Atomic write via .tmp + os.replace | [PASS] Correct (C4 compliant) |
+| PDF generation crashes | check=True aborts application | [PASS] Correct (H6 compliant) |
+| All chatbot iterations exhausted | Checks completion, returns FAILED if not done | [PASS] Correct (C3 compliant) |
+| Hardcoded keyword lists in `ai_client.py` | Fatal halt via `verify_codebase_purity()` | [PASS] Fixed — all keyword lists moved to `screening_heuristics` in config (v4.0) |
+| `"internship"` word in experience fallback | Caused `"internship as Senior Associate"` hallucination | [PASS] Fixed — `fallback_text_label: "experience"` in config; Python reads `sh.get("fallback_text_label", "experience")` |
+| `"projects"` in `numeric_question_exclusions` | Blocked `"How many years of BFSI projects?"` from integer path | [PASS] Fixed — `"projects"` removed from config exclusion list (v4.0) |
+| Multi-bullet collaboration regex bleed | Collaboration regex in bullet 2 blinded negative keyword in bullet 1 | [PASS] Fixed — Multi-bullet line-by-line regex isolation evaluates each bullet independently (v5.0) |
+| Highlights classified as responsibilities | Highlights parsed as work duties, awarding positive capability points | [PASS] Fixed — `"job highlights"` removed from `resp_headers` in `_analyze_jd_work_capability()` (v5.0) |
+| Job Highlights not scanned before unclamp | Full JD loaded and un-clamped before negative qualification was caught | [PASS] Fixed — Tier 1 Scraper Pre-Flight Gating scans `ul.styles_JDC__job-highlight-list__QZC12 li` immediately on page load (v5.0) |
+| Stale runner process memory on code edit | Long-running runner daemon ran old Python bytecode in Windows RAM | [PASS] Fixed — Three-Daemon operational architecture mandates graceful restart of runner daemon on engine code updates (v5.0) |
+| Chatbot question 90s SLA timeout | Novel screening question risked timing out during background runs | [PASS] Fixed — Three-Daemon Architecture (Daemon 2 `ipc_watcher.py` + Daemon 3 1-min cron monitor) answers questions within SLA (v5.0) |
+| Standalone generic negative keyword false positives | Standalone generic nouns (`"Software"`) matched legitimate tools (`"Accounting Software"`), falsely disqualifying valid finance roles | [PASS] Fixed — Composite Term Standard mandates role-specific phrases (`"Software Engineer"`, `"Software Developer"`) in `negative_keywords` (Guardrail C31) |
+| Syndicated portal redirect hangs | `page.goto()` hung indefinitely on slow/dead third-party syndicated URLs (Purview India, Leading Client) | [PASS] Fixed — Two-Stage Fallback (`commit` [12s] + `domcontentloaded` [15s]) catches timeout cleanly, logs FAILED, and advances pipeline without crashing (Guardrail C32) |
+| Chatbot screening tool hallucinations | Open-ended chatbot questions regarding unverified ERPs/tools risked model hallucinations | [PASS] Fixed — Free-Text Screening Ground Truth Standard strictly bounds answers to candidate's verified stack with honest disclosures (Guardrail C33) |
+| Radio chip option mismatch / DOM selection failure | Non-conforming answer (e.g. numeric "0" vs `['Beginner', 'Intermediate', 'Expert']`) broke chip click, causing stuck loop and application failure | [PASS] Fixed — Option-Constrained Resolution with proficiency tier fallback (`_best_option_match`), heuristic option filtering, and pre-click conformity check with retry (Guardrail C34) |
 
 ---
 

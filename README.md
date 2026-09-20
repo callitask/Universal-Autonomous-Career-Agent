@@ -1,6 +1,6 @@
 # Universal Autonomous Career Agent
 
-> **?? PROPRIETARY & CONFIDENTIAL ??**
+> **[CONFIDENTIAL] PROPRIETARY & CONFIDENTIAL [CONFIDENTIAL]**
 > 
 > This repository and its contents are closed-source and strictly confidential. 
 > No public license is granted. You may not copy, distribute, modify, or use this code without explicit written permission.
@@ -8,7 +8,7 @@
 
 An enterprise-grade, fully autonomous AI agent designed to orchestrate the complete job application lifecycle. Operating via a dual-brain architecture (Gemini Hosted Mode + Antigravity 2.0 File-Based IPC), this pipeline autonomously discovers roles, evaluates suitability, dynamically tailors ATS-compliant resumes, and executes multi-step applications across enterprise job portals.
 
-## 🧠 System Architecture
+## System Architecture
 
 The agent is built on a strict, candidate-agnostic framework. Zero personal data is hardcoded; everything resolves dynamically at runtime from isolated profile sandboxes.
 
@@ -31,7 +31,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 *   **DOM Solver:** Navigates complex modal drawers, intercepts contenteditable fields, and resolves single-page application wrappers with behavioral human-emulation (keystroke jitter, viewport alignment).
 *   **Cryptographic Verification:** Validates physical ledger entries on platform history pages before confirming an application as successful.
 
-## 🚀 Key Features
+## Key Features
 
 *   **Guardrail P1 (Codebase Purity Enforcer):** Automated runtime AST and token purity verification (`ctx.verify_codebase_purity()`) ensuring zero candidate PII or hardcoded values in `core/`.
 *   **Dynamic Startup & Profile Auto-Discovery:** Automatic runtime profile discovery (making `--profile` optional) and pre-flight CDP port 9222 diagnostics before automation loops start.
@@ -40,7 +40,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 *   **Self-Learning Ledger:** $O(1)$ exact-match caching for recurring screening questions to minimize API overhead and ensure deterministic truth scaling.
 *   **Anti-Detection Behaviors:** Native session reuse, random execution jitter (45–130ms), and headless-evasion via persistent authenticated Chrome instances.
 
-## 📂 Directory Structure
+## Directory Structure
 
 ```text
 .
@@ -65,10 +65,10 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 └── profiles/                          # .gitignored candidate sandboxes
 ```
 
-## ⚠️ Data Privacy & Security
+## [WARNING] Data Privacy & Security
 
 This repository contains the engine's source code only. The `profiles/` directory, which manages `candidate_config.json`, Master Resumes, and tracking ledgers, is strictly excluded via `.gitignore` to prevent the leakage of Personally Identifiable Information (PII).
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

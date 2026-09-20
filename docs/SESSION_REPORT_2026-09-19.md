@@ -341,12 +341,12 @@ Violation = breach of G-BRAIN-01. Requires user approval to override.
 
 | Scenario | Old Architecture | New Architecture |
 |---|---|---|
-| Recruiter uses "manage" as a verb in JD | **FALSE REJECT** (keyword match) | ✅ AG Brain understands context |
-| Novel senior title not in keyword list | **FALSE ACCEPT** | ✅ AG Brain reads exp_text + title holistically |
-| New job type emerges in market | Requires keyword list update | ✅ AG Brain handles without config change |
-| Keyword list grows stale | Silent degradation | ✅ No impact — Python doesn't use lists for decisions |
-| Candidate profile changes | Keyword lists need re-tuning | ✅ AG Brain reads profile dynamically each eval |
-| Agent brain session changes (new AG Brain) | Repeats keyword mistakes | ✅ SCAR_TISSUE + AI CONTEXT ENTRY #012 prevent regression |
+| Recruiter uses "manage" as a verb in JD | **FALSE REJECT** (keyword match) | [PASS] AG Brain understands context |
+| Novel senior title not in keyword list | **FALSE ACCEPT** | [PASS] AG Brain reads exp_text + title holistically |
+| New job type emerges in market | Requires keyword list update | [PASS] AG Brain handles without config change |
+| Keyword list grows stale | Silent degradation | [PASS] No impact — Python doesn't use lists for decisions |
+| Candidate profile changes | Keyword lists need re-tuning | [PASS] AG Brain reads profile dynamically each eval |
+| Agent brain session changes (new AG Brain) | Repeats keyword mistakes | [PASS] SCAR_TISSUE + AI CONTEXT ENTRY #012 prevent regression |
 
 ---
 
