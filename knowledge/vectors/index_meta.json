@@ -1,0 +1,1437 @@
+{
+  "index_version": "2.2.0",
+  "generator": "build_knowledge_index.py",
+  "total_files": 284,
+  "total_nodes": 1386,
+  "total_edges": 2339,
+  "total_chunks": 669,
+  "total_summaries": 51,
+  "domain_counts": {
+    "agent_structure": 461,
+    "personal_intelligence": 208
+  },
+  "sophron_root": "F:\\Sophron",
+  "vocab_size": 12530,
+  "file_hashes": {
+    "Repo_A:.agents/README.md": {
+      "hash": "0ffd5ea1364ed9557c2e762c0dd4c84635f8ae7e9c8261b25c2106f3dcb578ec",
+      "lines": 199,
+      "bytes": 12324
+    },
+    "Repo_A:.agents/rules/00_user_cognitive_os.md": {
+      "hash": "e947332f1d4146a02e05c0be26a2f7ac8a386df6a082e17f203e8c230adcb06c",
+      "lines": 51,
+      "bytes": 4530
+    },
+    "Repo_A:.agents/rules/01_sophron_session_init.md": {
+      "hash": "f258905e239ad42dc6800418926d5f3f6825acae6f9a70beacac2503f5fa9ca3",
+      "lines": 394,
+      "bytes": 18802
+    },
+    "Repo_A:.agents/rules/02_career_agent_operational_rules.md": {
+      "hash": "2c95ca671e2b8f7705349036fe52a8b58fe82e533426f874d65687198cafa34e",
+      "lines": 164,
+      "bytes": 13446
+    },
+    "Repo_A:.agents/rules/03_career_agent_session_profile_init.md": {
+      "hash": "d4aee7b61b0727c05dd72c6480bfad61ada6088d2f4d9b1b6c610f81867292e0",
+      "lines": 61,
+      "bytes": 3778
+    },
+    "Repo_A:.agents/rules/ACTIVE_CONSTRAINT_BLOCK.md": {
+      "hash": "c3b80654e8abdb2493ed4046c6dba5acdc8a20e5f1c1596f7b06ec3c995d8d4f",
+      "lines": 56,
+      "bytes": 4467
+    },
+    "Repo_A:.agents/rules/SCAR_TISSUE.md": {
+      "hash": "7a00d96e0e6907017c856bc89dd31211211e6282d6aa40b8e9e4c284f60de85e",
+      "lines": 121,
+      "bytes": 12267
+    },
+    "Repo_A:.agents/rules/workspace_rules.md": {
+      "hash": "df28cb7b7c91513c4a0bbf540dd7f20eb5f8576e1d89c3bc57812ec62ebc0caf",
+      "lines": 11,
+      "bytes": 1316
+    },
+    "Repo_A:.gitignore": {
+      "hash": "f537065586548427857042285a942621df33a29692d3f5ca365b99063b3702b6",
+      "lines": 78,
+      "bytes": 1418
+    },
+    "Repo_A:COPYRIGHT.md": {
+      "hash": "d91e1161763e8b086bd7ebea4334ff61e8253e853f1a215af6c9327ba0b42c63",
+      "lines": 9,
+      "bytes": 598
+    },
+    "Repo_A:CompanySiteApply/CompanyScraper/__init__.py": {
+      "hash": "3743dfd670304a3212a1a3f4ad795ec41ef1d7a6baaaf16d56003c5b76d7134e",
+      "lines": 8,
+      "bytes": 249
+    },
+    "Repo_A:CompanySiteApply/CompanyScraper/base_scraper.py": {
+      "hash": "c822702a219f067b11d88a55598641512a13fab9dfc7db94bc9a2262b408b8fa",
+      "lines": 119,
+      "bytes": 4728
+    },
+    "Repo_A:CompanySiteApply/CompanyScraper/cli_scraper.py": {
+      "hash": "ecc22aeb41b7a5cd5f27eceab0bd6bc3a83e319a8b887f630ce0b3c1d7685178",
+      "lines": 146,
+      "bytes": 5965
+    },
+    "Repo_A:CompanySiteApply/CompanyScraper/companies/__init__.py": {
+      "hash": "64a6f950a0cb8c060b9c542fe87eaa6dd8a40a74a7613be3995dfe0e96359560",
+      "lines": 7,
+      "bytes": 219
+    },
+    "Repo_A:CompanySiteApply/CompanyScraper/companies/jpmorgan/__init__.py": {
+      "hash": "c758c0f69687151827dfe842a0aa92cb5c88cd4bd34c7eaed2d983ffc8cefeb6",
+      "lines": 8,
+      "bytes": 264
+    },
+    "Repo_A:CompanySiteApply/CompanyScraper/companies/jpmorgan/config.json": {
+      "hash": "642083ce101ba48767645f387ee5d48c804863647482223f8e38e0d390266c20",
+      "lines": 24,
+      "bytes": 1116
+    },
+    "Repo_A:CompanySiteApply/CompanyScraper/companies/jpmorgan/jpmorgan_scraper.py": {
+      "hash": "51bfc5d337d796f17527c87774790b3905094205f7ce2574df3ba5760cb3d98b",
+      "lines": 156,
+      "bytes": 6812
+    },
+    "Repo_A:CompanySiteApply/README.md": {
+      "hash": "0724c32e068b8c94b16499717bf2b5c09c3c4ed73c1e4dc9fde2a81c8b1ff24a",
+      "lines": 125,
+      "bytes": 7848
+    },
+    "Repo_A:CompanySiteApply/SCOPE_OF_EDIT.md": {
+      "hash": "aaaeb87d4ca1902005073a017b1c4673f2b1da3e9b6bd9d8a88661ea9711b02c",
+      "lines": 124,
+      "bytes": 6718
+    },
+    "Repo_A:CompanySiteApply/__init__.py": {
+      "hash": "d5ae6878da3cd881deee2f8f217f0c9062ab82030d0b5f68082d14c754c53b67",
+      "lines": 16,
+      "bytes": 767
+    },
+    "Repo_A:CompanySiteApply/ats_arm.py": {
+      "hash": "5d19dba3b16faf66af70e2611b7fd50f872ab92a342c86dd1cec36041432e408",
+      "lines": 141,
+      "bytes": 5438
+    },
+    "Repo_A:CompanySiteApply/ats_detector.py": {
+      "hash": "30fa3743abef5e3023e8c3b19d1fd46a76a6e13bc0ac4a3416ee34a22758a507",
+      "lines": 62,
+      "bytes": 2339
+    },
+    "Repo_A:CompanySiteApply/cli.py": {
+      "hash": "46dd6faaebb9b6f4230bd3cbca6f4a2a2181fa357d63fc185881227c4a0e66cd",
+      "lines": 139,
+      "bytes": 5131
+    },
+    "Repo_A:CompanySiteApply/fingers/__init__.py": {
+      "hash": "cfc6559aa8ae2cb904c332458748f131dcd6bb3386a6370e7d3f9f405ad31e0c",
+      "lines": 55,
+      "bytes": 2275
+    },
+    "Repo_A:CompanySiteApply/fingers/base_finger.py": {
+      "hash": "4c405869632661d7d722e10855d7bbf1242138ee759ae4ef4cc709e7d25ac3a3",
+      "lines": 71,
+      "bytes": 2665
+    },
+    "Repo_A:CompanySiteApply/fingers/generic_finger.py": {
+      "hash": "bce9b2dcb34db2591d88f5ae1f43b4d34ac64b56f91b26f79b05760aad97fe56",
+      "lines": 102,
+      "bytes": 4577
+    },
+    "Repo_A:CompanySiteApply/fingers/greenhouse_finger.py": {
+      "hash": "c41dae67a244369aa858f6c404a5eafcd7ef89597d59c5c155baeab54b60c3f6",
+      "lines": 87,
+      "bytes": 3718
+    },
+    "Repo_A:CompanySiteApply/fingers/oracle_cloud_finger.py": {
+      "hash": "716d007a56091326978d9d4c3d61aad61f2145ce10f30401d988bad11ce948c4",
+      "lines": 1069,
+      "bytes": 54725
+    },
+    "Repo_A:CompanySiteApply/fingers/workday_finger.py": {
+      "hash": "2902ee0bafe28ccd2476820e147ab9e313d4c0ca73b37162ef849c4fac1f6816",
+      "lines": 161,
+      "bytes": 6784
+    },
+    "Repo_A:CompanySiteApply/inspections/README.md": {
+      "hash": "3fa1174571ef7338156eb759efa546fb202d3d666196ba99f01d1ab0393d65c1",
+      "lines": 28,
+      "bytes": 1934
+    },
+    "Repo_A:CompanySiteApply/inspections/generic_adaptive/adaptive_form_step_20260917_104832.json": {
+      "hash": "87a5920357497a22b7cb81edfcb0d0cb4496b23a24e68287bff1518e8c99e82b",
+      "lines": 22,
+      "bytes": 570
+    },
+    "Repo_A:CompanySiteApply/inspections/generic_adaptive/adaptive_form_step_20260917_104847.json": {
+      "hash": "d2c6c2b9822b27a973b7cc60bb4fcc4189447326fee48cb4c119854eeb4f3824",
+      "lines": 22,
+      "bytes": 570
+    },
+    "Repo_A:CompanySiteApply/inspections/oracle_cloud_hcm/authentication_email_20260915_224532.json": {
+      "hash": "71856431ca3aa31de8e23c21ca248cffd2eaebf3a484a3a27df472ee70752352",
+      "lines": 188,
+      "bytes": 5458
+    },
+    "Repo_A:CompanySiteApply/inspections/oracle_cloud_hcm/authentication_email_20260915_234000.json": {
+      "hash": "98b86e934d42abedb0fb1450d1093c50e39968a46548fdb98b5c9e07b0b657c9",
+      "lines": 188,
+      "bytes": 5458
+    },
+    "Repo_A:CompanySiteApply/inspections/oracle_cloud_hcm/authentication_email_20260917_104943.json": {
+      "hash": "a21bab80c84ed94eaadd5594ae3c1b04bec0fd5792e01d2b9f7a3118c018827e",
+      "lines": 285,
+      "bytes": 8291
+    },
+    "Repo_A:CompanySiteApply/inspections/oracle_cloud_hcm/authentication_email_20260917_104958.json": {
+      "hash": "1aca20b29f07b70bc54d1c51947b8260e6f4e4abe4b47d5295de78319cfb5ee8",
+      "lines": 285,
+      "bytes": 8925
+    },
+    "Repo_A:CompanySiteApply/inspections/oracle_cloud_hcm/unknown_20260915_234134.json": {
+      "hash": "b3b3e8364dfa68062aa9903a7db4aa64eb5f21d646fde4cac17b3b6f08650927",
+      "lines": 957,
+      "bytes": 29051
+    },
+    "Repo_A:CompanySiteApply/inspections/oracle_cloud_hcm/unknown_20260915_234732.json": {
+      "hash": "9b3c19d7c08c527e1e88e7d67eeda184d2cb5783d22d050e3dd917bed44aaaec",
+      "lines": 1239,
+      "bytes": 36227
+    },
+    "Repo_A:CompanySiteApply/inspections/oracle_cloud_hcm/unknown_20260917_105041.json": {
+      "hash": "3131499e070c5b450af38fc254b982884878bf9f9938dd23567efacd3c78ae9f",
+      "lines": 1286,
+      "bytes": 39286
+    },
+    "Repo_A:CompanySiteApply/inspections/oracle_cloud_hcm/unknown_20260917_105350.json": {
+      "hash": "dd1f5c95f9619f75cc740514744a1d1e0a00ccafe4ba8c3473e95c7e1ea7eb0a",
+      "lines": 1286,
+      "bytes": 39481
+    },
+    "Repo_A:CompanySiteApply/inspections/oracle_cloud_hcm/unknown_20260917_110906.json": {
+      "hash": "fe3b503b44b6b03955eb11390ae212f9fe0fb38828d1be16f17575d12c88b359",
+      "lines": 1091,
+      "bytes": 32997
+    },
+    "Repo_A:CompanySiteApply/nails/__init__.py": {
+      "hash": "8791cf744081eed3ee6b133157312d96e20b17cb0cfa77ecd23f9a83d449ae92",
+      "lines": 16,
+      "bytes": 933
+    },
+    "Repo_A:CompanySiteApply/nails/base_nail.py": {
+      "hash": "1ce2407e14efd1ab8aa3b5bad8de490f5738368826b5303f0a9fd9c00b0c49ed",
+      "lines": 67,
+      "bytes": 2648
+    },
+    "Repo_A:CompanySiteApply/nails/oracle/__init__.py": {
+      "hash": "d449d63d52f10818f11c80a61aa713ef37b71f05850b10e2709354c89f3782f7",
+      "lines": 15,
+      "bytes": 718
+    },
+    "Repo_A:CompanySiteApply/nails/oracle/bristlecone_nail.py": {
+      "hash": "665819222521c4a738c4d2027846fbd69ef8bc8774c834373117efb39042f537",
+      "lines": 39,
+      "bytes": 1459
+    },
+    "Repo_A:CompanySiteApply/nails/oracle/jpmc_nail.py": {
+      "hash": "4ccf95dc87032ec7dbf6eadb9f1d044c62ca1609835a0ea415b20659efaefb16",
+      "lines": 193,
+      "bytes": 9192
+    },
+    "Repo_A:CompanySiteApply/parser_doctor/__init__.py": {
+      "hash": "82924954739144f57ee894db02ad15cd2e99e5fce9d21712ea090f02b0818d54",
+      "lines": 17,
+      "bytes": 755
+    },
+    "Repo_A:CompanySiteApply/parser_doctor/education_healer.py": {
+      "hash": "be59601d4d3dd830362e26198c93d7a0d8cc8870ffce00f821b7359227d7654a",
+      "lines": 112,
+      "bytes": 5359
+    },
+    "Repo_A:CompanySiteApply/parser_doctor/line_wrap_healer.py": {
+      "hash": "3c815b387641ae212cfa1794ecd6e0edb71bd97075b09507ba6f74bbde510fd0",
+      "lines": 149,
+      "bytes": 6497
+    },
+    "Repo_A:CompanySiteApply/parser_doctor/review_verifier.py": {
+      "hash": "2cf77a04e0ca3826370ddbd52e0233f8a143b1e843c56429f85c8268111cce54",
+      "lines": 114,
+      "bytes": 4819
+    },
+    "Repo_A:CompanySiteApply/tests/test_parser_doctor.py": {
+      "hash": "87e6a950d65e5db39b41aad05cd6f1be8307f5780c1caa569639c89bc4807dc8",
+      "lines": 97,
+      "bytes": 4390
+    },
+    "Repo_A:CompanySiteApply/utils/__init__.py": {
+      "hash": "5805020dea4b44a3d68594588d0d6bc5a8c3cdb11d3b71d904253dc5980b34d4",
+      "lines": 10,
+      "bytes": 491
+    },
+    "Repo_A:CompanySiteApply/utils/dom_helpers.py": {
+      "hash": "80af9945c4e38135b2b1a7306312d71775cb49915ed71e9d47b0e466e5a4c3f8",
+      "lines": 196,
+      "bytes": 8782
+    },
+    "Repo_A:CompanySiteApply/utils/honeypot_guard.py": {
+      "hash": "a3fcc232250e83c80d1481cc3d85636c42fc34a07c2d36ad702cc5a4c1861f45",
+      "lines": 81,
+      "bytes": 3218
+    },
+    "Repo_A:LICENSE": {
+      "hash": "fa2d405ddf3d9e23519a4555ed19fdee33ee883045ba79789247accb3c4e655e",
+      "lines": 15,
+      "bytes": 924
+    },
+    "Repo_A:README.md": {
+      "hash": "a4c0670a60f516647f4414547d8891e0bac99fca752158f95c8c4694408a4442",
+      "lines": 95,
+      "bytes": 11166
+    },
+    "Repo_A:UNIVERSAL_AGENT_PROMPT_v2.md": {
+      "hash": "779a3832e9589633ff2e0f5902a2306033b25db8d22918d9c837b33985b7a109",
+      "lines": 301,
+      "bytes": 16998
+    },
+    "Repo_A:UNIVERSAL_AGENT_SETUP.md": {
+      "hash": "f931667d0404ad67ce5f7158c42635ef62b862f80da2808d634def57e4b34611",
+      "lines": 235,
+      "bytes": 18926
+    },
+    "Repo_A:core/01_ai_analyzer.py": {
+      "hash": "5a9433fb8b92ab9d240055f69a688df6bb6372d7602f8e026c52a89190a2f96e",
+      "lines": 161,
+      "bytes": 7852
+    },
+    "Repo_A:core/02_profile_sync_naukri.py": {
+      "hash": "f62f30abb556391cd986d07a1c505d6b6c4b85d3a670fd4f02215985d45b4191",
+      "lines": 789,
+      "bytes": 38614
+    },
+    "Repo_A:core/02b_naukri_fast_resume_upload.py": {
+      "hash": "65cc971339fb3cf51a9e019d353ad704f79a055f62695ebdda59ab33ab6d3136",
+      "lines": 159,
+      "bytes": 7215
+    },
+    "Repo_A:core/03_profile_sync_linkedin.py": {
+      "hash": "78bc3aad7e0fe145e9f0859de47894fa56ad8c19c9c6bb2aae35f8010685561c",
+      "lines": 667,
+      "bytes": 31122
+    },
+    "Repo_A:core/04_job_discovery.py": {
+      "hash": "7a62d1a2bba1c898c9bd1c8be86ee1e7951db9e459a2d3dc0fcd6b4f08e87b1d",
+      "lines": 1382,
+      "bytes": 82878
+    },
+    "Repo_A:core/05_apply_jobs.py": {
+      "hash": "ba8e3cf32c51021efbafdd6998395b2416a576585cd59c89a985230bddd48ba2",
+      "lines": 1937,
+      "bytes": 96777
+    },
+    "Repo_A:core/ai_client.py": {
+      "hash": "248e37cce895673c695264569a769531f5bb365cd26cdc1cd94e1dfdb9f3173d",
+      "lines": 2853,
+      "bytes": 153203
+    },
+    "Repo_A:core/continuous_career_agent.py": {
+      "hash": "84d54e817d79cbdf3f8a54c68ba007a309a162c4115b4fc621f0c734f515aade",
+      "lines": 187,
+      "bytes": 9199
+    },
+    "Repo_A:core/generate_factual_tailored.py": {
+      "hash": "624696ac659657ed51e5aa30d2d1cacb5e0def6bf1716626c04aa8369a08ca63",
+      "lines": 460,
+      "bytes": 19258
+    },
+    "Repo_A:core/ipc_auto_resolver.py": {
+      "hash": "f16ff6172e29086f3f52e17805c3ecf3c0db863c2e8edb536fd90aee2963face",
+      "lines": 159,
+      "bytes": 6056
+    },
+    "Repo_A:core/ipc_watcher.py": {
+      "hash": "b8d5df329ab57d4c866ac4f1ecc4ff531bb24ba7e13cc6ebefa82351f3b2f01e",
+      "lines": 240,
+      "bytes": 11143
+    },
+    "Repo_A:core/scrapers/__init__.py": {
+      "hash": "252926aa05183dfcadb830f4a4f05cc6b4f51d9e0afde13335852e5876425467",
+      "lines": 23,
+      "bytes": 1443
+    },
+    "Repo_A:core/scrapers/base_scraper.py": {
+      "hash": "92f310d874b76346ab986e3afb4053e8a8b71ebc2ee0395034fe1993a30d97f8",
+      "lines": 41,
+      "bytes": 1968
+    },
+    "Repo_A:core/scrapers/linkedin_scraper.py": {
+      "hash": "7ac589bcffa27a15361ba33a30156e9a2dd0f4175349e7eb4b3568affd9f0896",
+      "lines": 74,
+      "bytes": 3822
+    },
+    "Repo_A:core/scrapers/naukri_scraper.py": {
+      "hash": "5f918dab3e383ec9bc5bcc183c44499b4066e3ab8d6227a62856a601c3937584",
+      "lines": 89,
+      "bytes": 4492
+    },
+    "Repo_A:core/utils/browser_manager.py": {
+      "hash": "2150aabd8ad30b1201101b7350078a78e8ee43665da58010096a8abde9a6aede",
+      "lines": 108,
+      "bytes": 4907
+    },
+    "Repo_A:core/utils/profile_context.py": {
+      "hash": "392fe05df8d3b1d2acb1510a2a3a4895a36cc1793077e8e3f1585f0fa37e8cae",
+      "lines": 656,
+      "bytes": 29368
+    },
+    "Repo_A:core/utils/search_state_manager.py": {
+      "hash": "e19ebd0f3768610f28d75e74be7619b2ad47368e8b8ec5bf3300b7f3dac367ab",
+      "lines": 199,
+      "bytes": 9198
+    },
+    "Repo_A:docs/ADVANCED_AGENT_VERIFICATION_AND_REMEDIATION_PROMPT.md": {
+      "hash": "62ee3626d2d5ee77623221ada647cecde3940150da99f81797438bac711b95b0",
+      "lines": 165,
+      "bytes": 23868
+    },
+    "Repo_A:docs/AGENT_HANDOFF_COVER_PROMPT.md": {
+      "hash": "cd82ec398b7368f16491d7abddfe0e306809fb731e846b3bcad630c2d166f239",
+      "lines": 22,
+      "bytes": 2956
+    },
+    "Repo_A:docs/ARCHITECTURE_REFERENCE.md": {
+      "hash": "bc7d548b07e924f53feb4afd637367f64cce5d18bde70c00caa37b5c045dc6a4",
+      "lines": 845,
+      "bytes": 62607
+    },
+    "Repo_A:docs/COMPANY_ATS_KNOWLEDGE.md": {
+      "hash": "dd323225252858a852349396a1f63547819e48e96fc5f92a293d7ff1d31dce21",
+      "lines": 217,
+      "bytes": 12937
+    },
+    "Repo_A:docs/DEPRECATED_SYSTEMS_CHANGELOG.md": {
+      "hash": "5b45531109babd1b8edb8b6bd2642ec0b422c46e94a29dcd16fd75b2d0e03889",
+      "lines": 45,
+      "bytes": 3670
+    },
+    "Repo_A:docs/GEMINI_WEB_AI_PROMPTS.md": {
+      "hash": "e2f8c8cbef8189dff4b95087ebd15d5931a5d1e79ae788a5dd93b21381a7ff9b",
+      "lines": 101,
+      "bytes": 9696
+    },
+    "Repo_A:docs/KNOWLEDGE_GRAPH_CHANGELOG.md": {
+      "hash": "2dac2aa9fd85d68e366574eb08bdea822dba444bd7561021500e93df6bbd0bcc",
+      "lines": 66,
+      "bytes": 8166
+    },
+    "Repo_A:docs/ORACLE_HCM_ATS_DEEP_DIVE.md": {
+      "hash": "02dae9b095c60c3694e061c40a73ddd31f438d81ef4593cc59667bf45f157487",
+      "lines": 275,
+      "bytes": 21820
+    },
+    "Repo_A:docs/PLATFORM_KNOWLEDGE.md": {
+      "hash": "4504c1fbd46758c4b17de77649bdb747105619b5e53689028708a61fa5246bb5",
+      "lines": 287,
+      "bytes": 20073
+    },
+    "Repo_A:docs/QUERY_GUIDE.md": {
+      "hash": "63970321bf774bcc168f390ba28ee6b1cdc4ac396a8693badafee6e605a61e35",
+      "lines": 113,
+      "bytes": 5943
+    },
+    "Repo_A:docs/REFERENCE_DEPLOYMENT_GUIDE.md": {
+      "hash": "9516b68852daaa0d2e5354e6148f1be3b9cea94f8170c83bacb0f5cd48f3424b",
+      "lines": 152,
+      "bytes": 7596
+    },
+    "Repo_A:docs/STRATEGIC_RESUME_TAILORING.md": {
+      "hash": "3531b9cb129d0114cc3f18c5cf43e7e70755d426cb9ca28568126731ce97dee1",
+      "lines": 104,
+      "bytes": 7644
+    },
+    "Repo_A:docs/UNIVERSAL_ATS_REVERSE_ENGINEERING_PLAYBOOK.md": {
+      "hash": "035553ba65b6356874074f5636abe5e044231a4955e55748e84873dbfd1de80e",
+      "lines": 227,
+      "bytes": 12883
+    },
+    "Repo_A:docs/WORKSPACE_RULES.md": {
+      "hash": "b5f002d6d67086827881dcddebec694656fbe8a3c8711f7f8c062ee75d98dd11",
+      "lines": 642,
+      "bytes": 69043
+    },
+    "Repo_A:profiles/default_user/README.md": {
+      "hash": "af304ca0a0195e8d4b10a2b4f5bceb1c610dc326b807610589e00305243cb2c4",
+      "lines": 28,
+      "bytes": 1373
+    },
+    "Repo_A:profiles/default_user/candidate_config.json": {
+      "hash": "961a0ff241264db1f93a6019fc44bcf6c9d769bb67134b195f1acd9a79f2ecea",
+      "lines": 205,
+      "bytes": 8734
+    },
+    "Repo_A:profiles/default_user/cover_letter_template.md": {
+      "hash": "bfe8ca3446e3c3b2eeeca0d0a1be3c84bb51091a67aa333a63e9e9d38444e572",
+      "lines": 33,
+      "bytes": 1992
+    },
+    "Repo_A:profiles/default_user/resume.md": {
+      "hash": "0b67c922aecd2ef76d6abe5f8f8c8301c31f02469af0dd7b519f29fa2a23aaaa",
+      "lines": 67,
+      "bytes": 2756
+    },
+    "Repo_A:scripts/build_knowledge_index.py": {
+      "hash": "fbedda72ae8bed2a30beb963834c12dd1b080a71f81fd35724deaed0cbefd5fd",
+      "lines": 744,
+      "bytes": 33848
+    },
+    "Repo_A:scripts/reevaluate_ledger.py": {
+      "hash": "83b39cd8c14776c53e25e2881afc2b1e5921577bc2de3d8e606a65f5ce481940",
+      "lines": 136,
+      "bytes": 6191
+    },
+    "Repo_B:.gitignore": {
+      "hash": "f8d5d3b515694fd22e7521be722cb60e5f7cc20633ade99d152b32e155b6016d",
+      "lines": 4,
+      "bytes": 30
+    },
+    "Repo_B:README.md": {
+      "hash": "43c2490d58b73ce2f19e5a5807d389ccf2d7754fa891a1359fd4c3761687517d",
+      "lines": 149,
+      "bytes": 9891
+    },
+    "Repo_B:SYSTEM_PROMPT_INJECTION.md": {
+      "hash": "a1fdfdf862093e6197f25e79e058df1f7c33a23069a8bb7575a1541a9088b074",
+      "lines": 46,
+      "bytes": 3642
+    },
+    "Repo_B:core/__init__.py": {
+      "hash": "5b614eb0b660e7958ce2ca132d8ef810e35dfa9f395b4133561412b0bd642152",
+      "lines": 17,
+      "bytes": 470
+    },
+    "Repo_B:core/antigravity_context_bridge.py": {
+      "hash": "e385bc235cbaf3c033e054bf5723a80986342e2c0c59fcdcd55a54d8d2d2e9c7",
+      "lines": 76,
+      "bytes": 3914
+    },
+    "Repo_B:core/decision_emulator.py": {
+      "hash": "1d46fc0df901b4f529ebca6ac5c05c5b5d5d22a7c6a71951cb8c6ee9b9caf197",
+      "lines": 192,
+      "bytes": 9302
+    },
+    "Repo_B:core/graph_memory_engine.py": {
+      "hash": "52129a360af384c54ce6bfca3d444870e0629bd5ac5cbdf9dfe70a05c7e8f8c8",
+      "lines": 82,
+      "bytes": 3300
+    },
+    "Repo_B:core/persona_loader.py": {
+      "hash": "8f2187909dc63c5661c3cce1b844ceb850a4963af8253358208700ade0d14bc0",
+      "lines": 78,
+      "bytes": 3164
+    },
+    "Repo_B:core/run_master_agent.py": {
+      "hash": "270f54fce11e9aad25fce9d20f5da183d0d8d852070f9463fda904ec04b23922",
+      "lines": 289,
+      "bytes": 15167
+    },
+    "Repo_B:core/self_healing_advisor.py": {
+      "hash": "2a02e0297873eedd04c5990931c07c8b9a9abbe56dd69d0a7af705788c4c9e91",
+      "lines": 57,
+      "bytes": 3285
+    },
+    "Repo_B:core/sophron_write_guard.py": {
+      "hash": "1c94cc8d5be0fdc18eb44b38888b23ef5bb40f2c7469e9c6fd1459ac45396646",
+      "lines": 444,
+      "bytes": 17602
+    },
+    "Repo_B:core/sync_brain.py": {
+      "hash": "442016ced6d8baa6c05b665c1f9781bfeb4cc3a45d583950540c270b78bcc921",
+      "lines": 40,
+      "bytes": 1418
+    },
+    "Repo_B:core/transcript_learner.py": {
+      "hash": "e055feb0fde59d4fdf34644eeb2d274f7db706a383fdbf7919356e15fccd61da",
+      "lines": 101,
+      "bytes": 4534
+    },
+    "Repo_B:core/workspace_guard.py": {
+      "hash": "55ed17eb5cc28beafcb1819b967fc486de18902a97d501ad9dce25bd3eb203bb",
+      "lines": 59,
+      "bytes": 2363
+    },
+    "Repo_B:graph_memory/edges.json": {
+      "hash": "94a6feb3c846179803cbb18bde94f9f6bd3936b013f15a226b2b73129ee7f25f",
+      "lines": 336,
+      "bytes": 9288
+    },
+    "Repo_B:graph_memory/graph_index.json": {
+      "hash": "9a0612965fc5cbbcba9ed6676167abb3beb8b338d28724fd530836cb856c608c",
+      "lines": 353,
+      "bytes": 8443
+    },
+    "Repo_B:graph_memory/nodes.json": {
+      "hash": "8f11ef40af57549abc63f60993a1fa5a37c6173926c06565c18301a205513ccb",
+      "lines": 514,
+      "bytes": 19368
+    },
+    "Repo_B:integration/00_user_cognitive_os.md": {
+      "hash": "370299d948f28408ef04c39ef554fc75440cf3f619e2f30bb09b2c208ea07a68",
+      "lines": 30,
+      "bytes": 2026
+    },
+    "Repo_B:interaction_history/reflections_index.json": {
+      "hash": "e44f9582e20a06fe8cc361935e242e1a9dd472dba9fd2b8cab7dbc1055837393",
+      "lines": 74,
+      "bytes": 1276
+    },
+    "Repo_B:interaction_history/session_summary_20260917.md": {
+      "hash": "1c81cbe4ce3e13ba646fb5954ad05d527f1a40c0f9d4662e70b9b51e71608342",
+      "lines": 26,
+      "bytes": 2512
+    },
+    "Repo_B:interaction_history/turn_0000_turn-01.json": {
+      "hash": "5f60946fd8c7dbcde3d90cbf3652eddfa3ec416901893503a1a5119b9ddfae3b",
+      "lines": 12,
+      "bytes": 1456
+    },
+    "Repo_B:interaction_history/turn_0001_turn-23.json": {
+      "hash": "abfc7b53a78104f9d20f6bc10d5846470adaef218fccba36a87e40b1ed759729",
+      "lines": 105,
+      "bytes": 5768
+    },
+    "Repo_B:interaction_history/turn_0002_turn-24.json": {
+      "hash": "9774712bd9282a1b62b4090f2e99b83ba6c10855b67f757c28cd2f6970de57e1",
+      "lines": 52,
+      "bytes": 3487
+    },
+    "Repo_B:interaction_history/turn_0003_turn-25.json": {
+      "hash": "11a7e74c5497f4f9b445cd30315d95ba4620bf3c94e377c542948f650b5a31c4",
+      "lines": 46,
+      "bytes": 4903
+    },
+    "Repo_B:interaction_history/turn_0004_turn-26.json": {
+      "hash": "35ab3dc183f5c6d8786314370c512bd9aec91431ac0cf2a4c5398c1d27cfb55b",
+      "lines": 11,
+      "bytes": 1961
+    },
+    "Repo_B:interaction_history/turn_0005_turn-27.json": {
+      "hash": "6ce5d4fd8d46c4408a13be1a8ce345856bee9b79e7fcd4337a58e17ca7c2126e",
+      "lines": 11,
+      "bytes": 1376
+    },
+    "Repo_B:interaction_history/turn_0006_turn-28.json": {
+      "hash": "00c50b2af8cdc0ec3691f6fd06dbc3a0a8bf08a91c35eecfe467d3bd694fe9f6",
+      "lines": 11,
+      "bytes": 968
+    },
+    "Repo_B:interaction_history/turn_0007_turn-29.json": {
+      "hash": "72fe64cde69f6ce5d1b53dc3083345a3e7fb68de0c543bf89b0d0d892a2b6585",
+      "lines": 11,
+      "bytes": 1210
+    },
+    "Repo_B:interaction_history/turn_0008_turn-30.json": {
+      "hash": "284f3f0be79b66c8d1fe59f8663a6a345de2742128b0abe5dcd68e736c063460",
+      "lines": 11,
+      "bytes": 1168
+    },
+    "Repo_B:interaction_history/turn_0009_turn-31.json": {
+      "hash": "76b4e7780693b508ac61923628c30aeee4851376d1871892301961b6e22962fc",
+      "lines": 11,
+      "bytes": 1383
+    },
+    "Repo_B:interaction_history/turn_0010_turn-32.json": {
+      "hash": "23fee63cbbae83cbbe9bd06bd3c730ec4a93b05ba636c30899395266457dbb92",
+      "lines": 11,
+      "bytes": 1395
+    },
+    "Repo_B:interaction_history/turn_0011_turn-33.json": {
+      "hash": "916f60353f5fd0acd3af45c39b0cc03a029aeb99e9ae23697b92f797aef2ea23",
+      "lines": 11,
+      "bytes": 1362
+    },
+    "Repo_B:interaction_history/turn_0012_turn-34.json": {
+      "hash": "3ee4e6a2b8e454597e5a88334166ade8751d02334b749e3ccfcb5b2deed06656",
+      "lines": 12,
+      "bytes": 1151
+    },
+    "Repo_B:interaction_history/turn_0013_turn-35.json": {
+      "hash": "5c308532768d99c7cbf4e5256382c8de7eef4d55ff54ec7705f761b0ab4ab73d",
+      "lines": 12,
+      "bytes": 1241
+    },
+    "Repo_B:interaction_history/turn_0014_turn-36.json": {
+      "hash": "ddb0ca9e8f43674f9b801928f621866cb2d24ae9102ebbb777cf000ad3599ea1",
+      "lines": 12,
+      "bytes": 1485
+    },
+    "Repo_B:interaction_history/turn_0015_turn-37.json": {
+      "hash": "b9c447b00227bbf246a7814163fc585dc877aad8fad4dd655413824b4420e1e1",
+      "lines": 12,
+      "bytes": 1711
+    },
+    "Repo_B:interaction_history/turn_0016_turn-38.json": {
+      "hash": "7a4394e436b2b5fcfcf7da7bf3f54aab7d572d2d5623f4af5ecaf2a431cbedf2",
+      "lines": 12,
+      "bytes": 1422
+    },
+    "Repo_B:interaction_history/turn_0017_turn-39.json": {
+      "hash": "899aee383ddb77fbf344d7a188bb5e9fd864264161cd7e89955d9d0ac4091fb0",
+      "lines": 12,
+      "bytes": 1675
+    },
+    "Repo_B:interaction_history/turn_0018_meta_cognitive_architecture.json": {
+      "hash": "3176fff73f69a1a9bbbf5aaca42363abc65124cc66e825e0258f45ff2291bada",
+      "lines": 11,
+      "bytes": 1690
+    },
+    "Repo_B:interaction_history/turn_0019_job_agent_log_forensic_analysis.json": {
+      "hash": "b62e6474a40da27ce24746e30c39042d516d2e2b5b9abeb77969a771be182b8a",
+      "lines": 12,
+      "bytes": 2554
+    },
+    "Repo_B:interaction_history/turn_0020_execution_and_permanent_remediation.json": {
+      "hash": "cff235df29f0b6df2fe4bcded0a84ca34a53ca3e870dcf646b182f9e2018d5cf",
+      "lines": 12,
+      "bytes": 2065
+    },
+    "Repo_B:interaction_history/turn_0021_smart_candidate_parameters_and_startup_analysis.json": {
+      "hash": "534b5e9c8b4a4c84208fad9b0b5706b5fdad27e51ce09d5a6f161cd133bd5417",
+      "lines": 12,
+      "bytes": 2750
+    },
+    "Repo_B:interaction_history/turn_0022_naukri_daemon_launch.json": {
+      "hash": "5ceed17628139a5fe89fc61079a026b4e56a782549d230559ed8552e2fde324f",
+      "lines": 12,
+      "bytes": 1638
+    },
+    "Repo_B:interaction_history/turn_0023_autonomous_learning_and_tab_hygiene.json": {
+      "hash": "f0d1c647ad1697ffb10cb2b1eb1d5433d0711430d6836ad9f4427b3f86f26c47",
+      "lines": 11,
+      "bytes": 2197
+    },
+    "Repo_B:interaction_history/turn_0024_live_verification_and_application_success.json": {
+      "hash": "43a25c5586b2b472b575cc9798c54fc65202b552cc081b921a13e0b2f1eeb926",
+      "lines": 11,
+      "bytes": 2564
+    },
+    "Repo_B:interaction_history/turn_0025_resume_and_profile_optimization.json": {
+      "hash": "d97c4dc9c21e3a14a34650b75b9c3dd8c88cf4eb599dc5d2bc71b44ebdaa1b37",
+      "lines": 11,
+      "bytes": 2485
+    },
+    "Repo_B:interaction_history/turn_0026_resume_perfection_and_ats_guardrails.json": {
+      "hash": "a1bac7fa8397c805342615983e2f876de51d4ba91f5c09ffc8772f818159039b",
+      "lines": 11,
+      "bytes": 2611
+    },
+    "Repo_B:interaction_history/turn_0035_jpmc_application_pipeline_verification.json": {
+      "hash": "9592a70c6d5127c91734629205aa3e489254544df5a9c8b1f4c5ece225e98200",
+      "lines": 15,
+      "bytes": 1134
+    },
+    "Repo_B:interaction_history/turn_0036_jpmc_lead_java_backend_application.json": {
+      "hash": "ad71a2277a174e206c2280ead63e5fa512b23b137935e2b63d68c9d13918fc99",
+      "lines": 11,
+      "bytes": 787
+    },
+    "Repo_B:interaction_history/turn_0037_section_1_resume_upload_correction.json": {
+      "hash": "1ffc5292e2c861498307674f46e0538ecddffaafbfcd88b6d809fcfce25ee765",
+      "lines": 11,
+      "bytes": 711
+    },
+    "Repo_B:interaction_history/turn_0046_continuous_agent_launch_and_skill_dict_bugfix.json": {
+      "hash": "18f141e09b06e68bf5768115fcf1efc78bf0e3f7f157c31b8680a8b2cb9b909a",
+      "lines": 14,
+      "bytes": 1768
+    },
+    "Repo_B:interaction_history/turn_0047_ledger_reevaluation_and_live_apply.json": {
+      "hash": "66b0deab54efaf0fb19b55165421c435355940ce5a47f935b65fb9b5ef8809f3",
+      "lines": 11,
+      "bytes": 1747
+    },
+    "Repo_B:interaction_history/turn_0048_cdp_port_probe_and_agent_rerun.json": {
+      "hash": "a8c83961db2cb9cce625db36fb3e5f29ec6ecb3463d0928691ae40d61e00f41e",
+      "lines": 11,
+      "bytes": 1313
+    },
+    "Repo_B:interaction_history/turn_0049_port_standardization_and_apply_fix.json": {
+      "hash": "f7aa016decc164a7a83cdcef8462b467d2e72c78be4ae0e4b65578ec91657cb1",
+      "lines": 11,
+      "bytes": 1361
+    },
+    "Repo_B:interaction_history/turn_0050_continuous_daemon_port_9222_monitoring.json": {
+      "hash": "066dc57f0d862e5eb6af4bfc95ee1d5e5e1b6ce5419b51aa023dd1f1a518ac46",
+      "lines": 12,
+      "bytes": 1522
+    },
+    "Repo_B:interaction_history/turn_0051_browser_restart_port_9222_and_pipeline_unblock.json": {
+      "hash": "9fd3d937979a33eb781004adf23cd42d0d678607ed944cb4499e5aadbf634e0a",
+      "lines": 12,
+      "bytes": 1407
+    },
+    "Repo_B:interaction_history/turn_0052_successful_apply_epam_systems_lead_java.json": {
+      "hash": "5adf81473569eba8a7148734b814da124ec7600e49815cfd93f31daaadabc23f",
+      "lines": 12,
+      "bytes": 1414
+    },
+    "Repo_B:interaction_history/turn_0052_turn-52.json": {
+      "hash": "3b2a840dc62f1c3778b18e74b9ed80c9a21cdb845bbb787f3aae63c88bdf19a3",
+      "lines": 21,
+      "bytes": 1892
+    },
+    "Repo_B:interaction_history/turn_0053_tech_lead_only_and_epam_exclusion.json": {
+      "hash": "4e15404053a1d454db12595294fb8237011e7fae260d72c0a5b1337dcaf839c5",
+      "lines": 12,
+      "bytes": 1451
+    },
+    "Repo_B:interaction_history/turn_0054_autonomous_continuous_agent_initialization.json": {
+      "hash": "daac4240e441c3d587c9a4829f8acfc07119c94f2e035acaa3d9c07d5a41bbf6",
+      "lines": 12,
+      "bytes": 2167
+    },
+    "Repo_B:interaction_history/turn_0055_ag_brain_as_talent_strategist_and_pure_actuator_decoupling.json": {
+      "hash": "59cfe9cdaf7f7249f747406711a36f9fbdd95e5a939527f0ca793df2d06093a9",
+      "lines": 12,
+      "bytes": 3042
+    },
+    "Repo_B:interaction_history/turn_0056_prompt_architecture_redesign_pure_cognition_actuator_decoupling.json": {
+      "hash": "b8cf67205790f47b575672c934618c99c2c2fe162dec6ef8b55f23c4a84f2df3",
+      "lines": 12,
+      "bytes": 2251
+    },
+    "Repo_B:interaction_history/turn_0056_turn-43.json": {
+      "hash": "533f97fa5aa786ac8d9bc4e61ee96998b60454c7d1a75dca24846bdae1d467e9",
+      "lines": 21,
+      "bytes": 2000
+    },
+    "Repo_B:interaction_history/turn_0057_mandatory_documentation_preload_prompt_refinement.json": {
+      "hash": "8a90bc35134f87a281e245b75f83bff847acbdc26f9d47cc387bc6f917713b3f",
+      "lines": 12,
+      "bytes": 1925
+    },
+    "Repo_B:interaction_history/turn_0058_finance_role_alignment_and_search_cycle_audit.json": {
+      "hash": "b9149ed8dac6e51cce3ca19e775d4e94f2a3520ee79166b4c147a2cb0dc993ca",
+      "lines": 12,
+      "bytes": 2090
+    },
+    "Repo_B:interaction_history/turn_0059_finance_search_cycle_execution.json": {
+      "hash": "84b6f9eb4ebad6de5dc4a1d5e3d612ed288c2ff4fccfee92ca3cc361b4eaf918",
+      "lines": 12,
+      "bytes": 1499
+    },
+    "Repo_B:interaction_history/turn_0060_starvation_root_cause_and_ledger_saturation_audit.json": {
+      "hash": "da0d020a82f6bcc5f9b18a7263b734b8623c8b868993c296964cbeba8978196f",
+      "lines": 12,
+      "bytes": 2186
+    },
+    "Repo_B:interaction_history/turn_0061_turn-61.json": {
+      "hash": "bf5f0a9330c137760b3135e527c6b8bb337a127d17b4825de6171630740f1984",
+      "lines": 21,
+      "bytes": 2637
+    },
+    "Repo_B:interaction_history/turn_0062_turn-62.json": {
+      "hash": "c360e22e61f3e132f40b28acd7ec6cd857f17cf0cf1f30a63b25c444ee4fd68a",
+      "lines": 20,
+      "bytes": 2031
+    },
+    "Repo_B:interaction_history/turn_0063_turn-63.json": {
+      "hash": "e05864bc0db9f4807df34574a5acd9b158a1b37ec770ed13d5f8ef337b009011",
+      "lines": 20,
+      "bytes": 2020
+    },
+    "Repo_B:interaction_history/turn_0064_turn-64.json": {
+      "hash": "6361688d96fbcf0f7b13844f47d055e5f012db9ce0becd4dce90532bd649710e",
+      "lines": 59,
+      "bytes": 3394
+    },
+    "Repo_B:interaction_history/turn_0065_turn-65.json": {
+      "hash": "412d0b58442c581c1073bd2158cda627533e8861ce23d1cb56f2e6007b466a2b",
+      "lines": 21,
+      "bytes": 1610
+    },
+    "Repo_B:interaction_history/turn_0714_turn-08.json": {
+      "hash": "69c00800a100dd73695bfa6aa07983978389fdf36e56d5ebbdb0eaaf70aa90eb",
+      "lines": 12,
+      "bytes": 1482
+    },
+    "Repo_B:interaction_history/turn_0876_turn-09.json": {
+      "hash": "e688392e32cb8f4aead93db490a89747b1347748065e0d88aa94af16fe2cd47f",
+      "lines": 12,
+      "bytes": 1246
+    },
+    "Repo_B:interaction_history/turn_1346_turn-14.json": {
+      "hash": "a07222620718422aee60de95668586eabdfd5b5bada72ca5ca0f5b1c0d280666",
+      "lines": 12,
+      "bytes": 1374
+    },
+    "Repo_B:interaction_history/turn_1422_turn-15.json": {
+      "hash": "23edf055adc579dd9a378076cf159a9c933a4818e486416e518b8b74e5f83957",
+      "lines": 12,
+      "bytes": 1199
+    },
+    "Repo_B:interaction_history/turn_1492_turn-16.json": {
+      "hash": "8724727ccd8f124e36ff004ead72e4ef8cb3c4ed7b97f6f07a0aeab92c5a2a09",
+      "lines": 12,
+      "bytes": 1294
+    },
+    "Repo_B:interaction_history/turn_1607_turn-19.json": {
+      "hash": "47a76700cfc1d24263676961c228c5bbecf3017e0e61b398a4d86cf160dc71c1",
+      "lines": 12,
+      "bytes": 1348
+    },
+    "Repo_B:interaction_history/turn_1618_turn-20.json": {
+      "hash": "0a571d6a1a28ac183fa13a5cf542f08ccd4cbc02a528201cfc56ef0825b73152",
+      "lines": 12,
+      "bytes": 1623
+    },
+    "Repo_B:interaction_history/turn_1650_turn-21.json": {
+      "hash": "7851a29d25d843e8614851c3ffaa27450c18a589ca2825dab64870579f6191ca",
+      "lines": 12,
+      "bytes": 1297
+    },
+    "Repo_B:interaction_history/turn_1720_turn-22.json": {
+      "hash": "e81810e549c05d101c767231bfadaf10d9bba52f7061376d7d5153efdb1bafdd",
+      "lines": 12,
+      "bytes": 2192
+    },
+    "Repo_B:interaction_history/turn_1721_turn-63.json": {
+      "hash": "1580085048e248692845b89f0c090ffbda02dade98c3fa470603e14408057e36",
+      "lines": 21,
+      "bytes": 1652
+    },
+    "Repo_B:master_agent_config.json": {
+      "hash": "e844e7eed448e244f707a9b99c59910665434d3cc2d981831fcf5139e9edd5db",
+      "lines": 28,
+      "bytes": 1080
+    },
+    "Repo_B:meta_cognition/cognitive_axioms/master_axioms.json": {
+      "hash": "073237607d30e9eec594cdcb417af87227687af95f192fd941ff982af3acee97",
+      "lines": 13,
+      "bytes": 712
+    },
+    "Repo_B:meta_cognition/instruction_styles/directive_dispatch.json": {
+      "hash": "5cd1b9fbefb0f14a0fefe667f0920203abeab39de9b5436d93b7c91d2284bba3",
+      "lines": 9,
+      "bytes": 587
+    },
+    "Repo_B:meta_cognition/instruction_styles/tool_leverage_demands.json": {
+      "hash": "cf0509713f0c32dd8f0c754d054a8add34d68328d7d8bc24c416069d8a90d5ff",
+      "lines": 9,
+      "bytes": 525
+    },
+    "Repo_B:meta_cognition/instruction_styles/vigilant_feedback_loop.json": {
+      "hash": "d2b70bb7a39ebfeb70378d755a9756841b2db92ecffd70adce6e093b49aaab37",
+      "lines": 9,
+      "bytes": 608
+    },
+    "Repo_B:meta_cognition/thinking_patterns/edge_case_mastery.json": {
+      "hash": "e45d42f6bbd68aabcffaaf2a179dd1943ac1f875b1e9fa7607266d088e804351",
+      "lines": 9,
+      "bytes": 649
+    },
+    "Repo_B:meta_cognition/thinking_patterns/empirical_validation.json": {
+      "hash": "0e60760462d337d8abae50206aae5445a398005d74813cd9d83311e438e4309b",
+      "lines": 9,
+      "bytes": 753
+    },
+    "Repo_B:meta_cognition/thinking_patterns/reverse_engineering.json": {
+      "hash": "4f5ff1e173c440f411d8fa89856567ea279915b2150d1e1f7eeee1dc186637ee",
+      "lines": 9,
+      "bytes": 754
+    },
+    "Repo_B:meta_cognition/thinking_patterns/surgical_evolution.json": {
+      "hash": "566bd0faa320854c95475c742ed4fd38435a8d3089d0513b3c7b4fa59cacfee8",
+      "lines": 9,
+      "bytes": 659
+    },
+    "Repo_B:meta_cognition/universal_rules/codebase_purity_guardrail.json": {
+      "hash": "5b9a9b2d0a08e28d30873861316d0a0493f1cdd75b81a28c1872628bed1f408a",
+      "lines": 9,
+      "bytes": 539
+    },
+    "Repo_B:meta_cognition/universal_rules/developer_mode_gatekeeping.json": {
+      "hash": "a8dc186139af2a4aa14039adebefd44dca6dfaee003f4bcfbf64736322d006c4",
+      "lines": 9,
+      "bytes": 562
+    },
+    "Repo_B:meta_cognition/universal_rules/git_command_prohibition.json": {
+      "hash": "7eb490ae6ce5effa66d3002029718343b59832a7ef55cfcab87508a57f8e379d",
+      "lines": 9,
+      "bytes": 511
+    },
+    "Repo_B:session_registry.json": {
+      "hash": "b89dbe8fd21e44fff299a20af336d97985080318ef61eb47494606196e268fdc",
+      "lines": 92,
+      "bytes": 3831
+    },
+    "Repo_B:tests/test_master_agent_suite.py": {
+      "hash": "8a2f27b2bea5ea87e575bb15748c037b3d1454b507d5da8dfe7a2c1aa4861185",
+      "lines": 243,
+      "bytes": 11484
+    },
+    "Repo_B:understanding_master/debugging_protocols/event_and_scroll_leak_remediation.json": {
+      "hash": "d102ac8144d4d7fa50b67219858c644f645d343bddc2f4f3cc7671cdd394bb0e",
+      "lines": 11,
+      "bytes": 558
+    },
+    "Repo_B:understanding_master/debugging_protocols/live_cdp_dom_inspection.json": {
+      "hash": "536bc2d7da1de68f5d7abeef7d05b212a7d9b74172e72e6783513fac642da6c3",
+      "lines": 13,
+      "bytes": 614
+    },
+    "Repo_B:understanding_master/debugging_protocols/multi_attribute_duplicate_semantics.json": {
+      "hash": "d304de096a71f8b19b552a46a6ae94381418bd34f659bc254dd4fc3054cc16bd",
+      "lines": 12,
+      "bytes": 551
+    },
+    "Repo_B:understanding_master/goals_and_vision/autonomous_career_agent_vision.json": {
+      "hash": "686dc44aba57a2e59971f882955d4f06f084379ffcbe4fd42a48fdb57047e901",
+      "lines": 12,
+      "bytes": 663
+    },
+    "Repo_B:understanding_master/goals_and_vision/continuous_learning_and_self_fix.json": {
+      "hash": "d597fa3ecce8349b1ea6cab2c02c57ff8b1f6abe5965d98b0da11038972f8b5b",
+      "lines": 12,
+      "bytes": 699
+    },
+    "Repo_B:understanding_master/goals_and_vision/session_lifecycle_goals.json": {
+      "hash": "562b34f8c1682ad1e85afbc93d3b05c6b7f17a600a1eafa2d35042e34469af1c",
+      "lines": 28,
+      "bytes": 986
+    },
+    "Repo_B:understanding_master/instruction_styles/command_dispatch_patterns.json": {
+      "hash": "0e8f7defcef543ee9019f67012ff9d6fa5f25a76a4b945b28e4e95f6ddbe62a1",
+      "lines": 15,
+      "bytes": 915
+    },
+    "Repo_B:understanding_master/instruction_styles/feedback_and_correction_cadence.json": {
+      "hash": "dbc5cb3b59190aab85c61df723bdde5aef8692b76b8042857bd928b73f32284c",
+      "lines": 18,
+      "bytes": 1580
+    },
+    "Repo_B:understanding_master/instruction_styles/tool_orchestration_directives.json": {
+      "hash": "e51f186bcca5ecb3a427699ae9991001628bfcfbf3897722b50a7edf50161dbc",
+      "lines": 11,
+      "bytes": 698
+    },
+    "Repo_B:understanding_master/instruction_styles/visual_and_screenshot_guidance.json": {
+      "hash": "a062fd142efafb5810264f1b667dcdf1f6d5a4d31980168e3fb757992b34b365",
+      "lines": 11,
+      "bytes": 662
+    },
+    "Repo_B:understanding_master/interaction_history/09_model_switch_and_audit.json": {
+      "hash": "6881c365d45118ae85e3d614ec5c09acaa596039fc6d094be9463c725f5a5164",
+      "lines": 15,
+      "bytes": 2699
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260909_active_ai_learning.json": {
+      "hash": "041bd3b716e8bb97697c59e0294a8db98b4bd5c9c9c4774d502168ab0b5c0c32",
+      "lines": 8,
+      "bytes": 975
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260909_anshika_naukri_finance_audit_run.json": {
+      "hash": "9819536779866bf90cf40e38cdb67efc68d01e4ef8b8f40cebedec9aa31cb00b",
+      "lines": 22,
+      "bytes": 1846
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260909_c_cpp_negative_exclusion.json": {
+      "hash": "4b3e321e1b70b7ab345cfb14c6454035229e1200b6da69f1c395b32f74254cd4",
+      "lines": 21,
+      "bytes": 661
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260909_chatbot_quantitative_constraint.json": {
+      "hash": "5acd900e045ba8850db58fa8f5e12d2c227c7a22c2564be0feed4b2a4f90b533",
+      "lines": 22,
+      "bytes": 1597
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260909_llm_conversational_parameters.json": {
+      "hash": "14faa81802d66a5d78d9df3ab2030d3ea5644c79fe7168b8d9bec2735dd32d1e",
+      "lines": 22,
+      "bytes": 1858
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260909_location_restriction_noida_gurugram.json": {
+      "hash": "9278eda951f5f09b1c8a82b59d101da195194303e3a7f3ad6627e2925e84a4b1",
+      "lines": 22,
+      "bytes": 1634
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260909_multiword_regex_negative_filter.json": {
+      "hash": "9a5bcf26af3fc4595e7a089cfc7cbfd4b8e02aa48d0158a47ec7416eb8487194",
+      "lines": 22,
+      "bytes": 1991
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260909_naukri_execution_init.json": {
+      "hash": "2268990ee100e2bc9ee42c111b8c419962ba6c4d6f48390d36dd36e3b95b5715",
+      "lines": 22,
+      "bytes": 1420
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260909_salary_threshold_update.json": {
+      "hash": "291d7c4f5d83397f2207d6770bb796f36d7778276f53f3008a7f71b4d00adc22",
+      "lines": 22,
+      "bytes": 1281
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260909_temporal_psychology.json": {
+      "hash": "b1bb58912c4746624e8eee0570e8e1cf1097d6a6408bcaa2258f9be8e5f5b16d",
+      "lines": 22,
+      "bytes": 1851
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260910_anshika_finance_anti_hallucination_real_roles.json": {
+      "hash": "ae977a4e4e1ed6cf7058d5672ee1f31f75287406dfe8ea5409631e0a7b5c2231",
+      "lines": 22,
+      "bytes": 2006
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260911_ats_table_deconstruction_and_option_b_engine.json": {
+      "hash": "ccacccf7cb8ed19e4e319531f94b42147e60b79a6cfe704af0d21b20aafc4f84",
+      "lines": 22,
+      "bytes": 3227
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260911_certification_and_internship_curation.json": {
+      "hash": "77726f03c9b1a1ee3d87d047ce73cd9f677d779f768ca244218b078a61bef777",
+      "lines": 27,
+      "bytes": 1312
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260911_naukri_execution_and_concurrency_guard.json": {
+      "hash": "53e730bf8d69da59f0d5bac67f79072334a05a8738631a9d8b24bb1f8185362f",
+      "lines": 28,
+      "bytes": 1918
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260911_resume_strategic_skills_update.json": {
+      "hash": "7e8566066682fbfa99bf86e82c393a401b2c47fb2e8288cfed1fafd44c6729a0",
+      "lines": 27,
+      "bytes": 1118
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260911_sophron_automation_root_cause_and_session_init_fix.json": {
+      "hash": "00f4593b8d9c43ed2d2e12c367bb8ed56c412b52d5aaedc801528808803bbc5b",
+      "lines": 28,
+      "bytes": 2153
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260912_emotional_behavioral_cognitive_profile.json": {
+      "hash": "d45ca74beb3d579e86e5bfe5b10ec848175d6c79270ae1e9666914c5b474b614",
+      "lines": 39,
+      "bytes": 3371
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260913_ag_brain_talent_strategist_decoupling.json": {
+      "hash": "e485b453daa487af848a10b7cbfd95ede6f761a82da4a843d7e1fc0d49eba3dd",
+      "lines": 30,
+      "bytes": 3724
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260914_config_dept_salary_keyword_fix.json": {
+      "hash": "013ca1947b52e1b974af6fc2ef6b2beb7e78a1d85fb5a9ce9ce7a5998ad966c7",
+      "lines": 25,
+      "bytes": 1036
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260914_rule_adherence_architecture_and_sophron_intelligence_upgrade.json": {
+      "hash": "8baa6a5e1968d0a5c9292957bcdde259bb73a6c4b21dd3bebd8df18d3f84ca51",
+      "lines": 45,
+      "bytes": 5509
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260914_udaysagar_tech_negative_keywords.json": {
+      "hash": "bf6ff0fda8a81dd700891c7070674285534ac534ee9a5660fa3b37fe9f698584",
+      "lines": 12,
+      "bytes": 838
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260915_142200_universal_design_dynamic_injection.json": {
+      "hash": "aa2313f18ac06328c4e08d1e40e7b848f4d8171e61447e1a910b4561514206ff",
+      "lines": 41,
+      "bytes": 3124
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260915_company_site_apply_multi_fingered_arm_architecture.json": {
+      "hash": "f3448973c317ea54925e0de2e09a64070dd47ab0e6951243d52daf1aa43efcaf",
+      "lines": 44,
+      "bytes": 3853
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260915_disability_identity_health_blind_fallback_gate.json": {
+      "hash": "cf6a335ad2773f7eef3271c8a21337dbcd2ce4b4dbdfdec21ce404ab2ac3cc86",
+      "lines": 44,
+      "bytes": 4447
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260915_fresher_senior_role_overmatch_experience_gate.json": {
+      "hash": "4d8b7d90301df51f1205e061c1e4806845df3d3e5ddeb7eca2977ddffcfae12d",
+      "lines": 43,
+      "bytes": 4215
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260915_garbage_data_cleanup_and_sandbox_enforcement.json": {
+      "hash": "676887cf06eb9fba3da8a91e174072bbc206d993ac9fe4b805a22b24173e0253",
+      "lines": 43,
+      "bytes": 2298
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260915_hierarchical_organization_and_investigatory_curiosity.json": {
+      "hash": "c64acd7877d42271b474509dc2037805f32cf555d4d5ad22dc989aa05ba4d3e2",
+      "lines": 41,
+      "bytes": 2741
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260915_internship_as_experience_smart_answer_framework.json": {
+      "hash": "5d89993b2a649819128b910d0b04e51b256872c9744db8e303a1cbbbae1777f1",
+      "lines": 44,
+      "bytes": 4709
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260915_rule_5_zero_trust_codebase_purity_remediation.json": {
+      "hash": "82f9a28d3baee1b627073ab3d93a5434690ce77153a1c87bdc628135906d12f6",
+      "lines": 43,
+      "bytes": 3271
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260915_token_conservation_and_stream_stability.json": {
+      "hash": "9c2dfad3acce7eca0eb6909fb4962e5dcf129a74203cc234b04a6b1aa48e8b1f",
+      "lines": 37,
+      "bytes": 4054
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260916_bristlecone_application_submission_and_archive.json": {
+      "hash": "36cd98de4230924557d2eed103d77fd6cdd30f637f061c156ab449e0099cf63f",
+      "lines": 22,
+      "bytes": 2258
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260916_meta_reverse_engineering_and_portal_architecture.json": {
+      "hash": "17032c852cd3e82a23df87a4c3ad12b35227ef884bc60b93584828c0d0b96f1a",
+      "lines": 22,
+      "bytes": 2808
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260916_oracle_hcm_form_and_skills_precision.json": {
+      "hash": "5ce48dbd1336bce6d977142e60411ac5e7c17bdcb4f8d2c6169da273de226156",
+      "lines": 22,
+      "bytes": 2337
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260917_202740_all_profiles_screening_heuristics_zero_hardcoding.json": {
+      "hash": "4740140071a033fb560d97df9db27de811b7a86a9426c230a01bfe20496db3e3",
+      "lines": 43,
+      "bytes": 2674
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260917_204821_all_profiles_screening_heuristics_zero_hardcoding.json": {
+      "hash": "dbd7a604d7be579c94dfd8c919e5daf61b5377667f6b0a37d51bdd17e9b20df0",
+      "lines": 43,
+      "bytes": 2240
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260917_jpmc_lead_engineer_submitted.json": {
+      "hash": "3efb793479722c1f11efa6e39149953caeedb98ab7a588b213ae4a3d4b5fe9a1",
+      "lines": 21,
+      "bytes": 2040
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260917_jpmc_resume_strategy_overhaul.json": {
+      "hash": "4aec2e3e50c962581e4ce19a5b0e5b68c74e97e008115c5ce4c0573b0c6d5c69",
+      "lines": 20,
+      "bytes": 1312
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260917_section_1_resume_upload_protocol_enforcement.json": {
+      "hash": "a3c432c2cc5ded8a6d38c7b371d7dece73854d70f1c54d2626306dd0fb01fa91",
+      "lines": 10,
+      "bytes": 984
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260918_230300_autonomous_ipc_pipeline_suresh_chaudhary.json": {
+      "hash": "18fdaf30debbb00d3bd982e0c22bc87b12d58f837de3b58f3bddea4cc10192e7",
+      "lines": 42,
+      "bytes": 3048
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260918_fresher_seniority_calibration_and_blue_collar_exclusion.json": {
+      "hash": "3f4be93d7c4a0512ae64386ab8678f8622cdd5310a96e5263219d570e8cecbad",
+      "lines": 43,
+      "bytes": 3377
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260918_job_highlights_early_gating_ca_intermediate.json": {
+      "hash": "81941dbc1bdeb900a9085ee58fa2d0f498efb5a6f4bb6cb40a7817ed0af049fb",
+      "lines": 23,
+      "bytes": 1206
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260920_batch_architecture_v2_ipc_upgrade.json": {
+      "hash": "60f81b1e613f9bfc1ee42f4344cf0796daf3970d4612f6ad2283ce6741d62498",
+      "lines": 41,
+      "bytes": 2310
+    },
+    "Repo_B:understanding_master/learned_insights/insight_20260920_batch_v2_and_page_serialization_discovery.json": {
+      "hash": "093d70adf31f85fbdf8f97d3a63499ff72f53c5970fcf2046cff1b95a547ee85",
+      "lines": 41,
+      "bytes": 1848
+    },
+    "Repo_B:understanding_master/learned_insights/session_current_session.json": {
+      "hash": "e0b2c99eaa2f9a5c758ffc40f80678a85bbaf465b7d69acc45d87e309383cbd0",
+      "lines": 16,
+      "bytes": 768
+    },
+    "Repo_B:understanding_master/learned_insights/session_test_verification.json": {
+      "hash": "5a113130c1660abcf8eb69f9bc7f2b96a78e29bc5c5d94bd7bb6526a40427608",
+      "lines": 16,
+      "bytes": 772
+    },
+    "Repo_B:understanding_master/macro_synthesis/BOOT_SUMMARY.md": {
+      "hash": "f04308f70da00275a2bce0c7df32641f6af51a76092bea3c0bbb4984146c2e2f",
+      "lines": 86,
+      "bytes": 5868
+    },
+    "Repo_B:understanding_master/macro_synthesis/current_week_trend.md": {
+      "hash": "7f289d7f2b21c63a273f7f80e09136a5e357f457aa884051ae65a8ddd7855ec0",
+      "lines": 47,
+      "bytes": 10853
+    },
+    "Repo_B:understanding_master/parallel_digital_twin/DT-001_core_identity_and_worldview.json": {
+      "hash": "d680b9320d2afd9b4aa6f405bd9fe303ae43c0f788b6962c784673963723b77e",
+      "lines": 22,
+      "bytes": 2201
+    },
+    "Repo_B:understanding_master/parallel_digital_twin/DT-002_emotional_architecture_and_mood_dynamics.json": {
+      "hash": "00e374b41180f9673a03f611c4c36fa974002428fd69becbda59c47e9ed4617a",
+      "lines": 29,
+      "bytes": 2000
+    },
+    "Repo_B:understanding_master/parallel_digital_twin/DT-003_behavioral_fingerprint_and_action_habits.json": {
+      "hash": "580e151d543d4106f7ecb359f453d6912a0d918b42923e2b57946bc7e02dcb68",
+      "lines": 30,
+      "bytes": 1857
+    },
+    "Repo_B:understanding_master/parallel_digital_twin/DT-004_communication_dna_and_subtext_decoding.json": {
+      "hash": "24329de1464d354c21e71bd0e96a6920ed63b12fc7ce5d70a8b25808770ffdd5",
+      "lines": 27,
+      "bytes": 4558
+    },
+    "Repo_B:understanding_master/parallel_digital_twin/DT-005_aspirations_grand_vision_and_needs.json": {
+      "hash": "9f8c39452776fb38a4d239b19670b2e5a4be0dc50f32300962bab29f248fad7d",
+      "lines": 17,
+      "bytes": 1468
+    },
+    "Repo_B:understanding_master/parallel_digital_twin/DT-006_meta_cognitive_architecture_and_pedagogy.json": {
+      "hash": "23ff5fd7a0c4552a4f0324d12a8727ec4ab1364f30826f09aa3dfeeb663abbb5",
+      "lines": 17,
+      "bytes": 1919
+    },
+    "Repo_B:understanding_master/predictive_reaction_engine/PRE-001_neural_behavioral_prediction_matrix.json": {
+      "hash": "7692f786c6f408836b1f358944d631fd9243ba6c9a423e6864ac8cf353ea68a4",
+      "lines": 51,
+      "bytes": 3981
+    },
+    "Repo_B:understanding_master/predictive_reaction_engine/PRE-002_permutation_combination_decision_engine.json": {
+      "hash": "5013c3ac1eda9e61b58b0a0304ddd05d5e42f26f9cf8e81fe05ac7750f2c70e5",
+      "lines": 16,
+      "bytes": 1232
+    },
+    "Repo_B:understanding_master/predictive_reaction_engine/PRE-003_cognitive_resonance_and_friction_model.json": {
+      "hash": "5e862a0d9ea4894d76a11aed29e1a8755f5968367a27bdf2f9ef0d35be366b9c",
+      "lines": 33,
+      "bytes": 2981
+    },
+    "Repo_B:understanding_master/profile_preferences/master_persona_summary.json": {
+      "hash": "d0a32e50331cc995a6b2d8522212d48c84fc700e1b952e14a88b9a84b6f2f47b",
+      "lines": 14,
+      "bytes": 777
+    },
+    "Repo_B:understanding_master/profile_preferences/quality_gate_checklist.json": {
+      "hash": "10d2fb58aae8e39c88c62708d10db8ee201e2fd039b603c021c6496b7435f354",
+      "lines": 17,
+      "bytes": 949
+    },
+    "Repo_B:understanding_master/profile_preferences/tool_preference_matrix.json": {
+      "hash": "5fbe77d5b6ff62bcd001da94ac7b316cfcc23944e9c281276028ea8fc21cfd9a",
+      "lines": 31,
+      "bytes": 694
+    },
+    "Repo_B:understanding_master/self_learning_loop/SLL-001_recursive_learning_protocol.json": {
+      "hash": "917ab9787ace076179f33a045a6dc96fbda15f758d3fd7efd71c2760fb4b187f",
+      "lines": 19,
+      "bytes": 1836
+    },
+    "Repo_B:understanding_master/self_learning_loop/SLL-002_cross_ai_universal_handshake.json": {
+      "hash": "f69b999a0c87d7cf1956aa8e8c0f05d6d926465ebd9eea2420e7eaa7982adf03",
+      "lines": 8,
+      "bytes": 2084
+    },
+    "Repo_B:understanding_master/session_rules/codebase_purity_guardrail_p1.json": {
+      "hash": "22fd14231268557a0a0e3a261389b57d95d4b0c0521dcbe76a2a855bd425828a",
+      "lines": 12,
+      "bytes": 1068
+    },
+    "Repo_B:understanding_master/session_rules/developer_mode_gatekeeping.json": {
+      "hash": "329edcd8feeb6db70dfac8f1ca305554a842f3b4a1973b6f3f2b84b0ce6b8d00",
+      "lines": 11,
+      "bytes": 990
+    },
+    "Repo_B:understanding_master/session_rules/git_command_prohibition.json": {
+      "hash": "6532a0f571b624da478e5fb756f05c4c1fa9786d8386554b97f9159353f501ae",
+      "lines": 12,
+      "bytes": 707
+    },
+    "Repo_B:understanding_master/session_rules/modal_scroll_isolation_rule.json": {
+      "hash": "2745c8b7922c1c3541e1c2f7d4da662f38ece0a505c581db7dc9f98a020b356a",
+      "lines": 12,
+      "bytes": 1057
+    },
+    "Repo_B:understanding_master/session_rules/model_agnostic_logging.md": {
+      "hash": "a8ecb9c4e04328c6aad2e9dbfdd87e0461f28c9fb301155502817b5f7e6fae4f",
+      "lines": 16,
+      "bytes": 1263
+    },
+    "Repo_B:understanding_master/session_rules/platform_isolation_contract.json": {
+      "hash": "07ab91cd44d274b6f4b880a34cd8685dbc9ed3fe752cb32efe79226cefe61f75",
+      "lines": 11,
+      "bytes": 884
+    },
+    "Repo_B:understanding_master/thinking_patterns/edge_case_and_nuance_mastery.json": {
+      "hash": "48855521675ff5aa03f32944f8556734da388a3cd37e192de22cf0a724a6a296",
+      "lines": 17,
+      "bytes": 1653
+    },
+    "Repo_B:understanding_master/thinking_patterns/empirical_video_and_visual_ground_truth.json": {
+      "hash": "89a64fba5005dbdd12d7f8c12b15e6aefb843f564d259493779afe1e4c9c9b9d",
+      "lines": 16,
+      "bytes": 1625
+    },
+    "Repo_B:understanding_master/thinking_patterns/executive_aesthetic_page_budget_rigor.json": {
+      "hash": "6e62144473c5d1cb716500146a9efd559d11de8800a50e8e3b6d94477472c6dd",
+      "lines": 16,
+      "bytes": 1603
+    },
+    "Repo_B:understanding_master/thinking_patterns/macro_vision_vs_micro_precision.json": {
+      "hash": "3ecf0073dd3d009b05474b321313c0feb37c9e8ab4a66c51fe23bfe31baf1d1c",
+      "lines": 16,
+      "bytes": 1224
+    },
+    "Repo_B:understanding_master/thinking_patterns/reverse_engineering_philosophy.json": {
+      "hash": "7d979f00c52d4447e62fcbb1a94dc577ebd27e4ace263141cc8a445bdd882ec9",
+      "lines": 18,
+      "bytes": 1791
+    },
+    "Repo_B:understanding_master/thinking_patterns/surgical_updates_vs_brute_force.json": {
+      "hash": "bdedb633d49a622faef1d2adec33e631f61adafec5e7c5ac248ac2c99d54cdeb",
+      "lines": 17,
+      "bytes": 1572
+    },
+    "Repo_B:understanding_master/thinking_patterns/zero_assumptions_empirical.json": {
+      "hash": "faab2985836dc1b39e652ea1d7c3081af3bcdedb7eb1f570c710577b77906681",
+      "lines": 18,
+      "bytes": 1755
+    },
+    "Repo_B:workspaces/universal_autonomous_career_agent/domain_rules/modal_scroll_isolation.json": {
+      "hash": "7f275a017aa55e4d49ec4c362b3ee5defa04ab5e1da9b635f71f7c9b338658d4",
+      "lines": 8,
+      "bytes": 420
+    },
+    "Repo_B:workspaces/universal_autonomous_career_agent/domain_rules/multi_stint_duplicate_protocol.json": {
+      "hash": "a2f81c0c8db439aba558c56eec099c9ccd6ffb9eadce4ef04f792047917e916f",
+      "lines": 8,
+      "bytes": 432
+    },
+    "Repo_B:workspaces/universal_autonomous_career_agent/domain_rules/naukri_linkedin_isolation.json": {
+      "hash": "1f1e64c4cfffe3709c917386ce751d198441909546ba3a114441375c9aacab91",
+      "lines": 8,
+      "bytes": 453
+    },
+    "Repo_B:workspaces/universal_autonomous_career_agent/platform_schemas/naukri_campus_schema.json": {
+      "hash": "2c2799ba12638d3cb7811a8ff0ec023f7c2f60ea92e1bc047b785c3738c3760f",
+      "lines": 14,
+      "bytes": 588
+    },
+    "Repo_B:workspaces/universal_autonomous_career_agent/platform_schemas/naukri_srp_schema.json": {
+      "hash": "5d18cc4e467d3527d2299580ee87778fb9c6dadc1953be57f8bb19307ba1017e",
+      "lines": 19,
+      "bytes": 709
+    },
+    "Repo_B:workspaces/universal_autonomous_career_agent/task_ledger.json": {
+      "hash": "2784ee23e46bbb5e997a1c96efd91f4b90ace2e0aa6400e2da63fcb3a97a9444",
+      "lines": 69,
+      "bytes": 2795
+    },
+    "Repo_B:workspaces/universal_autonomous_career_agent/workspace_manifest.json": {
+      "hash": "97e5147eb024429908a26b1fc7bbc4efb6b94a778f1127d554bb6c3eadd8197d",
+      "lines": 17,
+      "bytes": 576
+    }
+  }
+}

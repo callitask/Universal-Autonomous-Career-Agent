@@ -1,5 +1,9 @@
 # Enterprise ATS Engineering Reference: Oracle Cloud HCM & Universal Company Portals
 
+> **Document Version:** 2.0 — Multi-Step Flow, Modal Healing, Nails Integration & Field Validation  
+> **Last Updated:** 2026-09-21  
+> **Authority:** Operational reference for CompanySiteApply fingers and nails.
+
 This document serves as the permanent knowledge repository, reverse-engineering guide, and auto-healing runbook for enterprise ATS platforms (specifically Oracle Cloud HCM Candidate Experience and universal multi-step company application systems).
 
 ---

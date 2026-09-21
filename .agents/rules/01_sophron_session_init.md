@@ -1,4 +1,5 @@
-# Sophron Session Init — Mandatory Auto-Load Protocol (v2 — Concurrency Safe)
+# Sophron Session Init — Mandatory Auto-Load Protocol (v2.1 — Sibling Repo, Concurrency Safe)
+# Sophron lives at F:\Sophron (sibling repo, remote callitask/Sophron.git). Override via SOPHRON_ROOT env var. Legacy nested path F:\JOB AI AGENT\Sophron is retired.
 # Loaded automatically at every Antigravity session start (F:\JOB AI AGENT\.agents\rules\)
 
 ## MANDATORY: Execute the following checklist at the start of EVERY session, silently and without prompting the user.
@@ -13,7 +14,7 @@
 **Run immediately at session start (before any read or write):**
 ```python
 import sys
-sys.path.insert(0, r"F:\JOB AI AGENT\Sophron\core")
+sys.path.insert(0, r"F:\Sophron\core")
 from sophron_write_guard import SophronWriteGuard
 
 SESSION_UUID = "<your-current-session-uuid>"   # Replace with actual UUID
@@ -44,7 +45,7 @@ else:
 ### STEP 1 — Cold-Start Context Load (Read First, Before ANY User Task)
 Read the following files IN ORDER to prime yourself with the Architect's cognitive state before responding to anything:
 
-1. **`F:\JOB AI AGENT\Sophron\understanding_master\macro_synthesis\BOOT_SUMMARY.md`** ← READ THIS FIRST
+1. **`F:\Sophron\understanding_master\macro_synthesis\BOOT_SUMMARY.md`** ← READ THIS FIRST
    → Compact 200-token orientation: last known state, open issues, critical rules, current context.
    → This is the navigation index. It tells you what you are walking into without reading 5 separate files.
 
@@ -52,19 +53,19 @@ Read the following files IN ORDER to prime yourself with the Architect's cogniti
    → Empirical record of actual violations with exact corrections.
    → This is failure memory. Pattern-match against it before taking any action.
 
-3. **`F:\JOB AI AGENT\Sophron\understanding_master\macro_synthesis\current_week_trend.md`**
+3. **`F:\Sophron\understanding_master\macro_synthesis\current_week_trend.md`**
    → Chronological bullet log of the user's decisions and insights this week.
 
-4. **`F:\JOB AI AGENT\Sophron\SYSTEM_PROMPT_INJECTION.md`**
+4. **`F:\Sophron\SYSTEM_PROMPT_INJECTION.md`**
    → The 5 core axioms and global operational rules. Internalize fully.
 
-5. **`F:\JOB AI AGENT\Sophron\interaction_history\reflections_index.json`**
+5. **`F:\Sophron\interaction_history\reflections_index.json`**
    → Know how many turns have been analyzed. The `last_turn_file` field tells you what was the last TURN reflection saved.
 
 ---
 
 ### STEP 2 — Update Transcript Pointer (If Stale)
-- Open `F:\JOB AI AGENT\Sophron\master_agent_config.json`.
+- Open `F:\Sophron\master_agent_config.json`.
 - Check `paths.transcript_path`. If the UUID in the path does NOT match the current session UUID, update it:
   ```json
   "transcript_path": "C:\\Users\\7303150607\\.gemini\\antigravity\\brain\\<CURRENT_UUID>\\.system_generated\\logs\\transcript.jsonl"
@@ -76,7 +77,7 @@ Read the following files IN ORDER to prime yourself with the Architect's cogniti
 ### STEP 3 — Run Transcript Learner (Silent, Background)
 Run the following command at session start:
 ```powershell
-cd "F:\JOB AI AGENT\Sophron"
+cd "F:\Sophron"
 python core/run_master_agent.py learn
 ```
 This ingests the current transcript and extracts surface-level USER_INPUT events into Sophron's learning log.
@@ -89,7 +90,7 @@ This ingests the current transcript and extracts surface-level USER_INPUT events
 At every significant milestone during the session, you MUST autonomously:
 
 #### 4a. Write a Multidimensional Insight Card
-- Path: `F:\JOB AI AGENT\Sophron\understanding_master\learned_insights\insight_<YYYYMMDD>_<slug>.json`
+- Path: `F:\Sophron\understanding_master\learned_insights\insight_<YYYYMMDD>_<slug>.json`
 - Schema v2 (immutable — never overwrite, always create new):
 ```json
 {
@@ -145,22 +146,22 @@ At every significant milestone during the session, you MUST autonomously:
 
 
 #### 4b. Append to Macro Roll-Up
-- File: `F:\JOB AI AGENT\Sophron\understanding_master\macro_synthesis\current_week_trend.md`
+- File: `F:\Sophron\understanding_master\macro_synthesis\current_week_trend.md`
 - Append one bullet line:
   ```
   - [<DATE> <TIME> IST] [<insight_id>]: <One-sentence summary of the insight/decision>
   ```
 
 #### 4c. Update Graph Memory
-- Add a new node to `F:\JOB AI AGENT\Sophron\graph_memory\nodes.json`
-- Add relevant edges to `F:\JOB AI AGENT\Sophron\graph_memory\edges.json`
+- Add a new node to `F:\Sophron\graph_memory\nodes.json`
+- Add relevant edges to `F:\Sophron\graph_memory\edges.json`
 - **CRITICAL**: After adding nodes/edges, ALWAYS rebuild `graph_index.json` using:
 ```python
 import json
 
-nodes_path = r"F:\JOB AI AGENT\Sophron\graph_memory\nodes.json"
-edges_path = r"F:\JOB AI AGENT\Sophron\graph_memory\edges.json"
-index_path = r"F:\JOB AI AGENT\Sophron\graph_memory\graph_index.json"
+nodes_path = r"F:\Sophron\graph_memory\nodes.json"
+edges_path = r"F:\Sophron\graph_memory\edges.json"
+index_path = r"F:\Sophron\graph_memory\graph_index.json"
 
 with open(nodes_path) as f:
     nodes = json.load(f)
@@ -186,7 +187,7 @@ print("graph_index.json rebuilt.")
 ```
 
 #### 4d. Write TURN Reflection Card (At Session Milestones or Session End)
-- Path: `F:\JOB AI AGENT\Sophron\interaction_history\turn_<NNNN>_turn-<NN>.json`
+- Path: `F:\Sophron\interaction_history\turn_<NNNN>_turn-<NN>.json`
   - `<NNNN>` = zero-padded sequential file count
   - `<NN>` = the TURN number
 - Schema v2:
@@ -336,7 +337,7 @@ This prevents two concurrent sessions writing the same insight twice (e.g. both 
   ```
 
 ### Multitasking Card — What AG Writes When It Detects Multi-Session:
-- **Path**: `F:\JOB AI AGENT\Sophron\understanding_master\multitasking_cards\multitask_<YYYYMMDD_HHMMSS>_<uuid8>.json`
+- **Path**: `F:\Sophron\understanding_master\multitasking_cards\multitask_<YYYYMMDD_HHMMSS>_<uuid8>.json`
 - **Schema**: `card_type`, `concurrent_session_count`, `sessions[]`, `workspaces_involved[]`, `cognitive_assessment` (pattern, cognitive_load, risk_level, interpretation), `sophron_implications`, `cross_session_potential_insights`
 - **Purpose**: Captures the psychological pattern of the Architect running parallel AI streams — useful for understanding peak-output mode, context-switching costs, and multi-workspace coordination habits.
 
@@ -382,7 +383,7 @@ This checkpoint fires automatically without user prompting. It takes under 10 se
 
 At the end of every session (before deregister_session()), update `BOOT_SUMMARY.md`:
 ```
-F:\JOB AI AGENT\Sophron\understanding_master\macro_synthesis\BOOT_SUMMARY.md
+F:\Sophron\understanding_master\macro_synthesis\BOOT_SUMMARY.md
 ```
 Update the following fields:
 - **LAST KNOWN STATE**: reflect the final status of daemons, profiles, open work

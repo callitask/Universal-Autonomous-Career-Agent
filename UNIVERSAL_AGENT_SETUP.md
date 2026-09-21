@@ -1,5 +1,9 @@
 # Universal Autonomous Career Agent — Setup & Execution Guide
 
+> **Document Version:** 4.0 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC & 43 Guardrails  
+> **Last Updated:** 2026-09-21  
+> **Proprietary Notice:** Confidential and Proprietary. Copyright (c) 2026 Amitsagar Kandpal. All Rights Reserved. No public license granted.
+
 Welcome to the **Universal Autonomous Career Agent** (`F:\JOB AI AGENT`). This system is an enterprise-grade, multi-agent autonomous pipeline engineered to execute end-to-end job discovery, cognitive profile synthesis, factual resume tailoring, and automated ATS application submission across platforms including LinkedIn and Naukri.
 
 This guide details environment setup, candidate profile sandboxing, cognitive configuration, and autonomous daemon execution.
@@ -19,7 +23,7 @@ This guide details environment setup, candidate profile sandboxing, cognitive co
 - **Cognitive Profile Synthesis:** Autonomously analyzes human markdown resumes (`resume.md`) to extract domain taxonomy, seniority levels, core competencies, and search cycle designations (`cognitive_profile.json`).
 - **Dual-Brain Cognitive Engine:**
   - **Gemini Hosted Mode:** Leverages Google Gemini models via API key when `GEMINI_API_KEY` is provided.
-  - **Zero-API Mode (Primary):** When no API key is set, delegates reasoning to **Google Antigravity 2.0** via non-blocking File-Based IPC (`pending_question.json`). Eliminates terminal `stdin` freezes.
+  - **Zero-API Mode (Primary):** When no API key is set, delegates reasoning to **Google Antigravity 2.0** via non-blocking File-Based IPC (`batch_question.json` and `pending_question.json`). Eliminates terminal `stdin` freezes.
 - **Two-Stage Job Evaluation & Gating:**
   - **Stage 1:** Deterministic hard filters check absolute negative keywords (C6 Guardrail), domain title alignment, and anchored experience bands.
   - **Stage 2:** Calibrated factual scoring runs first with native portal confidence bonuses. Antigravity 2.0 IPC arbitration is strictly gated to the **borderline match score window ($40\% \le \text{score} \le 65\%$)**. High-fit roles ($\ge 60\%$) qualify instantly; blatant out-of-domain roles drop at Stage 1 ($0\%$).
@@ -29,7 +33,7 @@ This guide details environment setup, candidate profile sandboxing, cognitive co
   - **LinkedIn Easy Apply:** Native modal automation with Guardrail H1 remediation (zero blind `options[0]` fallbacks, Antigravity IPC fallback for ambiguous dropdowns/radios, and automated modal dismissal with "Discard application" confirmation).
   - **Naukri Chatbot:** Container-isolated scrolling (`.chatbot_MessageContainer`), empirical radio targeting (`label.ssrc__label`), strictly scoped drawer submit button (`.send:not(.disabled) .sendMsg`), React synthetic event dispatch for `contenteditable`, and Guardrail C9 premature drawer closure / platform rejection detection.
 - **Multi-Session Persistent Deduplication Ledger:** High-performance hybrid dictionary (`ProcessedLedger`) storing structured metadata (`status`, `company`, `title`, `score`, `timestamp`) with $O(1)$ lookup speed and atomic `.tmp` + `os.replace` disk persistence.
-- **Three-Tier Verification & Stealth:** Physically verifies confirmation pages and DOM ledger history (`/myapply/historypage`). Uses randomized typing jitter (45–130ms), visual scanning pauses (400–900ms), and 30-minute batch cycles to emulate human browsing.
+- **Three-Tier Verification & Stealth:** Physically verifies confirmation pages and DOM ledger history (`/myapply/historypage`). Uses randomized typing jitter (45–130ms), visual scanning pauses (400–900ms), and short `--delay 30` daemon cooldowns between designation cycles to emulate human browsing.
 
 ---
 
@@ -41,7 +45,7 @@ The repository is structured as follows:
 F:\JOB AI AGENT\
 │
 ├── core/                                 # Production execution pipeline
-│   ├── continuous_career_agent.py        # Master continuous autonomous daemon loop
+│   ├── continuous_career_agent.py        # Master continuous autonomous daemon loop (Daemon 1)
 │   ├── 01_ai_analyzer.py                 # Resume analyzer & cognitive profile synthesizer
 │   ├── 02_profile_sync_naukri.py         # Surgical selective Naukri profile sync (5-step card engine)
 │   ├── 02b_naukri_fast_resume_upload.py  # Standalone fast resume PDF uploader
@@ -50,27 +54,50 @@ F:\JOB AI AGENT\
 │   ├── generate_factual_tailored.py      # Factual ATS resume tailor & PDF compiler
 │   ├── 05_apply_jobs.py                  # Form solver (LinkedIn Easy Apply & Naukri Chatbot)
 │   ├── ai_client.py                      # Dual-brain cognitive engine & IPC bridge
+│   ├── ipc_watcher.py                    # File-based IPC signal relay daemon (Daemon 2)
+│   ├── ipc_auto_resolver.py              # Standalone IPC auto-resolver utility
+│   ├── knowledge/
+│   │   └── platform_heuristics.json      # Platform DOM selectors, slug routing & circuit breakers
+│   ├── scrapers/                         # Portal scraper base classes and implementations
+│   │   ├── base_scraper.py
+│   │   ├── naukri_scraper.py
+│   │   └── linkedin_scraper.py
 │   └── utils/                            # Shared core utilities
 │       ├── profile_context.py            # ProfileContext, Purity Enforcer & ProcessedLedger
-│       └── browser_manager.py            # Chrome DevTools Protocol (CDP) session manager
+│       ├── browser_manager.py            # Chrome DevTools Protocol (CDP) session manager
+│       └── search_state_manager.py       # Sequential designation rotation manager
+│
+├── CompanySiteApply/                     # On-demand direct company ATS application engine
+│   ├── cli.py                            # Interactive CLI runner for direct ATS applications
+│   ├── ats_arm.py                        # ATS orchestrator arm
+│   ├── ats_detector.py                   # Portal platform detection engine
+│   ├── fingers/                          # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
+│   ├── nails/                            # Company-specific ATS customizations (JPMC, Bristlecone)
+│   ├── CompanyScraper/                   # Direct company career site scrapers
+│   ├── parser_doctor/                    # ATS resume parsing healing and review verification
+│   └── utils/                            # DOM helpers & honeypot guards
+│
+├── scripts/                              # Operational and maintenance utilities
+│   └── reevaluate_ledger.py              # Ledger re-evaluation reset utility
 │
 ├── profiles/                             # Candidate profiles directory (Autonomous Sandboxes)
-│   └── <candidate_name>/                 # Individual candidate sandbox folder
+│   └── default_user/                     # Master blueprint / schema exemplar
 │       ├── candidate_config.json         # Candidate details, credentials, CTC, target filters
 │       ├── resume.md                     # Master markdown resume (Factual source of truth)
 │       └── output/                       # Runtime outputs and multi-session state
 │           ├── applications/             # Per-job tailored PDF resumes & job_details.json
 │           ├── profile_sync/             # Selective profile sync cards & sync reports
-│           │   ├── naukri_cards/         # Per-role JSON evaluation cards (KEEP/UPDATE/ADD)
-│           │   └── naukri_sync_report.json # Summary sync metrics
 │           ├── cognitive_profile.json    # Synthesized candidate taxonomy & search cycles
 │           ├── processed_ledger.json     # O(1) multi-session persistent deduplication ledger
 │           ├── search_manifest.json      # Active execution batch manifest
 │           ├── applications_tracker.csv  # Canonical application audit trail
-│           └── pending_question.json     # Antigravity 2.0 cognitive IPC exchange file
+│           ├── batch_question.json       # Batch card triage IPC request file
+│           ├── batch_answer.json         # Batch card triage IPC response file
+│           ├── pending_question.json     # Single-query cognitive IPC exchange file
+│           └── search_state.json         # Search designation rotation state
 │
 └── docs/                                 # Authoritative documentation & blueprints
-    ├── WORKSPACE_RULES.md                # 8 mandatory directives & 15 bug prevention guardrails
+    ├── WORKSPACE_RULES.md                # 9 mandatory directives & 43 bug prevention guardrails
     ├── ARCHITECTURE_REFERENCE.md         # Comprehensive system architecture & data contracts
     ├── REFERENCE_DEPLOYMENT_GUIDE.md     # Fast deployment & verification guide
     └── GEMINI_WEB_AI_PROMPTS.md          # 3-step onboarding prompts for Gemini Web AI

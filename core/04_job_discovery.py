@@ -156,6 +156,14 @@
 #   search_manifest.json as pure data; Playwright Page objects cannot be serialized to disk.
 # Preventative Notes: NEVER include in-memory handles, Playwright objects, sockets, or functions
 #   inside batch dictionaries destined for JSON manifest serialization.
+#
+# [ENTRY #015]
+# Term: [SRP_LOAD_TIMEOUT_ACCOMMODATION]
+# Timestamp: 2026-09-21 12:00:00 +05:30
+# Issue / Context: Playwright wait_for_selector on SRP card tuples threw TimeoutError at 12s on heavy React boards under CPU load and bot-challenge interstitial delays.
+# Changes Made: Increased SRP wait_for_selector timeout from 12000ms to 60000ms at run_batched_discovery card wait. No selector or gating logic changed.
+# Rationale: Accommodates DOM lag without altering discovery semantics. Longer wait only affects slow loads. Fast pages unaffected.
+# Preventative Notes: Do not lower below 60s without proxy or headless optimizations. Never change card selectors to compensate for timeouts.
 # ================================================================================
 """
 ================================================================================
@@ -861,7 +869,7 @@ def run_batched_discovery(profile_path: str):
                                         except Exception:
                                             pass
                             else:
-                                page.wait_for_selector(card_selector, timeout=12000)
+                                page.wait_for_selector(card_selector, timeout=60000)
                         except Exception as e:
                             logger.warning(f"Notice during SRP load: {e}")
                             continue

@@ -69,9 +69,10 @@ ehthumbs.db
 Thumbs.db
 desktop.ini
 
-# 7. Master Persona Agent (User's Personality, Cognition, and Understanding Master)
-# Strictly ignored to ensure user persona models, learning cards, and supervisor code are NEVER pushed to git
-Sophron/
-Sophron*
+# 7. Sibling Sophron repo (separate git history at F:\Sophron, model-agnostic intelligence)
+# Sophron lives OUTSIDE this repo since 2026-09-22 extraction. Nothing nested to ignore.
+# Local build artifacts that must never be committed:
+scan_root.json
+scan_sophron.json
 *.zip
 

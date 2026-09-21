@@ -76,6 +76,14 @@
 # Changes Made: Added strict option conformity verification before execute_chip_selection, mapping non-conforming answers via _best_option_match or options[0], and retrying options[0] before contenteditable fallback.
 # Rationale: Guarantees that RADIO_CHIP questions always dispatch an existing option to the DOM.
 # Preventative Notes: Never dispatch an arbitrary string to a radio chip or dropdown handler without checking that it exists in the discovered options.
+#
+# [ENTRY #009]
+# Term: [ATS_NAVIGATION_TIMEOUT_ACCOMMODATION]
+# Timestamp: 2026-09-21 12:00:00 +05:30
+# Issue / Context: Initial ATS and career portal loads on Workday and Oracle HCM frequently exceeded commit 12s and domcontentloaded 15s, causing false about:blank failures under bot protection routing.
+# Changes Made: Increased navigation retry timeouts to commit 60000ms and domcontentloaded 75000ms in ApplicationEngine navigation. No routing or verification logic changed.
+# Rationale: Accommodates heavy SPA loads without altering application semantics. Fast portals unaffected.
+# Preventative Notes: Do not lower timeouts without headless proxy optimizations. Never skip about:blank verification.
 # ================================================================================
 """
 ================================================================================
@@ -1272,7 +1280,7 @@ class ApplicationEngine:
                 page.wait_for_timeout(1500)
             else:
                 nav_success = False
-                for wait_strat, to_ms in [("commit", 12000), ("domcontentloaded", 15000)]:
+                for wait_strat, to_ms in [("commit", 60000), ("domcontentloaded", 75000)]:
                     try:
                         page.goto(url, wait_until=wait_strat, timeout=to_ms)
                         nav_success = True

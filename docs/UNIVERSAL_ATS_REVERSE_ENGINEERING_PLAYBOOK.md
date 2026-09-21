@@ -2,6 +2,8 @@
 ## The Autonomous Agent's Architectural Guide to Deconstructing, Automating, and Self-Healing Enterprise Application Portals
 
 > **Classification:** Standard Operating Architecture & Engineering Playbook  
+> **Document Version:** 2.0 — Reverse-Engineering Methodology, Framework-Native Events & Self-Healing  
+> **Last Updated:** 2026-09-21  
 > **Target Audience:** Diagnostic, Implementation, and Autonomous AI Agents  
 > **Scope:** Universal ATS Platforms (Oracle Cloud HCM, Workday, Taleo, Greenhouse, Lever, SmartRecruiters, iCIMS, SuccessFactors, etc.)  
 > **Foundational Axiom:** Never interact naively. Always deconstruct the reactive state engine, inspect the DOM hierarchy, verify parser outputs, and commit changes through framework-native event channels.

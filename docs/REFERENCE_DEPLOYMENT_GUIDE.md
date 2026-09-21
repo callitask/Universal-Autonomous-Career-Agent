@@ -1,8 +1,8 @@
 # UNIVERSAL DEPLOYMENT GUIDE
 **System:** Anti-Gravity Autonomous Career Operations Engine  
-**Architecture:** Variable-Driven, Candidate-Agnostic, Multi-Profile  
-**Document Version:** 3.1 — Post-Empirical DOM Reverse-Engineering & Telemetry Integration  
-**Last Updated:** 2026-09-09
+**Architecture:** Variable-Driven, Candidate-Agnostic, Multi-Profile, Batch Architecture v2.0  
+**Document Version:** 4.0 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC & C24-C34 Guardrails  
+**Last Updated:** 2026-09-21
 
 ---
 
@@ -44,6 +44,7 @@ Edit `profiles/<CandidateName>/candidate_config.json`:
   "target_jobs": {
     "keywords": ["<Keyword1>", "<Keyword2>"],
     "negative_keywords": ["Sales", "Intern"],
+    "max_experience_gap_years": 2,
     "locations": ["<City1>", "<City2>"],
     "platforms": ["Naukri", "LinkedIn"],
     "work_mode": "hybrid",
@@ -67,17 +68,45 @@ Edit `profiles/<CandidateName>/candidate_config.json`:
 }
 ```
 
-### Step 4: Run the Autonomous Daemon
-```bash
-python core/continuous_career_agent.py --profile profiles/<CandidateName>
-```
-*(Note: `--profile` is optional; if omitted, the agent automatically discovers the active profile in `profiles/`, conducts pre-flight CDP diagnostics, and runs Guardrail P1 codebase purity checks).*
+### Step 4: Run the Three-Daemon Autonomous Engine
 
-**Pipeline per cycle:**
-1. `04_job_discovery.py` -> Scrapes LinkedIn & Naukri with dynamic URL parameters (`wfhType`, `companyJobs`), extracts full SRP card metadata, un-clamps "Read More" (`span.styles_rm-link__RgrMs`) for deep JD ingestion (7.2k+ chars), scrapes the Naukri native match score (`div.styles_JDC__match-score__VnjLL`), qualifies roles using Two-Stage Cognitive Evaluation ($\ge 60\%$ bar with up to +10% portal verified confidence bonus), and writes `Job_Description.md` and `job_details.json` to application directory.
-2. `generate_factual_tailored.py` -> Reads actual un-clamped `Job_Description.md` from disk, extracts technical tokens, and compiles ATS-optimized PDFs per role.
-3. `05_apply_jobs.py` -> Applies with form solving, chatbot interaction (targeting `.ssrc__label` chips and scoped `.sendMsg` container), 3x stuck loop protection, and verification.
-4. 30-minute deep-sleep -> Account preservation pacing.
+The system operates across three coordinating daemons to maintain continuous application velocity and sub-minute IPC response times:
+
+#### Terminal 1 — Daemon 1 (Discovery & Execution Loop):
+```bash
+python core/continuous_career_agent.py --delay 30
+```
+*(Runs continuous cycles with `--delay 30` cooldown between designations. `SearchStateManager` rotates sequentially through candidate target designations; `--profile` is automatically discovered if omitted).*
+
+#### Terminal 2 — Daemon 2 (IPC Signal Relay):
+```bash
+python core/ipc_watcher.py --poll 2.0
+```
+*(Monitors `pending_question.json` and `batch_question.json` within a single shared 2.0s polling loop, emitting real-time structured ASCII alerts for AG Brain).*
+
+#### Terminal 3 / Background — Daemon 3 (AG Brain Cron Monitor):
+Runs a 1-minute cron heartbeat (`* * * * *`) that parses watcher alerts, resolves questions from candidate truths, and writes answers to `batch_answer.json` (120s timeout SLA) or `pending_question.json` (90s timeout SLA).
+
+---
+
+### Step 5: The Batch Execution Lifecycle (ARM → BRAIN → EXECUTE)
+
+1. **ARM Phase (`04_job_discovery.py`):**
+   - Uses `SearchStateManager` to pick the current active designation.
+   - Scrapes SRP cards across multiple pages using canonical structured SEO slugs (`/{slug}-jobs-in-{loc}`).
+   - Applies objective numeric pre-gates: CTC salary floor and **Card-Level Experience Band Gating (Guardrail C24)**: if card min experience $> \text{candidate actual exp} + \text{max\_experience\_gap\_years}$, rejects immediately with status `experience_gap_gated`.
+   - Accumulates qualified cards into `batch_question.json`.
+2. **BRAIN Phase:**
+   - Sends the entire card batch to AG Brain via `batch_question.json` ($O(1)$ token overhead).
+   - Waits up to 120s for AG Brain to return `batch_answer.json` with `DEEP_SCAN` or `SKIP` decisions.
+3. **EXECUTE Phase:**
+   - For `DEEP_SCAN` cards only: opens detail page with **Two-Stage Navigation Recovery (Guardrail C32)** (`commit` [60s] + `domcontentloaded` [75s]), un-clamps description (`span.styles_rm-link__RgrMs`), extracts 7.2k+ chars of full JD, and scores via Stage 2 cognitive qualification ($\ge 60\%$).
+   - Compiles ATS-tailored PDF (`generate_factual_tailored.py`).
+   - Executes fast PDF upload (`02b_naukri_fast_resume_upload.py`).
+   - Completes application form & chatbot interaction (`05_apply_jobs.py`), employing **Radio Chip Option-Constrained Resolution (Guardrail C34)** for proficiency tiers.
+4. **ROTATE Phase:**
+   - `SearchStateManager.advance()` advances the designation index and records cycle telemetry.
+   - Pauses for `--delay 30` seconds before next designation.
 
 ---
 

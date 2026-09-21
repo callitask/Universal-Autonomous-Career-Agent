@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: ARCHITECTURE REFERENCE
 
-> **Document Version:** 5.1 — Guardrail C24 Card-Level Experience Band Gating  
-> **Last Updated:** 2026-09-19  
+> **Document Version:** 5.2 — Batch Architecture v2.0, Dual-Channel IPC, Structured SEO Slug Standard & 60% Qualification Bar  
+> **Last Updated:** 2026-09-21  
 > **Purpose:** Comprehensive technical reference for the complete pipeline — how every module works, data flows, inter-process communication, DOM interaction patterns, multi-bullet regex isolation, two-tier early highlights gating, card-level experience band gating (Guardrail C24), and the chatbot reverse-engineering protocol. Upload this alongside `WORKSPACE_RULES.md` to ground the AI's understanding of the system before any coding session.
 
 ---
@@ -17,15 +17,15 @@ The Universal Autonomous Career Agent is a **three-daemon, file-coordinated, CDP
 5. **Renders** a per-job PDF via Playwright's Chrome PDF engine
 6. **Uploads** the tailored resume to the candidate's Naukri profile
 7. **Applies** autonomously — solving 1-click apply and multi-step chatbot drawers
-8. **Monitors and Relays IPC** questions via an asynchronous file-based IPC watcher and AG Brain cron loop within a 90-second SLA
+8. **Monitors and Relays IPC** questions via an asynchronous file-based IPC watcher and AG Brain cron loop within a 90-second SLA (120s for batch)
 9. **Verifies** submission via DOM success markers
 10. **Tracks** everything in CSV + JSON + persistent composite-key deduplication ledgers for audit
 
 **Execution Model: The Three-Daemon Architecture**
 Instead of a single blocking monolithic process or unmonitored terminal inputs, the system operates across three coordinated daemons:
-- **Daemon 1 (Discovery & Application Runner — `continuous_career_agent.py`):** Runs the continuous discovery and application loop via Chrome DevTools Protocol (CDP port 9222). Orchestrates `04_job_discovery.py`, `generate_factual_tailored.py`, `02b_naukri_fast_resume_upload.py`, and `05_apply_jobs.py`. If a novel or un-cached chatbot question is encountered, writes to `pending_question.json` and polls non-blocking.
-- **Daemon 2 (IPC Watcher & Signal Relay — `core/ipc_watcher.py`):** Dedicated lightweight background daemon polling `profiles/<profile>/output/pending_question.json` at 2.0s intervals. Detects any pending recruiter question instantly and prints `[IPC WATCHER] PENDING QUESTION DETECTED` with timestamp, task type, question text, and UI options to stdout.
-- **Daemon 3 (AG Brain Cron Monitor — Recurring 1-Minute Heartbeat):** Scheduled periodic monitor running within the AG Brain agentic environment (`* * * * *`). Wakes up every 60 seconds, inspects Daemon 2 logs and `pending_question.json`, synthesizes ground-truth factual answers from `resume.md` and candidate config, and commits the JSON answer directly into `pending_question.json` within the mandatory 90-second recruiter timeout SLA.
+- **Daemon 1 (Discovery & Application Runner — `continuous_career_agent.py`):** Runs the continuous discovery and application loop via Chrome DevTools Protocol (CDP port 9222). Orchestrates `04_job_discovery.py`, `generate_factual_tailored.py`, `02b_naukri_fast_resume_upload.py`, and `05_apply_jobs.py`. If a novel or un-cached chatbot question is encountered, writes to `pending_question.json` and polls non-blocking. Runs with default cooldown `--delay 30`.
+- **Daemon 2 (IPC Watcher & Signal Relay — `core/ipc_watcher.py`):** Dedicated lightweight background daemon polling both `pending_question.json` (single IPC) and `batch_question.json` (batch IPC) within a single shared 2.0s poll loop (`run(poll=2.0)`). Emits immediate structured ASCII alerts to stdout.
+- **Daemon 3 (AG Brain Cron Monitor — Recurring 1-Minute Heartbeat):** Scheduled periodic monitor running within the AG Brain agentic environment (`* * * * *`). Wakes up every 60 seconds, inspects Daemon 2 logs, `batch_question.json` (120s timeout SLA) and `pending_question.json` (90s SLA), synthesizes ground-truth factual answers from `resume.md` and candidate config, and commits the JSON answer directly.
 
 **Architectural Separation of Concerns:**
 - **Developer Scope (`core/`, `docs/`, `core/utils/`):** In coding sessions, the AI assistant operates strictly as the Principal Agent Developer, updating engine logic, documentation, and tooling. The developer **never manually edits files inside `profiles/`**.
@@ -40,7 +40,7 @@ Instead of serial 90-second IPC blocking per job card, the system now uses an AR
 
 ```
 [DAEMON 1: Discovery & Application Runner]
-continuous_career_agent.py (daemon loop)
+continuous_career_agent.py (daemon loop --delay 30)
   │
   ├─► [Optional] 02_profile_sync_naukri.py --profile <dir>
   ├─► [Optional] 03_profile_sync_linkedin.py --profile <dir>
@@ -50,7 +50,7 @@ continuous_career_agent.py (daemon loop)
        │    │
        │    ├─► [ARM PHASE]: Collect Job Cards
        │    │    ├─► SearchStateManager selects ONE active designation
-       │    │    ├─► Scrape SRP (Search Results Pages 1-3)
+       │    │    ├─► Scrape SRP (Search Results Pages 1-3 via SEO Slugs)
        │    │    ├─► SRP Card-Level Pre-Scan Gates (Salary Floor, Exp Band C24, Blacklist)
        │    │    └─► Accumulate into designation_batch_cards
        │    │
@@ -62,8 +62,9 @@ continuous_career_agent.py (daemon loop)
        │    ├─► [EXECUTE PHASE]: Deep Scan & Apply (Approved Cards Only)
        │    │    ├─► For each DEEP_SCAN card:
        │    │    ├─► Deep Scan: Open JD Detail Page & Un-clamp "Read More"
-       │    │    ├─► Tier 2 Stage 1 & Stage 2 Precision Match Score
-       │    │    ├─► If score >= 50%:
+       │    │    ├─► Two-Stage Navigation Recovery C32 (commit 60s + domcontentloaded 75s)
+       │    │    ├─► Stage 1 & Stage 2 Precision Match Score
+       │    │    ├─► If score >= 60%:
        │    │    │    ├─► generate_factual_tailored.py --profile <dir>
        │    │    │    ├─► 02b_naukri_fast_resume_upload.py --profile <dir>
        │    │    │    └─► 05_apply_jobs.py --profile <dir>
@@ -71,28 +72,39 @@ continuous_career_agent.py (daemon loop)
        │    └─► [ROTATE PHASE]:
        │         └─► SearchStateManager.record_stats() & advance() designation index
        │
-       └── time.sleep(delay)  →  Next Cycle
+       └── time.sleep(delay)  →  Next Cycle (default 30s)
 ```
 
 ─────────────────────────────────────────────────────────────────────────────
 [DAEMON 2: IPC Signal Relay]
 ipc_watcher.py --profile <dir> --poll 2.0
   │
-  └── Polling profiles/<profile>/output/pending_question.json (every 2.0s)
-       └── When status == "PENDING":
-            └── Emits immediate stdout signal:
-                 [IPC WATCHER] PENDING QUESTION DETECTED: "<Question Text>"
-                 [IPC WATCHER] Task Type: SCREENING_QUESTION | Options: [...]
+  ├── Shared Polling Loop (every 2.0s):
+  │    ├─► Check profiles/<profile>/output/pending_question.json
+  │    │    └── When status == "PENDING":
+  │    │         └── Emits immediate stdout signal:
+  │    │              [IPC WATCHER] PENDING QUESTION DETECTED: "<Question Text>"
+  │    │              [IPC WATCHER] Task Type: SCREENING_QUESTION | Options: [...]
+  │    │
+  │    └─► Check profiles/<profile>/output/batch_question.json
+  │         └── When status == "PENDING":
+  │              └── Emits immediate stdout signal:
+  │                   [IPC WATCHER] BATCH QUESTION DETECTED: N cards
+  │                   [IPC WATCHER] Awaiting batch_answer.json (120s SLA)
 
 ─────────────────────────────────────────────────────────────────────────────
 [DAEMON 3: AG Brain Cron Monitor]
 Cron Heartbeat (* * * * * / 60-second wake-up)
   │
-  ├── Check pending_question.json status
-  └── If status == "PENDING":
+  ├── Check batch_question.json & pending_question.json status
+  ├── If batch_question.json status == "PENDING":
+  │    ├── Evaluate card batch against candidate profile
+  │    └── Write batch_answer.json with [DEEP_SCAN, SKIP] decisions (SLA: <120s)
+  │
+  └── If pending_question.json status == "PENDING":
        ├── Load candidate resume.md and candidate_config.json
        ├── Synthesize factual grounded response
-       ├── Commit JSON answer with status="ANSWERED" (SLA: <90 seconds)
+       ├── Commit JSON answer with status="ANSWERED" (SLA: <90s)
        └── Daemon 1 consumes answer, unlinks file, submits form, resumes loop
 ```
 
@@ -102,7 +114,9 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
 - `processed_ledger.json` — Persistent composite key (`clean_company::clean_title`) + Job URL deduplication ledger
 - `saved_external_jobs.json` — External redirect storage
 - `candidate_config.json` — Self-learning truth cache (read/write by all scripts)
-- `pending_question.json` — Async File-Based IPC handshake between Application Engine, IPC Watcher, and AG Brain
+- `batch_question.json` / `batch_answer.json` — Asynchronous Batch Card Evaluation IPC channel between Discovery Engine and AG Brain (120s SLA)
+- `pending_question.json` — Asynchronous Single-Query File-Based IPC handshake between Application Engine, IPC Watcher, and AG Brain (90s SLA)
+- `search_state.json` — State persistence for `SearchStateManager` designation rotation
 - `ques_ans_chatbot.json` — Per-job Q&A audit log stored alongside tailored resumes
 - `Job_Description.md` — Raw un-clamped multi-section scraped JD markdown saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
 - `job_details.json` — Structured job metadata + `naukri_match_score` saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
@@ -204,12 +218,14 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
       - **Skill Tags**: `ul.tags-gt li.dot-gt.tag-li`
       - **Recency**: `span.job-post-day`
       - **Bookmark**: `span.save-job-tag`
-   c. Multi-Pass Gating (`is_title_allowed`):
-      - C6 Negative Check (Absolute drop)
-      - Direct Keyword / Stem Match
-      - Card Skills Match
-      - Tier 2B Cognitive Brain Arbitration (`ai.arbitrate_card_fit`)
-   d. Deep scan detail page:
+   c. Objective Pre-Gating & Batch Card Evaluation (GATE 11 & Guardrail C24):
+      - Python executes strictly objective numeric pre-gates on SRP card metadata:
+        - CTC Salary Floor check
+        - C24 Card-Level Experience Band Gating (`card_min_exp > cand_exp + max_experience_gap_years` → `experience_gap_gated`)
+        - Exact Company Blacklist Match
+      - `is_title_allowed()` function body is retained as deprecated dead code (Rule GATE 11); Python does not execute keyword semantic gating in the discovery loop.
+      - Qualified cards are accumulated into `batch_question.json` and sent to AG Brain in a single batch IPC call (120s SLA) returning `[DEEP_SCAN, SKIP]` decisions.
+   d. Deep scan detail page (DEEP_SCAN approved cards only):
       - Check for native apply (`#apply-button`) vs external redirect (`#company-site-button`)
       - **Tier 1 Scraper Pre-Flight Highlights Gating (Fast Rejection):**
         - Extracts raw highlight strings from `ul.styles_JDC__job-highlight-list__QZC12 li` immediately upon page load.
@@ -223,13 +239,17 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
    f. Write `Job_Description.md` and `job_details.json` (including `naukri_match_score`) to application folder
    g. Append enriched job entry to `search_manifest.json`
    h. When batch reaches BATCH_SIZE=1: trigger tailoring → upload → apply pipeline
-8. Resume discovery sweep & advance search cycle via `ai.advance_search_cycle()`
+8. Resume discovery sweep & advance search cycle via `SearchStateManager.advance()`
 
-**Naukri URL Pattern:**
+**Naukri Canonical Structured SEO Slug Standard (Rule C17):**
 ```
-https://www.naukri.com/jobs?k={clean_keyword}&l={clean_location}[&pageNo={page}]&experience={N}&jobAge={age}&wfhType={mode}&companyJobs={bool}[&ctcFilter={lo}to{hi}]
+https://www.naukri.com/{role_slug}-jobs-in-{loc_slug}?jobAge={days}&experience={years}&ctcFilter={bracket}
 ```
-*(Note: Static SEO slug URLs `/{slug}-jobs-in-{loc}` must NOT be used with dynamic filters like `experience` or `ctcFilter` as Naukri SSR caching returns 0 vacancies).*
+Pagination (Page 2+):
+```
+https://www.naukri.com/{role_slug}-jobs-in-{loc_slug}-{page_num}?jobAge={days}&experience={years}&ctcFilter={bracket}
+```
+*(Note: As documented in `platform_heuristics.json:15-19`, generic `/jobs?k=...` URLs are strictly PROHIBITED as Naukri's server automatically redirects them to `/jobs-in-india?k=...`, which collapses the `.srp-jobtuple-wrapper` components and returns 0 vacancies. Canonical structured SEO slugs with dynamic query parameters reliably return 20 job cards per page).*
 
 **Naukri 3-Field Header Search Bar Protocol (UI Automation):**
 When navigating via in-browser UI form interaction (`execute_naukri_header_search()`):
@@ -778,7 +798,7 @@ https://www.naukri.com/mnjuser/profile
 | Stale runner process memory on code edit | Long-running runner daemon ran old Python bytecode in Windows RAM | [PASS] Fixed — Three-Daemon operational architecture mandates graceful restart of runner daemon on engine code updates (v5.0) |
 | Chatbot question 90s SLA timeout | Novel screening question risked timing out during background runs | [PASS] Fixed — Three-Daemon Architecture (Daemon 2 `ipc_watcher.py` + Daemon 3 1-min cron monitor) answers questions within SLA (v5.0) |
 | Standalone generic negative keyword false positives | Standalone generic nouns (`"Software"`) matched legitimate tools (`"Accounting Software"`), falsely disqualifying valid finance roles | [PASS] Fixed — Composite Term Standard mandates role-specific phrases (`"Software Engineer"`, `"Software Developer"`) in `negative_keywords` (Guardrail C31) |
-| Syndicated portal redirect hangs | `page.goto()` hung indefinitely on slow/dead third-party syndicated URLs (Purview India, Leading Client) | [PASS] Fixed — Two-Stage Fallback (`commit` [12s] + `domcontentloaded` [15s]) catches timeout cleanly, logs FAILED, and advances pipeline without crashing (Guardrail C32) |
+| Syndicated portal redirect hangs | `page.goto()` hung indefinitely on slow/dead third-party syndicated URLs (Purview India, Leading Client) | [PASS] Fixed — Two-Stage Fallback (`commit` [60s] + `domcontentloaded` [75s]) catches timeout cleanly, logs FAILED, and advances pipeline without crashing (Guardrail C32) |
 | Chatbot screening tool hallucinations | Open-ended chatbot questions regarding unverified ERPs/tools risked model hallucinations | [PASS] Fixed — Free-Text Screening Ground Truth Standard strictly bounds answers to candidate's verified stack with honest disclosures (Guardrail C33) |
 | Radio chip option mismatch / DOM selection failure | Non-conforming answer (e.g. numeric "0" vs `['Beginner', 'Intermediate', 'Expert']`) broke chip click, causing stuck loop and application failure | [PASS] Fixed — Option-Constrained Resolution with proficiency tier fallback (`_best_option_match`), heuristic option filtering, and pre-click conformity check with retry (Guardrail C34) |
 

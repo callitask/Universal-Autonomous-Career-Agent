@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: WORKSPACE DEVELOPMENT & CODING RULES
 
-> **Document Version:** 4.0 — Three-Daemon Operational Standard, Two-Tier Highlights Gating & Multi-Bullet Isolation Enforced  
-> **Last Updated:** 2026-09-18  
+> **Document Version:** 4.1 — Batch Architecture v2.0, Dual-Channel IPC, 43 Guardrails (33 C, 6 H, 3 D, 1 P) & G-BRAIN-01 Alignment  
+> **Last Updated:** 2026-09-21  
 > **Authority:** These rules are ABSOLUTE and OVERRIDE all model defaults. Violations cause runtime crashes, data corruption, phantom applications, or account bans.  
 > **Workspace Root:** `F:\JOB AI AGENT`
 
@@ -546,7 +546,7 @@ https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}-{page_num}?experience={ex
 
 ---
 
-## DIRECTIVE 8: DIAGNOSTIC & AUTO-HEALING TOOLING GUIDE
+## DIRECTIVE 9: DIAGNOSTIC & AUTO-HEALING TOOLING GUIDE
 
 When investigating runtime portal anomalies, unexpected selector behavior, or performance bottlenecks, the agent must leverage Antigravity's specialized browser and diagnostic tools:
 
@@ -583,10 +583,27 @@ F:\JOB AI AGENT\
 │   ├── generate_factual_tailored.py   # Resume tailoring + PDF generation
 │   ├── continuous_career_agent.py     # Daemon 1: Discovery & application runner
 │   ├── ipc_watcher.py                 # Daemon 2: Asynchronous IPC signal relay
+│   ├── ipc_auto_resolver.py           # Standalone IPC auto-resolver utility
+│   ├── knowledge/
+│   │   └── platform_heuristics.json   # Platform heuristics and DOM configuration
 │   ├── utils/
 │   │   ├── profile_context.py         # Multi-user sandbox context manager & Purity Enforcer
-│   │   └── browser_manager.py         # CDP browser lifecycle manager
-│   └── scrapers/                      # DEAD CODE — do not use or reference
+│   │   ├── browser_manager.py         # CDP browser lifecycle manager
+│   │   └── search_state_manager.py    # Sequential designation rotation & cycle persistence
+│   └── scrapers/                      # Portal scraper base classes and implementations
+│
+├── CompanySiteApply/                  # On-demand direct company ATS application engine
+│   ├── cli.py                         # Interactive CLI runner for direct ATS applications
+│   ├── ats_arm.py                     # ATS orchestrator arm
+│   ├── ats_detector.py                # Portal platform detection engine
+│   ├── fingers/                       # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
+│   ├── nails/                         # Company-specific ATS customizations (JPMC, Bristlecone)
+│   ├── CompanyScraper/                # Direct company career site scrapers
+│   ├── parser_doctor/                 # ATS resume parsing healing and review verification
+│   └── utils/                         # DOM helpers & honeypot guards
+│
+├── scripts/                           # Operational and maintenance utilities
+│   └── reevaluate_ledger.py           # Ledger re-evaluation reset utility
 │
 ├── profiles/                          # Per-candidate sandboxed data
 │   └── <profile_name>/
@@ -619,5 +636,7 @@ F:\JOB AI AGENT\
 | `03_profile_sync_linkedin.py` | `google.genai` (separate SDK instance) |
 | `continuous_career_agent.py` | `subprocess` only (shell orchestration) |
 | `ipc_watcher.py` | Standard library only (`os`, `sys`, `json`, `time`, `pathlib`, `argparse`, `datetime`) |
+| `ipc_auto_resolver.py` | `google.genai`, `argparse`, `json`, `pathlib`, `sys`, `time` |
+| `search_state_manager.py` | `json`, `os`, `pathlib`, `typing` |
 
 **WARNING:** `03_profile_sync_linkedin.py` uses `from google import genai` (new SDK) while all other scripts use `import google.generativeai as genai` (legacy SDK). These are **different packages**. Do not mix them.

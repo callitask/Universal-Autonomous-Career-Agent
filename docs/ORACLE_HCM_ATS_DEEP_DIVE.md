@@ -1,6 +1,8 @@
 # Oracle Cloud HCM Candidate Experience (ORC) - Engineering Architecture & Universal Automation Bridge
 
 > **Document Classification:** Master ATS Engineering Reference & Cross-Agent Cognitive Bridge  
+> **Document Version:** 2.0 — Oracle JET 19.0, Knockout Reactive State, CX Component Blueprints & Nail Overrides  
+> **Last Updated:** 2026-09-21  
 > **Target ATS Ecosystem:** Oracle Cloud HCM (Candidate Experience / ORC) & Oracle Taleo  
 > **Framework Stack:** Oracle JET (`ojVersion 19.0.0`), Knockout.js (`ko`), React Wrapper Components (`cx-select`, `cx-select-pills`), Chrome DevTools Protocol (CDP)  
 > **Author:** Diagnostic & Implementation Agent (Pair Programming with Human Principal Architect)  

@@ -106,3 +106,16 @@ gate. All semantic decisions now route to AG Brain via JOB_CARD_EVALUATION IPC. 
 objective numeric gates: salary floor, C24 exp band, negative_companies (exact identity).
 Principle: Python = arms and legs (data collection + actuation). AG Brain = sole decision-maker for
 all semantic job fit evaluations. Keyword lists in config are advisory context for AG Brain only.
+
+---
+
+## [2026-09-21] DIRECTIVE 2 TIER B LITERAL DEFAULTS IN COMPANY_SITE_APPLY
+- **File**: `CompanySiteApply/fingers/oracle_cloud_finger.py` (lines 510, 515, 934, 938), `CompanySiteApply/CompanyScraper/base_scraper.py` (line 102), `CompanySiteApply/nails/oracle/jpmc_nail.py` (lines 68, 86).
+- **What happened**: Hardcoded literals ("560100", "Bangalore", "Asian", "Male") were embedded as fallback defaults in `CompanySiteApply/`. These survived undetected by `verify_codebase_purity()` because purity scanning explicitly scopes to `core/` and `scripts/` only, leaving `CompanySiteApply/` un-audited.
+- **Correct behavior**: All demographics, zip codes, and cities must resolve dynamically from `candidate_config.json` via `ProfileContext` or user prompts. `CompanySiteApply/` runs strictly on-demand/human-gated, but must not harbor hardcoded candidate assumptions.
+- **Never repeat**: Never embed candidate defaults or demographic assumptions in ATS finger/nail adapters. When adding fallback values in `CompanySiteApply/`, always resolve from `candidate_data.get()` and prompt the operator if missing.
+
+## [2026-09-21] SRP & ATS Load Latency Accommodations
+- **Context:** Core engine files (04_job_discovery and 05_apply_jobs) were failing prematurely with 12s/15s timeouts on heavy SPA boards and ATS platforms due to bot-detection interstitials or API load latency.
+- **Fix:** Increased Playwright `timeout` kwargs to 60s/75s across discovery and application layers.
+- **Preventative:** Do not lower these timeout values unless structural headless proxy optimizations are implemented.

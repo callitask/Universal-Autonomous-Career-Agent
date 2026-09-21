@@ -1,5 +1,9 @@
 # Platform Knowledge & Engineering Reference: Naukri.com
 
+> **Document Version:** 2.0 — Dual-Channel Batch/Single IPC, Structured SEO Routing & Guardrail Alignment  
+> **Last Updated:** 2026-09-21  
+> **Authority:** Operational reference for portal behaviors, DOM patterns, and dual-channel IPC.
+
 This document serves as the permanent knowledge repository for Naukri.com portal behavior, routing mechanics, DOM patterns, and historical traps encountered during autonomous agent operations.
 
 ---
@@ -261,6 +265,23 @@ Recruiters frequently ask practical tool exposure questions with qualitative pro
 2. The answer returned to `execute_chip_selection` MUST exist in `options`. If an un-matched string is returned, the engine forces `ans = options[0]`.
 3. If clicking the chosen option fails, the engine retries clicking `options[0]` before attempting any contenteditable fallback.
 
+---
 
+## 13. Dual-Channel File-Based IPC & Signal Routing
 
+The autonomous pipeline communicates with Antigravity 2.0 (AG Brain) via two asynchronous file IPC channels located inside `profiles/<profile>/output/`:
 
+### Channel 1: Batch Card Triage (`batch_question.json` / `batch_answer.json`)
+*   **Purpose:** Evaluates an entire batch of SRP cards for a designation in a single handshake ($O(1)$ token overhead) rather than serial $N \times 90$s queries.
+*   **Trigger:** Written by `04_job_discovery.py` after collecting cards across result pages.
+*   **Timeout / SLA:** 120-second timeout default (`batch_ipc_timeout_seconds`).
+*   **Decisions:** `DEEP_SCAN` (proceeds to detail page un-clamping, precision scoring, and application) or `SKIP` (records deduplication in ledger and discards).
+*   **Watcher Daemon:** Monitored by `core/ipc_watcher.py` via its shared 2.0s polling loop, emitting structured batch alerts.
+
+### Channel 2: Single-Target Deep Inquiries (`pending_question.json`)
+*   **Purpose:** Handles low-latency, single-query arbitration for deep-scan phases:
+    1.  **Chatbot Screening Questions (`SCREENING_QUESTION`):** Real-time candidate answers for mandatory recruiter chatbot prompts.
+    2.  **Ambiguous Job Qualification (`JOB_EVALUATION`):** Second-opinion scoring for borderline fit scores (40–65% range).
+    3.  **Dynamic Resume Tailoring (`RESUME_TAILORING` / `QUESTIONNAIRE`):** Custom impact bullet synthesis and cover letters.
+*   **Timeout / SLA:** 90-second SLA (60s for `STARVATION_EXPANSION`).
+*   **Handshake Lifecycle:** `PENDING` $\rightarrow$ AG Brain computes answer from candidate ground truths $\rightarrow$ `ANSWERED` with atomic JSON replacement.

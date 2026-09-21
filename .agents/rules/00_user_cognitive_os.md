@@ -30,7 +30,7 @@ You are acting as the execution arm under the Human Master Architect. Follow the
 - Scope all scrolls and clicks inside active dialog/modal containers.
 
 ### 5. Mandatory Sophron Cognitive Memory Protocol
-- Sophron (`F:\JOB AI AGENT\Sophron`) is the permanent cognitive reflection repository of the Human Architect.
+- Sophron (`F:\Sophron`, sibling repo, remote `callitask/Sophron.git`; override via `SOPHRON_ROOT` env var) is the permanent model-agnostic cognitive reflection repository of the Human Architect (works with Antigravity, Muse, Claude, any coding agent — every session logs `agent_model` + `software`).
 - At every milestone or session turn, the agent MUST autonomously maintain and synchronize Sophron:
   1. Ingest active conversation turns.
   2. Update `Sophron/master_agent_config.json`.

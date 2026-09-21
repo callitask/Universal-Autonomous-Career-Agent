@@ -1,0 +1,410 @@
+[
+  {
+    "path": "CompanySiteApply/CompanyScraper/base_scraper.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:119",
+    "summary": "class BaseCompanyScraper: Abstract Base Class for enterprise career site scrapers.; def __init__(self, cdp_url):; def company_name(self): Returns canonical company name (e.g. 'JPMorgan Chase').; def portal_type(self): Returns ATS portal type (e.g. 'oracle_cloud_hcm', 'workday', 'greenhouse').; def score_job_match(self, job_details, candidate_profile): Calculates match score [0.0 - 1.0] between candidate profile and job requirements.; def export_scraped_jobs(self, output_path): Saves scraped jobs"
+  },
+  {
+    "path": "CompanySiteApply/CompanyScraper/cli_scraper.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:146",
+    "summary": "def load_candidate_config(config_path):; def main():"
+  },
+  {
+    "path": "CompanySiteApply/CompanyScraper/companies/jpmorgan/jpmorgan_scraper.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:156",
+    "summary": "class JPMorganScraper: Company-specific scraper for JPMorgan Chase on Oracle Cloud HCM (CX_1001).; def __init__(self, cdp_url):; def company_name(self):; def portal_type(self):"
+  },
+  {
+    "path": "CompanySiteApply/ats_arm.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:141",
+    "summary": "class ATSArm: The Anatomical Arm coordinating all enterprise ATS application tasks.; def __init__(self, cdp_url):; def connect(self): Connects over CDP to the active debugging browser session.; def disconnect(self): Safely disconnects Playwright without closing the user's Chrome browser.; def inspect_active_tab(self, save_snapshot): Performs deep inspection of active tab:; def fill_and_advance(self, candidate_data, prompt_callback): Executes active finger's fill_step and advances to the next scr"
+  },
+  {
+    "path": "CompanySiteApply/ats_detector.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:62",
+    "summary": "class ATSDetector: Detector and inspector for enterprise ATS platforms and career pages.; def detect_platform(cls, page): Analyzes the active browser page and returns platform classification and trap status."
+  },
+  {
+    "path": "CompanySiteApply/cli.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:139",
+    "summary": "def prompt_terminal_user(prompt_text, options): Fallback interactive prompt for terminal execution.; def cmd_inspect(args):; def cmd_detect(args):; def cmd_heal(args):; def cmd_fill(args):; def main():"
+  },
+  {
+    "path": "CompanySiteApply/fingers/__init__.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:55",
+    "summary": "def get_finger_for_page(page): Evaluates all registered ATS fingers against the active page DOM and URL."
+  },
+  {
+    "path": "CompanySiteApply/fingers/base_finger.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:71",
+    "summary": "class BaseATSFinger: Abstract Base Class for an ATS Finger (Platform Handler).; def platform_name(self): The canonical name of this ATS platform (e.g. 'oracle_cloud', 'workday').; def can_handle(self, page, url): Inspects URL, title, and DOM markers to determine if this finger can handle the page.; def inspect_current_step(self, page): Scrapes and catalogs the active form step:; def fill_step(self, page, candidate_data, prompt_user_callback): Fills fields on the current step using candidate_data"
+  },
+  {
+    "path": "CompanySiteApply/fingers/generic_finger.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:102",
+    "summary": "class GenericAdaptiveFinger: Fallback adaptive finger for unknown, custom, or bespoke company career portals.; def platform_name(self):; def can_handle(self, page, url):; def inspect_current_step(self, page):; def fill_step(self, page, candidate_data, prompt_user_callback):; def advance_step(self, page):"
+  },
+  {
+    "path": "CompanySiteApply/fingers/greenhouse_finger.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:87",
+    "summary": "class GreenhouseFinger: ATS Finger for Greenhouse application boards (boards.greenhouse.io, embedded forms).; def platform_name(self):; def can_handle(self, page, url):; def inspect_current_step(self, page):; def fill_step(self, page, candidate_data, prompt_user_callback): Fills standard Greenhouse fields: first_name, last_name, email, phone, linkedin.; def advance_step(self, page):"
+  },
+  {
+    "path": "CompanySiteApply/fingers/oracle_cloud_finger.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:1069",
+    "summary": "class OracleCloudFinger: ATS Finger for Oracle Cloud HCM (Candidate Experience / ORC) and Oracle Taleo.; def __init__(self):; def get_active_nail(self, page, url): Dynamically identifies and returns the matching company Nail for the active page.; def platform_name(self):; def can_handle(self, page, url): Detects Oracle Cloud HCM or Taleo via URL patterns and DOM signatures.; def inspect_current_step(self, page): Catalogues current step inputs, honeypots, and action controls."
+  },
+  {
+    "path": "CompanySiteApply/fingers/workday_finger.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:161",
+    "summary": "class WorkdayFinger: ATS Finger for Workday application portals (*.myworkdayjobs.com, custom Workday domains).; def platform_name(self):; def can_handle(self, page, url): Detects Workday through domain patterns and [data-automation-id] attributes.; def inspect_current_step(self, page): Catalogs current Workday form step.; def fill_step(self, page, candidate_data, prompt_user_callback): Fills fields on the active Workday step and executes Parser Doctor on Experience step.; def _fill_workday_field"
+  },
+  {
+    "path": "CompanySiteApply/nails/base_nail.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:67",
+    "summary": "class BaseNail: Abstract Base Class for Company-Specific ATS Overrides (Nails).; def company_name(self): The canonical name of the company (e.g., 'JPMorgan Chase', 'Bristlecone').; def matches(self, url, page_title, page): Determines whether this nail applies to the current career site URL or page context.; def handle_pre_step(self, page, step_num, context): Executed immediately upon arriving at a step before generic finger processing.; def handle_custom_fields(self, page, step_num, candidate_da"
+  },
+  {
+    "path": "CompanySiteApply/nails/oracle/bristlecone_nail.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:39",
+    "summary": "class BristleconeNail: Company ATS Nail for Bristlecone career portal on Oracle Cloud HCM.; def company_name(self):; def matches(self, url, page_title, page):; def handle_custom_fields(self, page, step_num, candidate_data):; def override_screening_answer(self, question_text, options, candidate_data):"
+  },
+  {
+    "path": "CompanySiteApply/nails/oracle/jpmc_nail.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:193",
+    "summary": "class JPMCNail: Company ATS Nail for JPMorgan Chase (JPMC) career portal on Oracle Cloud HCM.; def company_name(self):; def matches(self, url, page_title, page):; def handle_custom_fields(self, page, step_num, candidate_data): Processes JPMC-specific custom form fields on demographic/diversity steps (Section 4).; def override_screening_answer(self, question_text, options, candidate_data): JPMC curated screening questionnaire matching.; def _match_choice(self, target, options):"
+  },
+  {
+    "path": "CompanySiteApply/parser_doctor/education_healer.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:112",
+    "summary": "class EducationHealer: Validates and rectifies education entries populated by ATS resume parsers.; def diagnose_and_heal_entry(cls, parsed_school, parsed_degree, parsed_field, ground_truth_education): Diagnoses whether parsed_school and parsed_degree are inverted or corrupted,; def _find_matching_ground_truth(school, degree, gt_list): Finds the closest matching education item from ground truth."
+  },
+  {
+    "path": "CompanySiteApply/parser_doctor/line_wrap_healer.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:149",
+    "summary": "class LineWrapHealer: Detects and repairs line-wrap anomalies in text extracted by ATS parsers (Workday, Oracle, etc.).; def heal_text(cls, text): Takes raw text populated in an ATS experience description and repairs; def _evaluate_continuation(cls, prev, nxt): Determines whether `nxt` is a soft line-wrap continuation of `prev`.; def _merge_lines(prev, nxt, merge_type): Merges two lines based on detected wrap type."
+  },
+  {
+    "path": "CompanySiteApply/parser_doctor/review_verifier.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:114",
+    "summary": "class ReviewVerifier: Coordinates post-upload verification and healing of ATS form fields.; def audit_and_heal_experience_descriptions(cls, page): Scans all visible textareas on page (typically role descriptions), checks for; def audit_and_heal_education_fields(cls, page, ground_truth_education): Scans education section fields on page, validates against ground truth,"
+  },
+  {
+    "path": "CompanySiteApply/tests/test_parser_doctor.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:97",
+    "summary": "class TestParserDoctor:; def test_line_wrap_healer_hyphenated_compound_word(self):; def test_line_wrap_healer_hyphenated_syllable_split(self):; def test_line_wrap_healer_soft_wrap(self):; def test_line_wrap_healer_preserves_bullets(self):; def test_line_wrap_healer_multiline_bullet_wrapped(self):"
+  },
+  {
+    "path": "CompanySiteApply/utils/dom_helpers.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:196",
+    "summary": "class DOMHelpers: Robust DOM helper methods for modern Single-Page ATS Applications (Oracle JET, React, Angular).; def set_input_value_native(page, selector, value, timeout_ms): Safely sets value into an input or textarea using native property setter and dispatches; def set_checkbox_checked(page, selector, checked, timeout_ms): Checks or unchecks a checkbox safely. If the native checkbox is hidden behind a custom; def extract_form_schema(page): Inspects the active page DOM and returns a comprehe"
+  },
+  {
+    "path": "CompanySiteApply/utils/honeypot_guard.py",
+    "repo": "Repo_A",
+    "tier": "company_site_apply",
+    "domain": "agent_structure",
+    "lines": "1:81",
+    "summary": "class HoneypotGuard: Guards against anti-bot honeypot fields, hidden trap inputs, and decoy controls.; def is_honeypot(cls, element_info): Evaluates whether a DOM input/element is a honeypot trap.; def filter_safe_inputs(cls, inputs): Filters out honeypot and hidden decoy inputs from a list of candidate inputs."
+  },
+  {
+    "path": "core/01_ai_analyzer.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:161",
+    "summary": "def log(msg):; def analyze_profile():"
+  },
+  {
+    "path": "core/02_profile_sync_naukri.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:789",
+    "summary": "def log(msg):; def sanitize_filename(name): Sanitizes company or role names for safe file paths.; def extract_years_from_tenure(text): Extracts start and end years from any tenure/duration string.; def is_duplicate_employment_or_internship(exp1, exp2): Strict duplicate detection rule (Rule C16):; def parse_candidate_experiences(resume_text, config): Step A: Ingests candidate employment history from resume.md and candidate_config.json.; def inspect_live_naukri_profile(page): Step B: Non-destructi"
+  },
+  {
+    "path": "core/02b_naukri_fast_resume_upload.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:159",
+    "summary": "def log(msg):; def run_fast_upload(profile_path):"
+  },
+  {
+    "path": "core/03_profile_sync_linkedin.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:667",
+    "summary": "def log(msg):; def sanitize_filename(name): Sanitizes company or role names for safe file paths.; def parse_candidate_experiences(resume_text, config): Step A: Ingests candidate employment history from resume.md and candidate_config.json.; def generate_robust_about_section(resume_text, ai_client): Uses centralized AIClient to generate a polished LinkedIn summary.; def dismiss_modal_if_open(page): Safely closes any open modal without saving changes.; def update_headline(page, profile_content, li_"
+  },
+  {
+    "path": "core/04_job_discovery.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:1382",
+    "summary": "def make_composite_key(company, title): Generates a normalized composite key to deduplicate postings without blocking titles.; def save_external_job_record(profile_dir, job, redirect_url): Atomically records external redirect jobs to saved_external_jobs.json without duplication.; def get_already_processed_urls(profile_dir): Safely parses tracker CSV and external jobs files for deduplication.; def cleanup_browser_tabs(context, tracked_pages, active_page): Safely cleans up only tabs opened by disc"
+  },
+  {
+    "path": "core/05_apply_jobs.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:1937",
+    "summary": "def human_jitter(min_ms, max_ms):; def log_section(title):; def log_step(category, message):; def log_substep(category, message):; class ChatbotResolver: DOM Chatbot Reverse-Engineering Engine for Naukri and platform modals.; class LinkedInApplyHandler: Dedicated handler for LinkedIn Easy Apply multi-step modal dialogs."
+  },
+  {
+    "path": "core/ai_client.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:2853",
+    "summary": "class MatchResult: Hybrid match result supporting:; class AIClient: Autonomous Reasoning Engine for Dynamic Screening Questionnaire Resolution,; def __new__(cls, score, reasoning, matching_skills, missing_skills):; def __init__(self, score, reasoning, matching_skills, missing_skills):; def __getitem__(self, item):; def __contains__(self, key):"
+  },
+  {
+    "path": "core/continuous_career_agent.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:187",
+    "summary": "def check_cdp_status(cdp_url):; def run_step(step_name, script_name, profile_arg, ctx):; def main():"
+  },
+  {
+    "path": "core/generate_factual_tailored.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:460",
+    "summary": "class ResumeTailorEngine:; def __init__(self, profile_path):; def get_resume_filename(self):; def parse_resume_sections(self, md_text):; def extract_jd_keywords(self, jd_text):; def calculate_ats_match_score(self, resume_text, jd_keywords):"
+  },
+  {
+    "path": "core/ipc_auto_resolver.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:159",
+    "summary": "def log(msg):; def build_client(cfg):; def call_gemini(client, model, prompt):; def clean_json(text):; def resolve(ipc_path, client, model):; def run(profile_dir, poll):"
+  },
+  {
+    "path": "core/ipc_watcher.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:240",
+    "summary": "def ts():; def print_pending_block(data): Print a loud, structured, clearly-parseable block for AG Brain to action.; def print_batch_block(data, batch_answer_path): Print the batch evaluation request for AG Brain. Shows all cards and expected output format.; def run(profile_dir, poll):"
+  },
+  {
+    "path": "core/scrapers/base_scraper.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:41",
+    "summary": "class JobBoardScraper:; def __init__(self, ctx, page, browser):; def random_sleep(self, min_s, max_s):; def scrape_jobs(self):"
+  },
+  {
+    "path": "core/scrapers/linkedin_scraper.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:74",
+    "summary": "class LinkedInScraper:; def build_urls(self):; def scrape_jobs(self):"
+  },
+  {
+    "path": "core/scrapers/naukri_scraper.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:89",
+    "summary": "class NaukriScraper:; def build_urls(self):; def scrape_jobs(self):"
+  },
+  {
+    "path": "core/utils/browser_manager.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:108",
+    "summary": "class BrowserManager: Manages Playwright connection to an active Chrome instance via CDP.; def get_browser_context(cdp_url): Functional helper for legacy cross-script invocations.; def __init__(self, cdp_url):; def start(self): Starts Playwright and connects to Chrome over CDP.; def get_context(self): Returns the active browser context, initializing if necessary.; def new_page(self): Creates and returns a fresh, dedicated browser page in the CDP context."
+  },
+  {
+    "path": "core/utils/profile_context.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:656",
+    "summary": "def canonical_job_url(url): Normalizes job URLs by stripping query parameters, session IDs (e.g. ?src=...&sid=...),; def extract_platform_job_id(url, platform): Extracts immutable numeric platform job ID for deduplication across query/slug changes.; class ProcessedLedger: High-performance hybrid ledger mapping URL/composite key -> structured metadata.; class CodebasePurityViolationError: Raised when hardcoded candidate values or profile paths are found in core engine scripts.; class ProfileConte"
+  },
+  {
+    "path": "core/utils/search_state_manager.py",
+    "repo": "Repo_A",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:199",
+    "summary": "class SearchStateManager: Manages designation rotation state across daemon cycles.; def __init__(self, profile_dir):; def get_current_designation(self): Returns the designation to search next. None if list is empty.; def get_current_index(self): Returns the current designation index.; def advance(self): Advance to the next designation in the rotation.; def record_stats(self, designation, cards_found, cards_approved, cards_applied): Record stats for a completed designation search."
+  },
+  {
+    "path": "scripts/build_knowledge_index.py",
+    "repo": "Repo_A",
+    "tier": "scripts",
+    "domain": "agent_structure",
+    "lines": "1:744",
+    "summary": "def get_live_profile_names():; def compute_sha256(content):; def tokenize(text):; def is_allowed_path(rel_path, repo):; def scan_repository_files(root, repo_name):; def chunk_markdown(content, rel_path):"
+  },
+  {
+    "path": "scripts/reevaluate_ledger.py",
+    "repo": "Repo_A",
+    "tier": "scripts",
+    "domain": "agent_structure",
+    "lines": "1:136",
+    "summary": "def clean_ledger_for_reevaluation(profile_path, dry_run):"
+  },
+  {
+    "path": "core/antigravity_context_bridge.py",
+    "repo": "Repo_B",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:76",
+    "summary": "class AntigravityContextBridge: Compiles Tier 1 meta-cognition and isolated Tier 2 workspace context; def __init__(self, current_workspace_uri):; def compile_system_prompt_injection(self): Generates a compressed, highly dense Markdown system prompt.; def write_prompt_file(self, target_file):; def write_global_rule_file(self, target_file):"
+  },
+  {
+    "path": "core/decision_emulator.py",
+    "repo": "Repo_B",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:192",
+    "summary": "class DecisionEmulator: Evaluates actions against the user's core thinking patterns,; def __init__(self, loader):; def evaluate_action(self, action_description, target_files, is_empirically_verified, is_pre_approved_by_user, involves_git): Evaluates a proposed action against the user's strict rules.; def evaluate_duplicate_tenure(self, exp1_company, exp1_role, exp1_years, exp2_company, exp2_role): Emulates user's nuanced multi-attribute duplicate evaluation (Rule C16 & DP-003).; def predict_user"
+  },
+  {
+    "path": "core/graph_memory_engine.py",
+    "repo": "Repo_B",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:82",
+    "summary": "class GraphMemoryEngine: Semantic Graph Memory Query & Traversal Engine.; def __init__(self, graph_dir, current_workspace_uri):; def reload(self):; def query_principles(self, tier): Retrieve cognitive principles filtered by tier.; def get_related_nodes(self, node_id, relation_type): Walks adjacent outgoing edges from node_id.; def get_workspace_memories(self, workspace_slug): Retrieves memories strictly scoped to a workspace after guard validation."
+  },
+  {
+    "path": "core/persona_loader.py",
+    "repo": "Repo_B",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:78",
+    "summary": "class PersonaLoader: Loads all JSON knowledge cards representing the user's thinking patterns,; def __init__(self, cards_dir):; def reload(self): Scans the understanding_master directory and reloads all JSON cards.; def get_card(self, card_id): Retrieve a specific card by its ID or stem.; def get_cards_by_category(self, category): Retrieve all cards belonging to a specific category.; def get_all_rules(self): Retrieve all session rules enforced by the user."
+  },
+  {
+    "path": "core/run_master_agent.py",
+    "repo": "Repo_B",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:289",
+    "summary": "def main():"
+  },
+  {
+    "path": "core/self_healing_advisor.py",
+    "repo": "Repo_B",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:57",
+    "summary": "class SelfHealingAdvisor: Translates observed agent errors or UI anomalies into prescriptive,; def __init__(self, loader):; def diagnose_error(self, error_text, context): Diagnoses a failure and returns actionable advice in the user's voice."
+  },
+  {
+    "path": "core/sophron_write_guard.py",
+    "repo": "Repo_B",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:444",
+    "summary": "class LockTimeoutError:; class SophronWriteGuard: Concurrency-safe write manager for Sophron.; def __init__(self, session_uuid, workspace, task_summary):; def _acquire_lock(self, timeout): Acquire the Sophron-wide write lock.; def _write_lock(self):; def _release_lock(self):"
+  },
+  {
+    "path": "core/sync_brain.py",
+    "repo": "Repo_B",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:40",
+    "summary": "def log(msg):; def run_cmd(cmd_list, cwd):; def sync():"
+  },
+  {
+    "path": "core/transcript_learner.py",
+    "repo": "Repo_B",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:101",
+    "summary": "class TranscriptLearner: Parses conversation transcripts to extract behavioral insights about the user; def __init__(self, transcript_path, insights_dir):; def extract_user_turns(self, path): Extracts all user input events from transcript.jsonl.; def analyze_patterns(self, user_turns): Analyzes user turns to extract behavioral and instructional trends.; def persist_learning_session(self, session_id, analysis): Saves a structured learning session card into learned_insights/."
+  },
+  {
+    "path": "core/workspace_guard.py",
+    "repo": "Repo_B",
+    "tier": "core_engine",
+    "domain": "agent_structure",
+    "lines": "1:59",
+    "summary": "class CrossWorkspaceContaminationError: Raised when an agent attempts to apply a workspace-specific memory to an unrelated workspace.; class WorkspaceGuard: Enforces strict two-tier memory isolation:; def __init__(self, current_workspace_uri):; def filter_memory_access(self, memory_item, target_workspace_id): Determines whether the current session is authorized to read this memory."
+  },
+  {
+    "path": "tests/test_master_agent_suite.py",
+    "repo": "Repo_B",
+    "tier": "sophron_meta",
+    "domain": "personal_intelligence",
+    "lines": "1:243",
+    "summary": "class TestMasterPersonaAgent:; def setUpClass(cls):; def record_test(self, name, passed, notes):; def test_01_persona_loader_card_counts(self): Verify that PersonaLoader loads all categories and cards.; def test_02_transcript_learning_engine(self): Verify TranscriptLearner parses live session transcript.; def test_03_decision_emulator_rejections(self): Verify DecisionEmulator catches and rejects rule violations."
+  }
+]
