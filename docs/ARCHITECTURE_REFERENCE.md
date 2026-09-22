@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: ARCHITECTURE REFERENCE
 
-> **Document Version:** 5.2 — Batch Architecture v2.0, Dual-Channel IPC, Structured SEO Slug Standard & 60% Qualification Bar  
-> **Last Updated:** 2026-09-21  
+> **Document Version:** 5.3 — Multi-Key Round-Robin Gemini Rotation, SmartRateManager, Gemini Inline Batch Engine  
+> **Last Updated:** 2026-09-23  
 > **Purpose:** Comprehensive technical reference for the complete pipeline — how every module works, data flows, inter-process communication, DOM interaction patterns, multi-bullet regex isolation, two-tier early highlights gating, card-level experience band gating (Guardrail C24), and the chatbot reverse-engineering protocol. Upload this alongside `WORKSPACE_RULES.md` to ground the AI's understanding of the system before any coding session.
 
 ---
@@ -131,7 +131,21 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
 
 **Classes:**
 - `MatchResult(tuple)` — Hybrid result supporting tuple unpacking (`score, reasoning, matching, missing = result`), attribute access (`result.score`), and dict-style lookups (`result['score']`, `result.get('score', 0)`).
-- `AIClient` — Gemini Flash + Antigravity 2.0 File-Based IPC dual-brain with portal match score calibration.
+- `AIClient` — Gemini Flash + Antigravity 2.0 File-Based IPC dual-brain with portal match score calibration. Multi-key round-robin rotation with automatic fallback across 7 API keys.
+
+**Multi-Key Round-Robin Architecture (v2.0):**
+- `gemini_credentials.json` stores an array of API keys: `{"api_keys": ["key1", "key2", ...], "model": "...", "fallback_models": [...], "engine_enabled": true}`.
+- At init, `AIClient.__init__` instantiates a `list` of `genai.Client` objects (`self._gemini_clients`), one per key.
+- `self.gemini_client` is a `@property` (NOT a static attribute) — it returns `self._gemini_clients[self._current_client_idx]`. **Never assign to `self.gemini_client` directly — it has no setter.**
+- `self._rotate_gemini_client()` is called inside the retry loop of `_call_gemini_with_fallback()`. Every failed or completed attempt cycles to the next key, distributing quota across all 7 accounts.
+- Context is stateless and passed in the payload — rotation does not break conversation state.
+- `SmartRateManager` (see `core/ai_rate_manager.py`) enforces a global 3.5s minimum delay between ALL API calls, and bans individual models for 120s upon receiving a 429 or 503.
+
+**Gemini Inline Batch Engine (Priority 0.5):**
+- When `gemini_credentials.json` has `engine_enabled: true` AND a valid `api_keys` list, batch job evaluation is intercepted BEFORE the AG Brain IPC channel.
+- `_gemini_batch_evaluate_inline()` processes up to 40 cards per chunk (leveraging Gemini's 1M+ token context), calling `_call_gemini_with_fallback()` and rotating keys per chunk.
+- Returns `[{id, decision, reason}]` list, bypassing `batch_question.json` / `batch_answer.json` file IPC entirely.
+- Priority chain for batch evaluation: `Colab GPU Engine (engine_enabled=true)` → `Gemini Inline Engine` → `AG Brain File-Based IPC (batch_question.json)`.
 
 **Key Methods:**
 | Method | Purpose | Fallback Chain |
@@ -148,8 +162,13 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
 | `_best_option_match(...)` | Maps freeform answer to UI choices | Exact → word-boundary (`\b`) → numeric → boolean → `None` (H1/H2 compliant) |
 | `_persist_learned_truth(...)` | Caches verified answers to config | Atomic via `ProfileContext.save_config()` (`.tmp` + `os.replace`) |
 | `_fallback_antigravity_ipc(...)` | AG 2.0 Handshake Hook | Writes `pending_question.json` and polls until AG 2.0 fills the `"answer"` key |
+| `_gemini_batch_evaluate_inline(...)` | Gemini Inline Batch Engine | Chunks cards (40/batch), calls `_call_gemini_with_fallback()`, rotates keys; bypasses IPC entirely |
+| `_call_gemini_with_fallback(...)` | Core Gemini API call with multi-key rotation | Tries `self.gemini_client` → rotates to next key on 429/error → falls back to IPC |
+| `_rotate_gemini_client()` | Advances round-robin key index | Cycles `self._current_client_idx` through `self._gemini_clients` list |
 
 **Critical Design Decisions:**
+- **Multi-Key Round-Robin:** `gemini_credentials.json` holds an `api_keys` array. `AIClient` builds one `genai.Client` per key. `self.gemini_client` is a `@property` returning the current key's client. `_rotate_gemini_client()` increments the index each retry. Result: free-tier quota multiplied ×N across N accounts.
+- **SmartRateManager Pacing:** Global 3.5s floor between API calls prevents chatbot form-field overflow caused by rapid-fire Naukri chatbot questions. Models banned 120s on 429/503 before being retried.
 - **Naukri Native Match Score Calibration (Stage 2 Component D):** When `naukri_match_score` (scraped from `div.styles_JDC__match-score__VnjLL`) is provided:
   - If `Keyskills == True` AND `Work Experience == True`: Grants a **+10% verified confidence bonus** to Stage 2 precision score.
   - If `Keyskills == True` (only): Grants a **+5% verified confidence bonus**.
@@ -172,6 +191,18 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
 - **Character Limits:** Automatically trims free-text IPC answers to 250 characters to prevent form-field overflow.
 
 ---
+
+### 3.1c `ai_rate_manager.py` — Global Stateful Rate Manager (NEW — v2.0)
+
+**Purpose:** Centralized, globally-instantiated pacing and health-tracking service for all Gemini API interactions.
+
+**Key Behaviors:**
+- **Global Floor Pacing:** Enforces a **3.5s minimum delay** between ANY consecutive Gemini API calls. This prevents the Naukri chatbot interaction loop from firing questions too rapidly, which was causing form submission race conditions.
+- **Model Health Tracking:** Maintains a per-model ban registry. When a model returns a `429 (Too Many Requests)` or `503 (Service Unavailable)`, `SmartRateManager` bans that model for **120 seconds** before allowing it to be retried.
+- **Integration:** Instantiated as a module-level singleton in `ai_client.py`. All API call paths (`_call_gemini_with_fallback()`, `answer_screening_question()`) call `rate_manager.wait_if_needed(model_name)` before dispatching and `rate_manager.record_result(model_name, success=False)` on failure.
+
+---
+
 
 ### 3.1b `02_profile_sync_naukri.py` — Surgical Selective Profile Sync Engine
 

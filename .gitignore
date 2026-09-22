@@ -58,6 +58,7 @@ scratch/
 .gemini/
 logs_dump.txt
 anshika_garg/
+colab_credentials.json
 
 # 6. OS Generated Files
 .DS_Store
@@ -76,3 +77,6 @@ scan_root.json
 scan_sophron.json
 *.zip
 
+# 8. API Credentials & Secrets — NEVER commit these
+gemini_credentials.json
+colab_logic.txt

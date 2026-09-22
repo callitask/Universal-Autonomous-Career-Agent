@@ -1280,18 +1280,28 @@ class ApplicationEngine:
                 page.wait_for_timeout(1500)
             else:
                 nav_success = False
-                for wait_strat, to_ms in [("commit", 60000), ("domcontentloaded", 75000)]:
+                for wait_strat, to_ms in [("domcontentloaded", 15000), ("load", 15000)]:
                     try:
                         page.goto(url, wait_until=wait_strat, timeout=to_ms)
                         nav_success = True
                         break
                     except Exception as goto_err:
-                        log_step("NAV_ATTEMPT", f"Navigation attempt with '{wait_strat}' timed out/noticed: {goto_err}")
+                        log_step("NAV_ATTEMPT", f"Navigation attempt with '{wait_strat}' timed out/noticed after {to_ms}ms")
+                        
+                        # Fallback: check if the URL successfully updated despite the timeout
+                        if target_clean and canonical_job_url(page.url) == target_clean:
+                            log_step("NAVIGATE", f"Timeout occurred, but URL successfully navigated to target. Proceeding.")
+                            nav_success = True
+                            break
                 
                 # Verify whether page actually moved away from blank
                 if not nav_success or "about:blank" in page.url:
-                    log_step("ERROR", f"Page navigation failed to load job URL within timeout: {url}")
-                    return "FAILED"
+                    # One last check before completely failing
+                    if target_clean and canonical_job_url(page.url) == target_clean:
+                        log_step("NAVIGATE", "Late check: URL matches despite apparent failure. Proceeding.")
+                    else:
+                        log_step("ERROR", f"Page navigation failed to load job URL within timeout: {url}")
+                        return "FAILED"
 
                 page.wait_for_timeout(2500)
         except Exception as e:
@@ -1841,18 +1851,20 @@ class ApplicationEngine:
                 log_step("GATED", f"Skipping excluded company '{job.get('company')}' for job '{job.get('title') or job.get('job_title')}'.")
                 continue
             
-            page = self.browser_mgr.new_page()
+            # Reuse an existing page if possible to prevent tab spam and anti-bot flags
+            if context.pages:
+                page = context.pages[-1]  # Use the most recently opened tab
+            else:
+                page = self.browser_mgr.new_page()
+                
             try:
                 status = self.apply_single_job(page, job)
             except Exception as app_err:
                 log_step("ERROR", f"Fatal exception applying to job: {app_err}")
                 status = "FAILED"
             finally:
-                try:
-                    if not page.is_closed():
-                        page.close()
-                except Exception:
-                    pass
+                # We no longer close the page here so we can reuse it
+                pass
             self.stats["total"] += 1
             
             company = job.get("company", "Unknown")

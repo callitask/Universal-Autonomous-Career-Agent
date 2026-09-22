@@ -119,3 +119,22 @@ all semantic job fit evaluations. Keyword lists in config are advisory context f
 - **Context:** Core engine files (04_job_discovery and 05_apply_jobs) were failing prematurely with 12s/15s timeouts on heavy SPA boards and ATS platforms due to bot-detection interstitials or API load latency.
 - **Fix:** Increased Playwright `timeout` kwargs to 60s/75s across discovery and application layers.
 - **Preventative:** Do not lower these timeout values unless structural headless proxy optimizations are implemented.
+
+## [2026-09-22] FALSE POSITIVE MATCH ON INFRASTRUCTURE PATCHING ARCHITECT
+- **File**: `core/ai_client.py` → `evaluate_job_match()`
+- **What happened**: Agent deep-scanned and applied to "Enterprise Patching Governance Advisor/Architect" at World Wide Technology for a Lead Java Backend Architect candidate. Root cause: The heuristic mathematical scorer awarded 71 points (title points for "Architect" + 35 work-capability points because Udaysagar's resume has IT Governance). The fallback IPC timed out after 25s, so the heuristic score was accepted, and negative_keywords lacked specific IT infrastructure patching terms.
+- **Correct behavior**: (1) Never approve or fall back to high heuristic scores on pure infrastructure/patching/ITSM roles for software engineering profiles. (2) Immediately populate `candidate_config.json["target_jobs"]["negative_keywords"]` with `Patching`, `Patch Management`, `Vulnerability Management`, `ITSM`, `IT Infrastructure Management`.
+- **Never repeat**: Never let non-software engineering architect roles (Patching, Infrastructure, ServiceNow, ERP) pass into deep scan or apply. Ensure both batch triage and negative keywords strictly exclude IT Operations and Patching.
+
+---
+
+## [2026-09-23] GEMINI_CLIENT PROPERTY SETTER CONFUSION DURING ROUND-ROBIN REFACTOR
+- **File**: `core/ai_client.py` → `AIClient.__init__` and `_rotate_gemini_client()`
+- **What happened**: When implementing multi-key round-robin, `self.gemini_client` was converted to a `@property`. The old `self.gemini_client = None` static assignment at the bottom of `__init__` caused an `AttributeError: can't set attribute`. Then, when re-adding the Colab init block to fix `AttributeError: 'AIClient' object has no attribute 'colab_client'`, the entire Colab initialization block was accidentally placed INSIDE `_rotate_gemini_client()` instead of `__init__`. This silently broke colab credential loading.
+- **Correct behavior**: `self.gemini_client` MUST be a `@property` with no setter. NEVER assign `self.gemini_client = ...` anywhere — use `self._gemini_clients` and `self._current_client_idx` directly. All startup initialization code (`self.colab_client = None`, credential loading) belongs in `__init__`, NOT in `_rotate_gemini_client()`.
+- **Never repeat**: After any refactor of `AIClient`, verify with `git diff` that no init-time code was displaced into a method. The `@property` decorator on `gemini_client` is permanent and must never be converted back to a static attribute.
+
+## [2026-09-23] PROFILE CONFIG EDITED VIA THROWAWAY PYTHON SCRIPT INSTEAD OF DIRECTLY
+- **What happened**: To update `candidate_config.json` role titles, AI wrote a `scripts/update_roles.py` file and ran it. User correctly called this out: the config JSON should be edited directly, not through a hardcoded script.
+- **Correct behavior**: `candidate_config.json` is a data file. Edit it directly using `replace_file_content` or the `view_file` → Python `json.load/dump` one-liner pattern. Never create a named script just to mutate a config value.
+- **Never repeat**: Config JSON files (`candidate_config.json`, `gemini_credentials.json`, etc.) are directly editable data files. Never create intermediary Python scripts to update them unless the user explicitly requests a migration utility.

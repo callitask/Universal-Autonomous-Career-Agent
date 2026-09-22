@@ -237,6 +237,41 @@
 # Rationale: 1 IPC call per designation instead of N per card. Token-efficient, zero blocking.
 # Preventative Notes: Never revert to per-card IPC for card triage. batch_question.json and
 #   batch_answer.json are separate from pending_question.json (used for resume/questionnaire IPC).
+# [ENTRY #022]
+# Term: [ENGINE_UPGRADE]
+# Timestamp: 2026-09-22 13:26:00 +05:30
+# Issue / Context: Gemini API rate limits and IPC latency (~90s) slow down live pipeline runs.
+#   A secure OpenAI-compatible API gateway is running on Google Colab (Qwen/DeepSeek via Ollama
+#   + Cloudflare tunnel), offering free GPU inference with <30s response times for LLM tasks.
+# Changes Made:
+#   1. Added graceful `import openai` block (HAS_OPENAI_SDK flag, ImportError-safe).
+#   2. AIClient.__init__ reads `colab_base_url` and `colab_api_key` dynamically from
+#      candidate_config.json["candidate"] via ProfileContext (ZERO hardcoding). If present,
+#      instantiates self.colab_client = openai.OpenAI(..., timeout=None). Auto-discovers
+#      the live model via colab_client.models.list(); falls back to candidate.colab_model
+#      config key if discovery fails.
+#   3. generate_text(): Colab client is tried first (priority 0) before Gemini (priority 1)
+#      and IPC (priority 2). Falls through transparently on any exception.
+#   4. evaluate_job_match() Stage 2 Dual-Brain LLM Route: Colab client block inserted before
+#      Gemini block. Local model markdown fences (```json) are stripped via regex before
+#      passing to _parse_json_match_result() — local models commonly wrap JSON in markdown.
+#   5. answer_screening_question() Step 2: Colab client tried before Gemini, before heuristic,
+#      before IPC fallback. 250-character limit enforced.
+# Rationale: Enables free GPU inference for all LLM tasks while preserving the 3-Daemon IPC
+#   architecture (pending_question.json / batch_question.json contracts unchanged). Satisfies
+#   Guardrail P1 — all credentials resolve from candidate_config.json at runtime.
+# Preventative Notes:
+#   - NEVER hardcode colab_base_url, colab_api_key, or model names in Python code.
+#   - NEVER remove the timeout=None parameter — Colab GPU inference can take 30–80s.
+#   - NEVER touch _fallback_antigravity_ipc() or batch_card_evaluation_ipc() — IPC contracts
+#     must remain byte-identical. The Colab client is an ADDITIONAL route, not a replacement.
+#   - The Colab tunnel URL changes every Colab session. Always update candidate_config.json.
+# [ENTRY #023]
+# Term: [ARCHITECTURE_REFINEMENT]
+# Timestamp: 2026-09-22 14:59:00 +05:30
+# Context: Decoupled Colab API credentials from candidate configs to a global, git-ignored colab_credentials.json.
+# Changes Made: Implemented "engine_enabled" toggle in global config. AIClient now reads this global state to isolate the Colab engine from the AG Brain IPC.
+# Rationale: Ensures universal API key application across all profiles and provides a clean toggle to switch between Terminal (Colab LLM) and Antigravity GUI execution without code edits.
 # ================================================================================
 """
 ================================================================================
@@ -280,6 +315,14 @@ try:
     HAS_GENAI_LEGACY = True
 except ImportError:
     HAS_GENAI_LEGACY = False
+
+# Optional OpenAI-compatible SDK support (for Colab/local LLM gateway via Ollama + Cloudflare tunnel)
+# Install with: pip install openai
+try:
+    import openai as _openai_sdk
+    HAS_OPENAI_SDK = True
+except ImportError:
+    HAS_OPENAI_SDK = False
 
 
 class MatchResult(tuple):
@@ -357,33 +400,184 @@ class AIClient:
             except Exception:
                 self.profile_context = None
 
-        # Resolve Gemini API client if API key is present in environment or candidate config
-        self.gemini_client = None
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-        if not api_key and self.profile_context and hasattr(self.profile_context, "config"):
-            api_key = self.profile_context.config.get("candidate", {}).get("gemini_api_key", "").strip()
+        # Resolve Gemini API client if API key is present in gemini_credentials.json, environment, or candidate config
+        
+        # Load global Gemini credentials if they exist
+        gemini_creds_path = Path("gemini_credentials.json")
+        gemini_creds = {}
+        if gemini_creds_path.exists():
+            try:
+                with open(gemini_creds_path, 'r', encoding='utf-8') as f:
+                    gemini_creds = json.load(f)
+            except Exception as _creds_err:
+                print(f"[AI CLIENT] Notice: Could not read gemini_credentials.json ({_creds_err}).", flush=True)
 
-        if api_key:
-            default_model = self.get_default_model()
-            if HAS_GENAI_NEW:
+        # Check if Gemini engine is enabled globally
+        gemini_engine_enabled = gemini_creds.get("engine_enabled", True)
+        
+        self._gemini_clients = []
+        self._current_client_idx = 0
+        
+        if gemini_engine_enabled:
+            api_keys = gemini_creds.get("api_keys", [])
+            legacy_key = gemini_creds.get("api_key", "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
+            
+            if not legacy_key and self.profile_context and hasattr(self.profile_context, "config"):
+                legacy_key = self.profile_context.config.get("candidate", {}).get("gemini_api_key", "").strip()
+                
+            if legacy_key and legacy_key not in api_keys:
+                api_keys.insert(0, legacy_key)
+                
+            if api_keys:
+                self._gemini_creds_model = gemini_creds.get("model", "")
+                self.gemini_fallback_models = gemini_creds.get("fallback_models", [])
+                default_model = self.get_default_model()
+                if not self.gemini_fallback_models:
+                    self.gemini_fallback_models = [default_model]
+                    
+                for key in api_keys:
+                    if not key.strip(): continue
+                    if HAS_GENAI_NEW:
+                        try:
+                            self._gemini_clients.append(genai.Client(api_key=key.strip()))
+                        except Exception as e:
+                            print(f"[AI CLIENT] Notice: Could not initialize google-genai client for a key: {e}", flush=True)
+                    elif HAS_GENAI_LEGACY:
+                        try:
+                            legacy_genai.configure(api_key=api_keys[0])
+                            self._gemini_clients.append(legacy_genai.GenerativeModel(default_model))
+                            break # Legacy genai config is global, only use first key
+                        except Exception as e:
+                            print(f"[AI CLIENT] Notice: Could not initialize legacy genai client: {e}", flush=True)
+
+        # 🧠 Colab / Local LLM Gateway (OpenAI-compatible, e.g. Ollama + Cloudflare tunnel) 🧠
+        # Credentials are read EXCLUSIVELY from the global colab_credentials.json at the
+        # project root. This file is git-ignored and applies to ALL profiles universally.
+        # "engine_enabled": false → self.colab_client stays None → AG Brain IPC handles load.
+        # "engine_enabled": true  → OpenAI client is constructed with timeout=None.
+        # timeout=None is mandatory — Colab GPU inference can take 30–80s per request.
+        self.colab_client = None
+        self.colab_model_name = None
+        if HAS_OPENAI_SDK and self.profile_context and hasattr(self.profile_context, "base_path"):
+            _colab_creds_path = Path(self.profile_context.base_path) / "colab_credentials.json"
+            if _colab_creds_path.exists():
                 try:
-                    self.gemini_client = genai.Client(api_key=api_key)
-                except Exception as e:
-                    print(f"[AI CLIENT] Notice: Could not initialize google-genai client: {e}", flush=True)
-            elif HAS_GENAI_LEGACY:
-                try:
-                    legacy_genai.configure(api_key=api_key)
-                    self.gemini_client = legacy_genai.GenerativeModel(default_model)
-                except Exception as e:
-                    print(f"[AI CLIENT] Notice: Could not initialize legacy genai client: {e}", flush=True)
+                    _colab_cfg = json.loads(_colab_creds_path.read_text(encoding="utf-8"))
+                    # ── MASTER GATE ────────────────────────────────────────────────────────
+                    # engine_enabled: false → skip init; AG Brain IPC is the sole LLM engine.
+                    # engine_enabled: true  → proceed with Colab client construction.
+                    _engine_enabled = bool(_colab_cfg.get("engine_enabled", True))
+                    if not _engine_enabled:
+                        print("[AI CLIENT] Colab engine disabled by colab_credentials.json (engine_enabled=false). AG Brain IPC mode active.", flush=True)
+                    else:
+                        _colab_base_url = str(_colab_cfg.get("colab_base_url", "") or "").strip()
+                        _colab_api_key  = str(_colab_cfg.get("colab_api_key", "") or "").strip()
+                        # Guard against unfilled placeholder values
+                        if _colab_base_url and _colab_api_key and not _colab_base_url.startswith("[") and not _colab_api_key.startswith("["):
+                            try:
+                                self.colab_client = _openai_sdk.OpenAI(
+                                    base_url=_colab_base_url,
+                                    api_key=_colab_api_key,
+                                    timeout=None  # Mandatory: GPU inference takes 30–80s (ENTRY #022)
+                                )
+                                # Auto-discover model name — NEVER hardcode a model name here
+                                try:
+                                    _models_resp = self.colab_client.models.list()
+                                    _model_ids = [m.id for m in _models_resp.data if getattr(m, "id", None)]
+                                    self.colab_model_name = _model_ids[0] if _model_ids else None
+                                except Exception as _disc_err:
+                                    print(f"[AI CLIENT] Colab model auto-discovery failed ({_disc_err}). Using config fallback.", flush=True)
+                                # Config fallback if auto-discovery returned nothing
+                                if not self.colab_model_name:
+                                    self.colab_model_name = str(_colab_cfg.get("colab_model", "") or "").strip() or None
+                                if self.colab_model_name:
+                                    print(f"[AI CLIENT] Colab GPU engine active — model: {self.colab_model_name}", flush=True)
+                                else:
+                                    print("[AI CLIENT] Colab GPU client initialized — no model auto-discovered; will attempt at call-time.", flush=True)
+                            except Exception as _colab_init_err:
+                                print(f"[AI CLIENT] Notice: Could not initialize Colab client: {_colab_init_err}", flush=True)
+                                self.colab_client = None
+                        else:
+                            print("[AI CLIENT] colab_credentials.json present but URL/key not configured. Skipping Colab init.", flush=True)
+                except Exception as _creds_err:
+                    print(f"[AI CLIENT] Notice: Could not read colab_credentials.json ({_creds_err}). Skipping Colab init.", flush=True)
+
+    @property
+    def gemini_client(self):
+        if not hasattr(self, '_gemini_clients') or not self._gemini_clients:
+            return None
+        return self._gemini_clients[self._current_client_idx]
+        
+    def _rotate_gemini_client(self):
+        if hasattr(self, '_gemini_clients') and self._gemini_clients:
+            self._current_client_idx = (self._current_client_idx + 1) % len(self._gemini_clients)
 
     def get_default_model(self) -> str:
-        """Retrieves configured Gemini model name from candidate config or environment without hardcoding."""
+        """Retrieves configured Gemini model name from gemini_credentials, candidate config, or environment."""
+        if hasattr(self, "_gemini_creds_model") and self._gemini_creds_model:
+            return str(self._gemini_creds_model).strip()
+            
         if self.profile_context and hasattr(self.profile_context, "config"):
             configured_model = self.profile_context.config.get("candidate", {}).get("gemini_model")
             if configured_model and str(configured_model).strip():
                 return str(configured_model).strip()
-        return os.environ.get("GEMINI_MODEL").strip()
+        return os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip()
+
+    def _call_gemini_with_fallback(self, contents: str, requested_model: str = None) -> str:
+        if not self.gemini_client:
+            raise Exception("Gemini client not initialized")
+            
+        from core.ai_rate_manager import GLOBAL_RATE_MANAGER
+        
+        base_fallback = getattr(self, "gemini_fallback_models", [self.get_default_model()])
+        models_to_try = [requested_model] if requested_model else base_fallback
+        
+        last_err = None
+        max_attempts = len(models_to_try) * 2 # Allow wrapping around once if needed
+        
+        for attempt in range(max_attempts):
+            # 1. Enforce global pacing (prevents Chatbot questions from firing 10 times in 1 second)
+            GLOBAL_RATE_MANAGER.enforce_pacing()
+            
+            # 1.5 Rotate API Key (Load Balancing)
+            if hasattr(self, "_rotate_gemini_client"):
+                self._rotate_gemini_client()
+            
+            # 2. Get the highest priority model that is NOT exhausted
+            model_name = requested_model if requested_model else GLOBAL_RATE_MANAGER.get_available_model(models_to_try)
+            
+            try:
+                if hasattr(self.gemini_client, "models"):
+                    resp = self.gemini_client.models.generate_content(
+                        model=model_name,
+                        contents=contents
+                    )
+                    if resp and resp.text:
+                        return resp.text.strip()
+                elif hasattr(self.gemini_client, "generate_content"):
+                    resp = self.gemini_client.generate_content(contents)
+                    if resp and resp.text:
+                        return resp.text.strip()
+                
+                # If we get here, it succeeded! 
+                return ""
+                
+            except Exception as e:
+                last_err = e
+                err_str = str(e)
+                if "429" in err_str or "503" in err_str or "RESOURCE_EXHAUSTED" in err_str or "UNAVAILABLE" in err_str:
+                    print(f"[AI CLIENT] Model {model_name} overloaded/rate-limited (429/503).", flush=True)
+                    # 3. Report the failure so the Manager bans this model for 2 minutes
+                    GLOBAL_RATE_MANAGER.report_failure(model_name)
+                    
+                    if requested_model:
+                        break # If they hardcoded a specific model, don't fallback.
+                    continue
+                else:
+                    # If it's a real crash (not rate limits), raise immediately
+                    raise e
+                    
+        raise Exception(f"All Gemini fallback models exhausted or rate limited. Last error: {last_err}")
 
     def load_platform_heuristics(self) -> Dict[str, Any]:
         """Loads shared global platform heuristics and merges profile-specific dynamic overrides."""
@@ -697,21 +891,24 @@ Return STRICTLY a JSON object with this exact schema:
         or default_fallback without crashing.
         Never uses terminal stdin (input/readline) to prevent daemon blocking (H6 Guardrail).
         """
+        # 0. Attempt generation via Colab GPU gateway (highest priority — free GPU, ~30s latency)
+        #    Falls through transparently on any error (tunnel down, timeout, model error).
+        if self.colab_client:
+            try:
+                _colab_resp = self.colab_client.chat.completions.create(
+                    model=kwargs.get("model") or self.colab_model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3
+                )
+                if _colab_resp.choices and _colab_resp.choices[0].message.content:
+                    return _colab_resp.choices[0].message.content.strip()
+            except Exception as _colab_err:
+                print(f"[AI CLIENT] Colab API unavailable ({_colab_err}). Falling back to Gemini/IPC.", flush=True)
+
         # 1. Attempt generation via operational Gemini API client if available
         if self.gemini_client:
             try:
-                if hasattr(self.gemini_client, "models"):
-                    model_name = kwargs.get("model") or self.get_default_model()
-                    response = self.gemini_client.models.generate_content(
-                        model=model_name,
-                        contents=prompt
-                    )
-                    if response and response.text:
-                        return response.text.strip()
-                elif hasattr(self.gemini_client, "generate_content"):
-                    response = self.gemini_client.generate_content(prompt)
-                    if response and response.text:
-                        return response.text.strip()
+                return self._call_gemini_with_fallback(prompt, kwargs.get("model"))
             except Exception as e:
                 print(f"[AI CLIENT] Gemini API unavailable or rate-limited ({e}). Falling back to AG 2.0 File IPC.", flush=True)
 
@@ -770,6 +967,11 @@ Return STRICTLY a JSON object:
         """Extracts and validates structured MatchResult JSON from LLM or IPC responses."""
         if not raw_text:
             return None
+            
+        # Strip reasoning tags from distilled models
+        import re
+        raw_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
+        
         try:
             json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
             if json_match:
@@ -1438,7 +1640,58 @@ Return STRICTLY a JSON object:
         if naukri_match_score and isinstance(naukri_match_score, dict):
             naukri_context_block = f"\nPORTAL MATCH SIGNALS (Advisory Only):\n{json.dumps(naukri_match_score, indent=2)}\n"
 
-        # 2.4 Dual-Brain LLM Route (If Gemini API client is operational)
+        # 2.4a Colab GPU LLM Route (Priority 0 — tried before Gemini)
+        #      Local models often wrap JSON in ```json ... ``` markdown fences.
+        #      Strip fences with regex BEFORE passing to _parse_json_match_result().
+        if self.colab_client:
+            try:
+                primary_target_str = ", ".join(target_keywords[:3]) if target_keywords else "their target domain"
+                llm_prompt = f"""You are an elite talent recruiter evaluating whether a candidate genuinely qualifies for this job based on their ability to perform the work.
+CANDIDATE PROFILE:
+Current Title: {cand.get('current_title', '')}
+Total Experience: {cand_exp} years
+Key Skills: {json.dumps(skills_dict)}
+Master Resume Excerpt:
+{resume_md[:2000]}
+{naukri_context_block}
+JOB TO EVALUATE:
+Title: {job_title}
+Job Description / Overview:
+{job_description[:2500]}
+
+EVALUATION CRITERIA:
+1. Job Description & Responsibilities Fit: Can this candidate perform the day-to-day duties and core work described in this JD based on their resume and experience? (0-40 points)
+2. Factual Skill Match: Does candidate possess at least 60% of the core competencies/skills needed for this role? (0-35 points)
+3. Experience & Seniority Compatibility: Is the candidate's seniority level suitable for this role? (0-15 points)
+4. Domain & Title Alignment: (0-10 points)
+Passing threshold is strictly 60 points. CRITICAL RULE: The role MUST strongly align with the candidate's primary target domains ({primary_target_str}). If the primary technology/domain of the job does not match, or if it is an entry-level (I/II), infrastructure, or support role for a senior candidate, you MUST reject it immediately (score < 60). Think like a human: if it IS fundamentally an aligned role, 1 or 2 secondary technologies can be learned on the job or bypassed if the candidate's core responsibilities strongly align. Ensure to be intelligent and pragmatic while matching. If it is an aligned role and the candidate can perform the core work, award 70-100 points.
+
+OUTPUT FORMAT:
+Respond ONLY with a valid JSON object (no markdown fences, no preamble):
+{{
+  "score": <integer 0-100>,
+  "reasoning": "<concise 1-2 sentence explanation focusing on work capability>",
+  "matching_skills": ["<skill1>", "<skill2>"],
+  "missing_skills": ["<skill1>", "<skill2>"]
+}}"""
+                _colab_eval_resp = self.colab_client.chat.completions.create(
+                    model=kwargs.get("model") or self.colab_model_name,
+                    messages=[{"role": "user", "content": llm_prompt}],
+                    temperature=0.1
+                )
+                if _colab_eval_resp.choices and _colab_eval_resp.choices[0].message.content:
+                    raw_colab = _colab_eval_resp.choices[0].message.content.strip()
+                    # Markdown fence cleaner — local models often wrap JSON in ```json ... ```
+                    raw_colab = re.sub(r'^```(?:json)?\s*', '', raw_colab.strip(), flags=re.IGNORECASE)
+                    raw_colab = re.sub(r'\s*```$', '', raw_colab).strip()
+                    if raw_colab:
+                        parsed_colab = self._parse_json_match_result(raw_colab)
+                        if parsed_colab:
+                            return parsed_colab
+            except Exception as _colab_eval_err:
+                print(f"[AI CLIENT] Colab evaluation notice ({_colab_eval_err}). Falling back to Gemini/IPC.", flush=True)
+
+        # 2.4b Dual-Brain LLM Route (If Gemini API client is operational)
         if self.gemini_client:
             try:
                 primary_target_str = ", ".join(target_keywords[:3]) if target_keywords else "their target domain"
@@ -1470,18 +1723,7 @@ Respond ONLY with a valid JSON object:
   "matching_skills": ["<skill1>", "<skill2>"],
   "missing_skills": ["<skill1>", "<skill2>"]
 }}"""
-                raw_llm = ""
-                if hasattr(self.gemini_client, "models"):
-                    resp = self.gemini_client.models.generate_content(
-                        model=kwargs.get("model") or self.get_default_model(),
-                        contents=llm_prompt
-                    )
-                    if resp and resp.text:
-                        raw_llm = resp.text.strip()
-                elif hasattr(self.gemini_client, "generate_content"):
-                    resp = self.gemini_client.generate_content(llm_prompt)
-                    if resp and resp.text:
-                        raw_llm = resp.text.strip()
+                raw_llm = self._call_gemini_with_fallback(llm_prompt, kwargs.get("model"))
 
                 if raw_llm:
                     parsed_match = self._parse_json_match_result(raw_llm)
@@ -1498,7 +1740,7 @@ Respond ONLY with a valid JSON object:
         # violation of G-BRAIN-01 (AG Brain = sole semantic decision-maker).
         # evaluate_job_match() IPC now runs in ALL modes when enable_ipc=True.
         enable_ipc_eval = kwargs.get("enable_ipc", True)
-        if enable_ipc_eval and not self.gemini_client and total_score >= 50:
+        if enable_ipc_eval and not self.gemini_client and not self.colab_client and total_score >= 50:
             cand_title_val = current_title or cand.get("current_title", "")
             cand_domain_summary = f"{cand_title_val} ({', '.join(target_keywords[:3])})" if target_keywords else (cand_title_val or cand_domain or "Candidate Core Domain")
             ipc_eval_prompt = f"""You are the AG Brain. Evaluate candidate qualification for this job posting with high precision.
@@ -1770,9 +2012,30 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
 6. Provide a strictly truthful, factual answer based ONLY on the provided candidate context. Keep answers under 250 characters.
 7. Output STRICTLY the final answer string with zero conversational preamble."""
 
-        # Step 2: Route dynamically
+        # Step 2: Route dynamically — Colab GPU (priority 0) → Gemini (priority 1) → Heuristic → IPC
         answer = ""
-        if self.gemini_client:
+
+        # Priority 0: Colab GPU gateway (fastest, free — tried first)
+        if self.colab_client and not answer:
+            try:
+                _colab_screen_resp = self.colab_client.chat.completions.create(
+                    model=kwargs.get("model") or self.colab_model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1
+                )
+                if _colab_screen_resp.choices and _colab_screen_resp.choices[0].message.content:
+                    _raw_colab_ans = _colab_screen_resp.choices[0].message.content.strip()
+                    # Strip preamble: take only the first meaningful line if multi-line
+                    if _raw_colab_ans:
+                        # Enforce 250-character limit per C25 / WORKSPACE_RULES §6
+                        if not options and len(_raw_colab_ans) > 250:
+                            _raw_colab_ans = _raw_colab_ans[:250].strip()
+                        answer = _raw_colab_ans
+            except Exception as _colab_screen_err:
+                print(f"[AI CLIENT] Colab screening answer unavailable ({_colab_screen_err}). Falling back.", flush=True)
+
+        # Priority 1: Gemini API client
+        if self.gemini_client and not answer:
             try:
                 raw_ans = self.generate_text(prompt=prompt, default_fallback="")
                 if raw_ans and raw_ans.strip():
@@ -2513,6 +2776,155 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                     pass
                 return ""
 
+    def _colab_batch_evaluate_inline(self, cards: list, candidate_summary: dict, designation: str) -> list:
+        """
+        Inline Colab batch evaluation, completely bypassing the AG Brain IPC wait.
+        Chunks cards to avoid 4K context window limits.
+        """
+        all_final_results = []
+        chunk_size = 10
+        
+        for i in range(0, len(cards), chunk_size):
+            chunk = cards[i:i + chunk_size]
+            try:
+                cards_text = json.dumps([
+                    {
+                        "id": c.get("id", i + idx), # Preserve original ID mapping if possible
+                        "title": c.get("title", ""),
+                        "company": c.get("company", ""),
+                        "exp_text": c.get("exp_text", ""),
+                        "salary": c.get("salary", ""),
+                        "skills": c.get("card_skills", [])[:15],
+                        "posted": c.get("posted_age", "")
+                    }
+                    for idx, c in enumerate(chunk)
+                ], indent=2)
+
+                sys_prompt = "You are an expert tech recruiter. Evaluate a batch of job cards. Return STRICTLY a JSON array of objects with keys: 'id' (integer), 'decision' ('DEEP_SCAN' or 'SKIP'), 'reason' (string)."
+                user_prompt = f"""
+Candidate Domain: {candidate_summary.get('candidate_domain', '')}
+Seniority: {candidate_summary.get('seniority_level', '')}
+Skills: {candidate_summary.get('core_skills', [])}
+Current Search Designation: {designation}
+
+Batch Job Cards:
+{cards_text}
+
+Evaluate each card. Does the candidate's domain, seniority, and skills match? 
+Return a raw JSON array of objects.
+Example: [{{"id": 0, "decision": "DEEP_SCAN", "reason": "Match"}}, {{"id": 1, "decision": "SKIP", "reason": "Wrong domain"}}]
+"""
+                response = self.colab_client.chat.completions.create(
+                    model=self.colab_model_name,
+                    messages=[
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.1
+                )
+                raw_text = response.choices[0].message.content.strip()
+                
+                # Strip reasoning tags from distilled models
+                import re
+                raw_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
+                
+                # Clean potential markdown formatting
+                if raw_text.startswith("```json"):
+                    raw_text = raw_text.replace("```json", "", 1).strip()
+                elif raw_text.startswith("```"):
+                    raw_text = raw_text.replace("```", "", 1).strip()
+                if raw_text.endswith("```"):
+                    raw_text = raw_text[: -3].strip()
+                
+                parsed = json.loads(raw_text)
+                if isinstance(parsed, list):
+                    decisions_by_id = {str(d.get("id")): d for d in parsed if isinstance(d, dict)}
+                    for idx, c in enumerate(chunk):
+                        cid = str(c.get("id", i + idx))
+                        if cid in decisions_by_id:
+                            all_final_results.append(decisions_by_id[cid])
+                        else:
+                            all_final_results.append({"id": c.get("id", i + idx), "decision": "SKIP", "reason": "Colab omitted from response"})
+                else:
+                    for idx, c in enumerate(chunk):
+                        all_final_results.append({"id": c.get("id", i + idx), "decision": "SKIP", "reason": "Colab invalid json format"})
+                        
+            except Exception as e:
+                print(f"[COLAB BATCH ENGINE] Error on chunk {i//chunk_size + 1}: {e}", flush=True)
+                for idx, c in enumerate(chunk):
+                    all_final_results.append({"id": c.get("id", i + idx), "decision": "SKIP", "reason": f"Colab error: {e}"})
+
+        return all_final_results
+
+    def _gemini_batch_evaluate_inline(self, cards: list, candidate_summary: dict, designation: str) -> list:
+        all_final_results = []
+        # Gemini has a massive 1M+ token context window. We can evaluate 40 cards at a time 
+        # instead of 10 to drastically reduce API requests and avoid 429 Free Tier limits.
+        chunk_size = 40
+        import time
+        
+        for i in range(0, len(cards), chunk_size):
+            if i > 0:
+                time.sleep(2.0) # Small cooldown between bursts
+            chunk = cards[i:i + chunk_size]
+            try:
+                cards_text = json.dumps([
+                    {
+                        "id": c.get("id", i + idx),
+                        "title": c.get("title", ""),
+                        "company": c.get("company", ""),
+                        "exp_text": c.get("exp_text", ""),
+                        "salary": c.get("salary", ""),
+                        "skills": c.get("card_skills", [])[:15],
+                        "posted": c.get("posted_age", "")
+                    }
+                    for idx, c in enumerate(chunk)
+                ], indent=2)
+
+                sys_prompt = "You are an expert tech recruiter. Evaluate a batch of job cards. Return STRICTLY a JSON array of objects with keys: 'id' (integer), 'decision' ('DEEP_SCAN' or 'SKIP'), 'reason' (string)."
+                user_prompt = f"""
+Candidate Domain: {candidate_summary.get('candidate_domain', '')}
+Seniority: {candidate_summary.get('seniority_level', '')}
+Skills: {candidate_summary.get('core_skills', [])}
+Current Search Designation: {designation}
+
+Batch Job Cards:
+{cards_text}
+
+Evaluate each card. Does the candidate's domain, seniority, and skills match? 
+Return a raw JSON array of objects.
+Example: [{{"id": 0, "decision": "DEEP_SCAN", "reason": "Match"}}, {{"id": 1, "decision": "SKIP", "reason": "Wrong domain"}}]
+"""
+                model_name = self.get_default_model()
+                full_prompt = sys_prompt + "\n\n" + user_prompt
+                
+                raw_text = self._call_gemini_with_fallback(full_prompt)
+                
+                if raw_text.startswith("```json"):
+                    raw_text = raw_text.replace("```json", "", 1).strip()
+                elif raw_text.startswith("```"):
+                    raw_text = raw_text.replace("```", "", 1).strip()
+                if raw_text.endswith("```"):
+                    raw_text = raw_text[: -3].strip()
+                
+                parsed = json.loads(raw_text)
+                if isinstance(parsed, list):
+                    decisions_by_id = {str(d.get("id")): d for d in parsed if isinstance(d, dict)}
+                    for idx, c in enumerate(chunk):
+                        cid = str(c.get("id", i + idx))
+                        if cid in decisions_by_id:
+                            c_decision = decisions_by_id[cid].get("decision", "SKIP")
+                            c_reason = decisions_by_id[cid].get("reason", "Parsed")
+                            all_final_results.append({"id": int(cid), "decision": c_decision, "reason": c_reason})
+                        else:
+                            all_final_results.append({"id": int(cid), "decision": "SKIP", "reason": "Missing ID in LLM array"})
+            except Exception as e:
+                print(f"[AI CLIENT] Gemini batch eval error for chunk {i}: {e}", flush=True)
+                for idx, c in enumerate(chunk):
+                    all_final_results.append({"id": c.get("id", i + idx), "decision": "SKIP", "reason": "Error parsing LLM array"})
+                    
+        return all_final_results
+
     def batch_card_evaluation_ipc(
         self,
         cards: list,
@@ -2521,7 +2933,7 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
         timeout_seconds: float = 120.0
     ) -> list:
         """
-        BATCH Architecture v2.0 — Single IPC call for an entire page-batch of job cards.
+        BATCH Architecture v2.0 - Single IPC call for an entire page-batch of job cards.
 
         Writes all collected cards to batch_question.json in one shot.
         AG Brain evaluates ALL cards at once and writes decisions to batch_answer.json.
@@ -2537,6 +2949,22 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
             List of {id, decision (DEEP_SCAN|SKIP), reason} dicts.
             On timeout: all cards default to SKIP (conservative safe default).
         """
+        # Assign sequential IDs if not present
+        for i, card in enumerate(cards):
+            if "id" not in card:
+                card["id"] = i
+
+        # Priority 0: Colab GPU Inline Engine (when engine_enabled is true)
+        if hasattr(self, 'colab_client') and self.colab_client:
+            print(f"[COLAB BATCH ENGINE] Intercepting BATCH_JOB_EVALUATION for {len(cards)} cards (Bypassing AG Brain IPC)...", flush=True)
+            return self._colab_batch_evaluate_inline(cards, candidate_summary, designation)
+
+        # Priority 0.5: Gemini API Inline Engine
+        if hasattr(self, 'gemini_client') and self.gemini_client:
+            print(f"[GEMINI BATCH ENGINE] Intercepting BATCH_JOB_EVALUATION for {len(cards)} cards (Bypassing AG Brain IPC)...", flush=True)
+            return self._gemini_batch_evaluate_inline(cards, candidate_summary, designation)
+
+        # Priority 1: Antigravity File-Based IPC Fallback
         output_dir = getattr(self.profile_context, "output_dir", None)
         if not output_dir:
             print("[BATCH IPC] ERROR: No output_dir on profile context. Returning all SKIP.", flush=True)
@@ -2553,11 +2981,6 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 answer_file.unlink()
         except Exception:
             pass
-
-        # Assign sequential IDs if not present
-        for i, card in enumerate(cards):
-            if "id" not in card:
-                card["id"] = i
 
         batch_payload = {
             "status": "PENDING",

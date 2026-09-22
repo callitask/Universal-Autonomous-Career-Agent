@@ -1020,10 +1020,11 @@ def run_batched_discovery(profile_path: str):
 
                             # Gate 2: Negative Company Blacklist (objective identity gate)
                             _comp_lower = _company.lower().strip()
+                            whitelist_exceptions = ["infosys finacle", "edgeverve finacle"]
                             if any(
                                 (nc in _comp_lower if len(nc) > 3 else re.search(rf'\b{re.escape(nc)}\b', _comp_lower))
                                 for nc in negative_companies
-                            ):
+                            ) and not any(wc in _comp_lower for wc in whitelist_exceptions):
                                 print(f"  -> [PRE-GATE] Rejected Blacklisted Company: {_title} @ {_company}", flush=True)
                                 processed_ledger.add(_url.lower())
                                 processed_ledger.add(_can_url)
