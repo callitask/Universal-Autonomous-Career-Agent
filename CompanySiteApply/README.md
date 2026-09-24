@@ -93,8 +93,9 @@ CompanySiteApply/
 
 ## 3. Data Classification & Codebase Hygiene
 
-*   **Tier B Literals (Code Defaults):** Hardcoded demographic/location fallbacks in `oracle_cloud_finger.py` (e.g. `"560100"`, `"Bangalore"`, `"Asian"`, `"Male"`) and `jpmc_nail.py` are recognized Directive 2 violations slated for extraction to `candidate_config.json`. Because `ProfileContext.verify_codebase_purity()` scopes strictly to `core/` and `scripts/`, these are maintained with defensive fallbacks until config refactoring.
-*   **Tier C Samples (`inspections/`):** All JSON files in `CompanySiteApply/inspections/` are historical DOM capture dumps for reverse-engineering. They are non-executable reference samples.
+*   **Tier B Literals (Removed 2026-09-23):** Former hardcoded fallbacks in `oracle_cloud_finger.py` (`"560100"`, `"Bangalore"`) and hardcoded profile paths in `cli_scraper.py` / finger `search_roots` were purged. All values now resolve via `utils/config_resolver.py` from `--config` / `--profile` / `candidate_data`, with `profiles/default_user` as the only blueprint fallback. Empty config values are skipped, never defaulted. `verify_codebase_purity()` now scans `CompanySiteApply/` and `tests/` and passes green.
+*   **Tier C Samples (`inspections/`):** All JSON files in `CompanySiteApply/inspections/` are historical DOM capture dumps for reverse-engineering. They are non-executable reference samples, **gitignored and untracked** (`CompanySiteApply/inspections/` in `.gitignore`) because captures may embed PII. Re-capture locally via `cli.py inspect`; never commit them.
+*   **Shared libs:** `utils/config_resolver.py` (dynamic config), `core/utils/sanitize.py` (CSV/prompt/filename), `core/utils/url_filters.py` (CTC/WFH params), `core/utils/apply_status.py` (verified statuses). Company-direct apply stays on-demand/human-gated; Naukri (`02_*`, `naukri_scraper`, `ChatbotResolver`) and LinkedIn (`03_*`, `linkedin_scraper`, `LinkedInApplyHandler`) remain platform-isolated.
 
 ---
 

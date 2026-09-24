@@ -37,9 +37,11 @@ from .base_scraper import JobBoardScraper
 class NaukriScraper(JobBoardScraper):
     def build_urls(self):
         urls = []
-        for kw in self.ctx.target_keywords[:3]:
+        target_keywords = getattr(self.ctx, "target_keywords", [])
+        target_locations = getattr(self.ctx, "target_locations", [])
+        for kw in target_keywords[:3]:
             slug = "-".join(kw.lower().split())
-            for loc in (self.ctx.target_locations or []):
+            for loc in (target_locations or []):
                 loc_slug = loc.lower().replace(" ", "-")
                 urls.append((f"https://www.naukri.com/{slug}-jobs-in-{loc_slug}", loc, kw))
         return urls

@@ -201,6 +201,12 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
 - **Model Health Tracking:** Maintains a per-model ban registry. When a model returns a `429 (Too Many Requests)` or `503 (Service Unavailable)`, `SmartRateManager` bans that model for **120 seconds** before allowing it to be retried.
 - **Integration:** Instantiated as a module-level singleton in `ai_client.py`. All API call paths (`_call_gemini_with_fallback()`, `answer_screening_question()`) call `rate_manager.wait_if_needed(model_name)` before dispatching and `rate_manager.record_result(model_name, success=False)` on failure.
 
+### 3.1d Dual-Engine Priority + Shared Libs (2026-09-23)
+
+**Two engines, both preserved:** **API engine** = Colab GPU gateway (`colab_credentials.json`, `engine_enabled`, `timeout=None`) → Gemini multi-key round-robin inline batch (40 cards/chunk) → **Integrity 2.0 engine** = Antigravity 2.0 file IPC (`pending_question.json` 90s / `batch_question.json` 120s). Batch priority in `batch_card_evaluation_ipc()`: Colab → Gemini inline → AG Brain IPC. Empty Gemini responses rotate to the next key (never `""`-as-success); IPC runs whenever `enable_ipc` and score ≥ 50 regardless of client existence.
+
+**Shared libs (no engine changes):** `core/utils/sanitize.py` (`csv_cell` anti-formula, `untrusted_block` JD guard, `safe_filename`), `core/utils/url_filters.py` (`build_ctc/wfh/companyJobs_param`), `core/utils/apply_status.py` (verified `APPLIED_*` only with DOM evidence), `CompanySiteApply/utils/config_resolver.py` (dynamic config, blueprint `default_user` only). Discovery uses URL libs (CTC/WFH identical-branch collapse; `company_whitelist` from config, default `[]`); apply uses status+sanitize libs (no premature `APPLIED_CHATBOT`; drawer-close alone → `DRAWER_CLOSED`); `ProfileContext` adds `add_many_to_processed_ledger()` batch write, 30s `cdp_url` cache, and correct `target_keywords` (`keywords`/`designations`/`search_keywords`).
+
 ---
 
 

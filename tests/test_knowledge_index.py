@@ -163,8 +163,19 @@ class TestKnowledgeIndex(unittest.TestCase):
         self.assertNotIn("bharat_pandey", src)
         live = bki.get_live_profile_names()
         self.assertNotIn("default_user", live)
+        try:
+            chunks_data = json.loads((PROJECT_ROOT / "knowledge" / "vectors" / "chunks.json").read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            self.skipTest("chunks.json not built yet; run scripts/build_knowledge_index.py --build first")
+            return
+        # Only Repo_A chunks must be free of live config paths; Repo_B (Sophron
+        # personal_intelligence) legitimately references historic session profiles.
+        repo_a_text = " ".join(
+            (c.get("text", "") + " " + c.get("path", ""))
+            for c in chunks_data if c.get("repo") == "Repo_A"
+        )
         for name in live:
-            self.assertFalse((PROJECT_ROOT / "knowledge" / "vectors" / "chunks.json").read_text().find(f"profiles/{name}/candidate_config.json") != -1 and False, f"live config indexed: {name}")
+            self.assertNotIn(f"profiles/{name}/candidate_config.json", repo_a_text, f"live config indexed: {name}")
 
     def test_09_tier_boost_core_over_generic(self):
         """Assert tier boost keeps engine chunks competitive vs generic docs."""

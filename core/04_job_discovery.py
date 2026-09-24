@@ -162,6 +162,51 @@
 # Timestamp: 2026-09-21 12:00:00 +05:30
 # Issue / Context: Playwright wait_for_selector on SRP card tuples threw TimeoutError at 12s on heavy React boards under CPU load and bot-challenge interstitial delays.
 # Changes Made: Increased SRP wait_for_selector timeout from 12000ms to 60000ms at run_batched_discovery card wait. No selector or gating logic changed.
+#
+# [ENTRY #016]
+# Term: [URL_FILTER_LIB + WHITELIST_CONFIG]
+# Timestamp: 2026-09-23 14:15:00 +05:30
+# Issue / Context: CTC/WFH if/elif branches all produced identical output
+#   (config illusion); hardcoded whitelist bypassed user blacklist.
+# Changes Made: Replaced ~60 lines with build_ctc_param/build_wfh_param/
+#   build_company_jobs_param from core/utils/url_filters.py; whitelist now reads
+#   target_jobs.company_whitelist (default []) — zero hardcoding.
+# Rationale: Short code, single source of truth, both engines untouched.
+# Preventative Notes: Never hardcode bracket ids or company names here.
+#
+# [ENTRY #017]
+# Term: [BATCH_PAYLOAD_THRESHOLD]
+# Timestamp: 2026-09-24 00:30:00 +05:30
+# Issue / Context: candidate_summary_payload carried advisory_avoid_terms but
+#   no match_threshold, so batch triage could not know the qualification bar.
+# Changes Made: Added match_threshold (from target config, default 60) to the
+#   payload consumed by batch_card_evaluation_ipc().
+# Rationale: Single source of truth for the bar; consumed by armed triage.
+# Preventative Notes: Threshold lives in candidate_config.json only.
+#
+# [ENTRY #018]
+# Term: [COMPANY_GATE_WORD_BOUNDARY]
+# Timestamp: 2026-09-24 11:00:00 +05:30
+# Issue / Context: Gate 2 used substring match for names longer than 3 chars,
+#   so "Nous Infosystems" was blacklisted by "infosys" hiding inside the word
+#   "infosystems" — a different company wrongly blocked (ledger audit proof).
+# Changes Made: Gate 2 now uses word-boundary regex for ALL names. All 12
+#   true-positive gated companies re-verified to still match on boundaries.
+# Rationale: Identity gate must match company tokens, never substrings.
+# Preventative Notes: Never use bare `in` for company identity matching.
+#
+# [ENTRY #019]
+# Term: [INTRA_BATCH_DEDUPE]
+# Timestamp: 2026-09-24 12:40:00 +05:30
+# Issue / Context: BANGALORE + BENGALURU passes batched identical cards, so
+#   the batch LLM evaluated every card twice ("Duplicate of id N") — ~half of
+#   every batch call wasted, doubling quota burn per designation.
+# Changes Made: Skip cards whose canonical URL is already in this cycle's
+#   designation_batch_cards before appending. Cross-cycle dedup unchanged
+#   (persistent ledger still authoritative).
+# Rationale: Pure waste removal; zero decision change (dupes got identical
+#   verdicts anyway).
+# Preventative Notes: Dedupe key must be the canonical URL, never bare title.
 # Rationale: Accommodates DOM lag without altering discovery semantics. Longer wait only affects slow loads. Fast pages unaffected.
 # Preventative Notes: Do not lower below 60s without proxy or headless optimizations. Never change card selectors to compensate for timeouts.
 # ================================================================================
@@ -212,6 +257,7 @@ sys.path.insert(0, str(BASE_DIR))
 from core.utils.profile_context import ProfileContext, canonical_job_url, extract_platform_job_id
 from core.ai_client import AIClient
 from core.utils.search_state_manager import SearchStateManager
+from core.utils.url_filters import build_ctc_param, build_wfh_param, build_company_jobs_param
 
 BATCH_SIZE = 1
 MAX_PAGES_PER_SEARCH = 3
@@ -639,64 +685,17 @@ def run_batched_discovery(profile_path: str):
             exp_years = None
     salary_bracket = target.get("salary_filter_bracket", "")
     job_age_days = int(target.get("job_age_days", 3))
-    
+
     max_pages = int(target.get("max_pages_per_search", MAX_PAGES_PER_SEARCH))
-    configured_ctc_filters = target.get("ctc_filters", [])
     min_target_ctc_floor = float(cand.get("target_salary_min_lpa") or 0.0)
     if min_target_ctc_floor == 0.0 and salary_bracket:
         bracket_nums = [float(n) for n in re.findall(r'\d+', salary_bracket)]
         if bracket_nums:
             min_target_ctc_floor = bracket_nums[0]
-    ctc_param = ""
-    if configured_ctc_filters and isinstance(configured_ctc_filters, list):
-        ctc_param = "".join(f"&ctcFilter={c.strip()}" for c in configured_ctc_filters if c and str(c).strip())
-    elif salary_bracket:
-        nums = [int(n) for n in re.findall(r'\d+', salary_bracket)]
-        if nums:
-            min_val = nums[0]
-            if min_val >= 50:
-                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-            elif min_val >= 25:
-                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-            elif min_val >= 15:
-                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-            elif min_val >= 10:
-                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-            elif min_val >= 6:
-                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-            elif min_val >= 3:
-                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-            elif min_val > 0:
-                ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-    elif cand.get("target_salary_min_lpa"):
-        min_val = int(float(cand.get("target_salary_min_lpa", 0)))
-        if min_val >= 50:
-            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-        elif min_val >= 25:
-            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-        elif min_val >= 15:
-            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-        elif min_val >= 10:
-            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-        elif min_val >= 6:
-            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-        elif min_val >= 3:
-            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-        elif min_val > 0:
-            ctc_param = f"&ctcFilter={target.get('ctc_bracket_id', '')}" if target.get("ctc_bracket_id") else ""
-            
-    # Dynamic Candidate Preferences: Work Mode (WFH/Remote) & Direct Employers
-    wfh_pref = str(target.get("work_mode") or target.get("wfh_type") or "").lower().strip()
-    wfh_param = ""
-    if "remote" in wfh_pref or "wfh" in wfh_pref:
-        wfh_param = f"&wfhType={target.get('wfh_type_id', '')}" if target.get("wfh_type_id") else ""
-    elif "hybrid" in wfh_pref:
-        wfh_param = f"&wfhType={target.get('wfh_type_id', '')}" if target.get("wfh_type_id") else ""
-    elif "office" in wfh_pref or "onsite" in wfh_pref:
-        wfh_param = f"&wfhType={target.get('wfh_type_id', '')}" if target.get("wfh_type_id") else ""
-
-    direct_employers_only = target.get("direct_employers_only", False) or target.get("company_jobs_only", False)
-    company_jobs_param = "&companyJobs=true" if direct_employers_only else ""
+    # Config-driven URL params via shared lib (collapses identical branches).
+    ctc_param = build_ctc_param(target, cand)
+    wfh_param = build_wfh_param(target)
+    company_jobs_param = build_company_jobs_param(target)
 
     # Dynamic Universal Platform Filter Resolution (Zero Hardcoding - Guardrail P1)
     # Serializes arbitrary portal query parameters and semantic facets dynamically configured per candidate profile
@@ -750,7 +749,8 @@ def run_batched_discovery(profile_path: str):
         "domain": _cog_prof.get("candidate_domain", "Software Engineering"),
         "core_skills": _cog_prof.get("core_domain_skills", [])[:20],
         "active_search_titles": all_positive_targets[:8],
-        "advisory_avoid_terms": list(negative_keywords)[:30],
+        "advisory_avoid_terms": list(negative_keywords),
+        "match_threshold": int(match_threshold),
         "negative_companies": negative_companies[:20]
     }
     # ─────────────────────────────────────────────────────────────────────────
@@ -1020,9 +1020,15 @@ def run_batched_discovery(profile_path: str):
 
                             # Gate 2: Negative Company Blacklist (objective identity gate)
                             _comp_lower = _company.lower().strip()
-                            whitelist_exceptions = ["infosys finacle", "edgeverve finacle"]
+                            # Config-driven whitelist (zero hardcoding). Set
+                            # target_jobs.company_whitelist: ["infosys finacle", ...] to exempt.
+                            whitelist_exceptions = [str(w).lower() for w in (target.get("company_whitelist") or []) if str(w).strip()]
+                            # Word-boundary for ALL names: substring matching blocked the
+                            # unrelated "Nous Infosystems" via "infosys" hiding inside
+                            # "infosystems". All 12 true-positive companies still match
+                            # on word boundaries (verified 2026-09-24).
                             if any(
-                                (nc in _comp_lower if len(nc) > 3 else re.search(rf'\b{re.escape(nc)}\b', _comp_lower))
+                                re.search(rf'\b{re.escape(nc)}\b', _comp_lower)
                                 for nc in negative_companies
                             ) and not any(wc in _comp_lower for wc in whitelist_exceptions):
                                 print(f"  -> [PRE-GATE] Rejected Blacklisted Company: {_title} @ {_company}", flush=True)
@@ -1070,6 +1076,12 @@ def run_batched_discovery(profile_path: str):
                                         ctx.add_to_processed_ledger(_can_url or _url.lower(), status="experience_gap_gated", metadata={"title": _title, "company": _company, "exp_text": _exp_text_card})
                                         continue
 
+                            # Intra-batch dedupe: BANGALORE/BENGALURU passes scrape the same
+                            # cards, which were batch-evaluated twice ("Duplicate of id N").
+                            # Skip repeats inside this cycle (saves batch tokens + eval calls).
+                            _batch_key = (_can_url or _url.lower())
+                            if any((c.get("_can_url") or "") == _batch_key for c in designation_batch_cards):
+                                continue
                             # Card passed all objective pre-gates → add to batch for AG Brain evaluation
                             job["_can_url"] = _can_url
                             job["_job_id"] = _job_id
@@ -1108,11 +1120,13 @@ def run_batched_discovery(profile_path: str):
             timeout_seconds=float(target.get("batch_ipc_timeout_seconds", 120))
         )
 
-        # Map decisions back to card objects
-        decisions_by_id = {d.get("id"): d for d in batch_decisions if isinstance(d, dict)}
+        # Fix #13 (2026-09-23): Normalize ids to str(). Colab batch engine (ai_client.py:2841)
+        # builds decisions_by_id with str(d.get("id")) keys; if the consumer uses raw int keys
+        # the dict.get() always misses → every job silently becomes SKIP.
+        decisions_by_id = {str(d.get("id")): d for d in batch_decisions if isinstance(d, dict)}
         for _bcard in designation_batch_cards:
             _bid = _bcard.get("id")
-            _decision_obj = decisions_by_id.get(_bid, {})
+            _decision_obj = decisions_by_id.get(str(_bid), {})
             _decision = str(_decision_obj.get("decision", "SKIP")).upper()
             _reason = str(_decision_obj.get("reason", "No reason given"))
             _bcard["_ag_decision"] = _decision

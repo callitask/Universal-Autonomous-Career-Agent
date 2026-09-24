@@ -80,3 +80,15 @@ scan_sophron.json
 # 8. API Credentials & Secrets — NEVER commit these
 gemini_credentials.json
 colab_logic.txt
+
+# 9. Company-site apply inspections — portal DOM scrapes may contain candidate PII
+# (full name, email, phone captured from filled forms / ATS confirmation pages).
+# These are runtime artifacts; never commit them.
+CompanySiteApply/inspections/
+CompanySiteApply/inspections/**
+
+# 10. Knowledge index build artifacts — regenerable; may embed PII from profile content
+# and machine-specific paths (e.g. F:\Sophron from index_meta.json). Rebuild with:
+#   python scripts/build_knowledge_index.py --build
+knowledge/vectors/
+knowledge/graph/

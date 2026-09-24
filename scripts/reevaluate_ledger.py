@@ -60,7 +60,7 @@ def clean_ledger_for_reevaluation(profile_path: str, dry_run: bool = False):
     tracker_file = profile_dir / "output" / "applications_tracker.csv"
     applied_urls = set()
     if tracker_file.exists():
-        with open(tracker_file, "r", encoding="utf-8", errors="ignore") as f:
+        with open(tracker_file, "r", encoding="utf-8-sig", errors="ignore") as f:  # utf-8-sig strips Excel BOM — Fix #15 (2026-09-23)
             reader = csv.DictReader(f)
             for row in reader:
                 if "APPLIED" in row.get("Status", "").upper():

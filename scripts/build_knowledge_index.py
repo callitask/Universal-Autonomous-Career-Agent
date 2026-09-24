@@ -104,6 +104,10 @@ def is_allowed_path(rel_path: str, repo: str) -> bool:
         return False
     if norm in ["scan_root.json", "scan_sophron.json", "desktop.ini"]:
         return False
+    # Never index secrets / credentials (gitignored, may contain API keys)
+    _lname = norm.lower()
+    if "credentials" in _lname or _lname in ("colab_logic.txt",):
+        return False
     if "scratch" in parts:
         return False
 

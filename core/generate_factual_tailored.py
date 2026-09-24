@@ -224,7 +224,7 @@ class ResumeTailorEngine:
 
         for i in range(len(words) - 1):
             w1, w2 = words[i], words[i+1]
-            if w1 not in stop_words or w2 not in stop_words:
+            if w1 not in stop_words and w2 not in stop_words:  # Fix #10 (2026-09-23): was `or` → junk bigrams inflated ATS denominator
                 keywords.append(f"{w1} {w2}")
 
         for category, skills in self.cfg.get("taxonomy_skills", {}).items():

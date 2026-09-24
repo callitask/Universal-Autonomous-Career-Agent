@@ -28,6 +28,22 @@
 # Changes Made: Removed fallback.
 # Rationale: Ensure dynamic configuration.
 # Preventative Notes: Never hardcode these values again.
+#
+# [ENTRY #003]
+# Term: [AI_RESULT_KEY_MISMATCH_FIX]
+# Timestamp: 2026-09-23 12:04:00 +05:30
+# Issue / Context: Lines 405-407 read `action`, `reasoning`, `optimal_bullets` from the
+#   evaluate_profile_experience() result dict, but that function actually returns
+#   `action_decision`, `decision_reasoning`, `optimal_description`. The mismatch caused all
+#   three .get() calls to return their defaults, making `decision` always "UPDATE_REQUIRED"
+#   — so LinkedIn descriptions were force-overwritten on every run even when AI said KEEP_EXISTING.
+#   Naukri sync (02_profile_sync_naukri.py:409-411) already consumed the correct keys.
+# Changes Made: Updated the three .get() calls to use the correct key names:
+#   action_decision, decision_reasoning, optimal_description.
+# Rationale: Critical correctness fix — KEEP_EXISTING must be honored to prevent unnecessary
+#   profile churn and potential portal rate-limiting.
+# Preventative Notes: Whenever adding a new return key to evaluate_profile_experience(),
+#   update ALL consumer call sites (LinkedIn sync, Naukri sync) in the same commit.
 # ================================================================================
 """
 ================================================================================
@@ -402,9 +418,9 @@ def evaluate_and_sync_experiences(
                         live_desc=live_desc,
                         source_desc=source_desc
                     )
-                    decision = eval_result.get("action", "UPDATE_REQUIRED")
-                    reasoning = eval_result.get("reasoning", "Evaluated via AIClient")
-                    optimal_desc = eval_result.get("optimal_bullets") or source_desc or live_desc
+                    decision = eval_result.get("action_decision", "UPDATE_REQUIRED")
+                    reasoning = eval_result.get("decision_reasoning", "Evaluated via AIClient")
+                    optimal_desc = eval_result.get("optimal_description") or source_desc or live_desc
                 else:
                     # Fix H5: Role not recognized in candidate resume/config. Retain safely.
                     log(f"    [!] Live role '{live_title}' @ '{live_company}' not found in candidate source. Retaining safely (Fix H5).")

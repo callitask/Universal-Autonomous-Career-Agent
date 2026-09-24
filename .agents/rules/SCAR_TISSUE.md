@@ -93,7 +93,7 @@
 - **File**: `core/04_job_discovery.py` → card-level gating section; `core/ai_client.py` → `evaluate_job_match()` exp_matches block
 - **What happened**: Agent applied to a 4-9 yr experience role for a 0.5 yr fresher candidate (score: 71). Root cause: The job's JD body text was sparse/thin — the experience range "4-9 Yrs" existed only in Naukri card metadata (`exp_text`) but never appeared in the scraped `full_desc`. The `evaluate_job_match()` experience regex found `0 matches` in the body and silently awarded the 8-point "no restriction" default bonus. Additionally, `"Consultant"` was absent from `negative_keywords`, so the title gate also let it through.
 - **Correct behavior**: (1) Card-level experience band gating must run against `exp_text` BEFORE deep scanning, exactly mirroring the salary floor gate. If card min exp > candidate exp + max_experience_gap_years → reject immediately as `experience_gap_gated`. (2) Senior consulting titles (`Consultant`, `Process Excellence`, `Finance Transformation`) must be in `negative_keywords` for fresher profiles.
-- **Fix applied**: Added Guardrail C24 (card-level exp band gate) in `04_job_discovery.py`; added 6 negative keyword entries to `profiles/anshika_garg/candidate_config.json`.
+- **Fix applied**: Added Guardrail C24 (card-level exp band gate) in `04_job_discovery.py`; added 6 negative keyword entries to `profiles/<profile>/candidate_config.json`.
 - **Never repeat**: Never trust JD body text alone for experience seniority enforcement. Naukri card `exp_text` is populated by the platform itself and is always authoritative. Always enforce seniority at card level before wasting tokens on deep scan.
 
 [2026-09-19] KEYWORD-GATE ARCHITECTURE CAUSES FALSE POSITIVES AND FALSE NEGATIVES

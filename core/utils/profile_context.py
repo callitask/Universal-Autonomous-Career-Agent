@@ -52,6 +52,40 @@
 # Changes Made: Replaced 'Candidate' with empty string. Removed 9222/9223 CDP fallbacks.
 # Rationale: Ensure dynamic configuration.
 # Preventative Notes: Never hardcode these values again.
+#
+# [ENTRY #006]
+# Term: [SCRAPER_INTERFACE_PROPERTIES + PURITY_SCANNER_SCOPE_FIX]
+# Timestamp: 2026-09-23 12:08:00 +05:30
+# Issue / Context: (a) core/scrapers package was entirely dead because JobBoardScraper.__init__
+#   referenced ctx.logger, ctx.target_keywords, ctx.target_locations — none of which existed
+#   on ProfileContext — causing AttributeError on instantiation.
+#   (b) verify_codebase_purity() only scanned core/ and scripts/, leaving CompanySiteApply/
+#   and tests/ completely unscanned — giving false purity assurance while real PII violations
+#   existed in finger files and hardcoded paths in tests.
+# Changes Made:
+#   (a) Added three new @property methods to ProfileContext: logger, target_keywords,
+#       target_locations. These derive values from config (target_jobs section) using the
+#       same config-driven zero-hardcoding approach as all other ProfileContext properties.
+#   (b) Expanded scan_dirs in verify_codebase_purity() to include CompanySiteApply/ and tests/.
+# Rationale: Scrapers are part of the discovery pipeline and must function. Purity scanner must
+#   cover all Python code in the project, not just core/ and scripts/.
+# Preventative Notes: When adding new top-level Python packages to this repo, also add them to
+#   scan_dirs in verify_codebase_purity(). When adding ctx attribute references in scrapers,
+#   always add the corresponding @property to ProfileContext in the same commit.
+#
+# [ENTRY #007]
+# Term: [KEYWORD_SCHEMA_FIX + CDP_CACHE + LEDGER_BATCH]
+# Timestamp: 2026-09-23 14:10:00 +05:30
+# Issue / Context: target_keywords read search_keywords/designations but real
+#   schema uses target_jobs.keywords (default_user blueprint) so scrapers got [].
+#   cdp_url probed HTTP on every access. add_to_processed_ledger did full
+#   read+rewrite per call (O(N2) over discovery runs).
+# Changes Made: target_keywords now reads keywords/designations/search_keywords;
+#   cdp_url caches successful probe 30s; added add_many_to_processed_ledger()
+#   single read/write batch API (single-item method delegates when alone).
+# Rationale: Correctness + perf without changing engine contracts.
+# Preventative Notes: Keep keyword keys in sync with default_user schema.
+#   Never probe network in a @property without cache.
 # ================================================================================
 """
 ================================================================================
@@ -382,7 +416,12 @@ class ProfileContext:
         4. All parameters are dynamically derived from candidate_config.json via ProfileContext.
         Raises CodebasePurityViolationError if any violation is detected.
         """
-        scan_dirs = [self.base_path / "core", self.base_path / "scripts"]
+        scan_dirs = [
+            self.base_path / "core",
+            self.base_path / "scripts",
+            self.base_path / "CompanySiteApply",  # Fix #13: was missing — hardcoded PII in finger files
+            self.base_path / "tests",              # Fix #13: was missing — external path refs in tests
+        ]
         violations = []
         cand = self.config.get("candidate", {})
         cand_name = str(cand.get("full_name", "")).strip().lower()
@@ -624,17 +663,18 @@ class ProfileContext:
     @property
     def cdp_url(self) -> str:
         configured = self.candidate.get("cdp_url", os.environ.get("CDP_URL"))
-        # Fast health check with fallback auto-probe across standard ports (9222, 9223)
-        candidate_ports = [configured] if configured else []
-        seen = set()
+        # Cache successful probe 30s to avoid HTTP on every access.
+        import time as _t
+        now = _t.time()
+        cached = getattr(self, "_cdp_cache", None)
+        if cached and cached[0] == configured and (now - cached[1]) < 30:
+            return cached[2]
         import urllib.request
-        for url in candidate_ports:
-            if url in seen:
-                continue
-            seen.add(url)
+        if configured:
             try:
-                urllib.request.urlopen(f"{url.rstrip('/')}/json/version", timeout=0.8)
-                return url
+                urllib.request.urlopen(f"{configured.rstrip('/')}/json/version", timeout=0.8)
+                self._cdp_cache = (configured, now, configured)
+                return configured
             except Exception:
                 pass
         return configured
@@ -654,3 +694,56 @@ class ProfileContext:
     @property
     def auto_learned_truths(self) -> Dict[str, Any]:
         return self.config.get("auto_learned_truths", {})
+
+    # -----------------------------------------------------------------------
+    # Scraper-interface properties (Fix #3 — 2026-09-23)
+    # These three properties satisfy the JobBoardScraper contract so scrapers
+    # can access ctx.logger, ctx.target_keywords, ctx.target_locations without
+    # crashing on AttributeError.
+    # -----------------------------------------------------------------------
+
+    @property
+    def logger(self):
+        """Standard stdlib logger for the career agent. Satisfies scraper ctx.logger contract."""
+        import logging
+        return logging.getLogger("career_agent")
+
+    @property
+    def target_keywords(self) -> List[str]:
+        """Primary job-search keywords from config. Satisfies scraper ctx.target_keywords contract."""
+        tj = self.config.get("target_jobs", {})
+        for key in ("keywords", "designations", "search_keywords"):
+            kws = tj.get(key)
+            if isinstance(kws, list) and kws:
+                return [str(k) for k in kws if k]
+        return []
+
+    @property
+    def target_locations(self) -> List[str]:
+        """Target search locations from config. Satisfies scraper ctx.target_locations contract."""
+        tj = self.config.get("target_jobs", {})
+        locs = tj.get("locations", tj.get("target_locations", []))
+        if isinstance(locs, list):
+            return [str(l) for l in locs if l]
+        return []
+
+    def add_many_to_processed_ledger(self, items) -> None:
+        """Batch ledger write: single load + single atomic save (fixes O(N2) loop)."""
+        entries = list(items or [])
+        if not entries:
+            return
+        ledger = self.load_processed_ledger()
+        for entry in entries:
+            if isinstance(entry, dict):
+                key = str(entry.get("key") or entry.get("item") or "")
+                if not key:
+                    continue
+                meta = {k: v for k, v in entry.items() if k not in ("key", "item")}
+            else:
+                key, meta = str(entry), {}
+            if not key:
+                continue
+            key_clean = key.lower().strip()
+            meta.setdefault("timestamp", time.strftime("%Y-%m-%d %H:%M:%S"))
+            ledger.add(key_clean, status=meta.get("status"), metadata=meta)
+        self.save_processed_ledger(ledger)

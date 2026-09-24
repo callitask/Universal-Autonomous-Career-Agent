@@ -28,6 +28,25 @@
 # Changes Made: Removed default port args and rely on os.environ.
 # Rationale: Ensure dynamic configuration.
 # Preventative Notes: Never hardcode these values again.
+#
+# [ENTRY #003]
+# Term: [MISSING_OS_IMPORT_FIX]
+# Timestamp: 2026-09-23 12:03:00 +05:30
+# Issue / Context: `os` module was used at line 54 (os.environ.get("CDP_URL")) but was never
+#   imported, causing a NameError on every BrowserManager construction where cdp_url is omitted.
+# Changes Made: Added `import os` to the import block.
+# Rationale: NameError is a hard crash; the import is mandatory for env-based CDP URL resolution.
+# Preventative Notes: Always verify all used stdlib modules appear in the import section.
+#
+# [ENTRY #004]
+# Term: [CONTEXT_MANAGER_TEARDOWN]
+# Timestamp: 2026-09-23 14:30:00 +05:30
+# Issue / Context: sync_playwright().start() with no guaranteed teardown left
+#   zombie drivers across daemon cycles.
+# Changes Made: Added __enter__/__exit__ so `with BrowserManager() as ctx:` always
+#   stops Playwright. close() remains backward compatible.
+# Rationale: Deterministic cleanup without changing existing call sites.
+# Preventative Notes: Prefer `with` blocks for new code; never terminate user Chrome.
 # ================================================================================
 """
 ================================================================================
@@ -40,6 +59,7 @@ page lifecycle, tab reuse, foreground focusing, and context management across al
 ================================================================================
 """
 
+import os
 import time
 from typing import Optional
 from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
@@ -100,6 +120,14 @@ class BrowserManager:
                 self.context = None
         except Exception:
             pass
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
 
 
 def get_browser_context(cdp_url: str = None) -> BrowserContext:

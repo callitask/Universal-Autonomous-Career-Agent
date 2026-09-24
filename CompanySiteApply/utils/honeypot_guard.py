@@ -5,9 +5,18 @@
 # Timestamp: 2026-09-15 22:47:00 +05:30
 # Issue / Context: Anti-bot honeypot detection and safety layer.
 # Changes Made: Implemented HoneypotGuard to detect and flag honeypot inputs across ATS portals.
-# Rationale: Enterprise ATSs (like Oracle Cloud HCM) embed decoy inputs (e.g. input[name="honey-pot"])
-#            to detect automated scrapers. Filling them causes instant silent rejection.
+# Rationale: Enterprise ATSs (like Oracle Cloud HCM) embed decoy inputs (e.g. input[name="honey-pot"]) to detect automated scrapers. Filling them causes instant silent rejection.
 # Preventative Notes: Never fill flagged honeypot elements under any circumstances.
+# [ENTRY #002]
+# Term: [FALSE_POSITIVE_FIX]
+# Timestamp: 2026-09-23 14:30:00 +05:30
+# Issue / Context: Any display:none/opacity:0 field was flagged, hiding legit
+#   file inputs, CSRF tokens, and framework-managed fields (valid fields skipped).
+# Changes Made: Hidden styling alone no longer flags. Requires honeypot name/id
+#   pattern OR (hidden + suspicious off-screen/tabindex/aria signal). File and
+#   CSRF inputs are explicitly exempt.
+# Rationale: Precision over recall; never skip valid fields.
+# Preventative Notes: Keep HONEYPOT_NAME_PATTERNS as primary signal.
 # ==============================================================================
 
 import re
@@ -50,19 +59,31 @@ class HoneypotGuard:
             if pat.search(name) or pat.search(elem_id):
                 return True
 
-        # 2. Hidden via inline styling while being an input
-        if "display: none" in style.lower() or "display:none" in style.lower():
-            return True
-        if "visibility: hidden" in style.lower() or "visibility:hidden" in style.lower():
-            return True
-        if "opacity: 0" in style.lower() or "opacity:0" in style.lower():
-            return True
-        if "left: -999" in style.lower() or "top: -999" in style.lower():
-            return True
-
-        # 3. Off-screen or hidden via aria/tabindex
+        # 2. Hidden styling alone is NOT a honeypot (file inputs, CSRF, frameworks
+        # legitimately hide fields). Only flag when combined with suspicious signals.
+        input_type = str(element_info.get("type") or "").lower()
+        if input_type in ("file", "hidden"):
+            # file inputs are often opacity:0 by design; hidden inputs hold CSRF tokens.
+            # Only flag if name/id explicitly matches a honeypot pattern (handled above).
+            return False
+        style_l = style.lower()
+        hidden_style = any(
+            s in style_l
+            for s in ("display: none", "display:none", "visibility: hidden",
+                      "visibility:hidden", "opacity: 0", "opacity:0",
+                      "left: -999", "top: -999")
+        )
+        if not hidden_style and not element_info.get("aria_hidden") in (True, "true"):
+            if not (tabindex in (-1, "-1") and not is_visible):
+                return False
+        # Hidden + suspicious: off-screen position, aria-hidden, or negative tabindex
+        # combined with a generic decoy-looking name counts; plain hidden does not.
+        if hidden_style:
+            suspicious_name = bool(re.search(r"trap|decoy|honey|hp|bot|spam|verify.*url|confirm.*email", f"{name} {elem_id}", re.I))
+            offscreen = ("-999" in style_l) or (element_info.get("aria_hidden") in (True, "true")) or (tabindex in (-1, "-1"))
+            return bool(suspicious_name or offscreen)
         if element_info.get("aria_hidden") in (True, "true"):
-            return True
+            return tabindex in (-1, "-1") or not is_visible
         if tabindex in (-1, "-1") and not is_visible:
             return True
 

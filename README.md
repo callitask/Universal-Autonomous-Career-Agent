@@ -6,7 +6,7 @@
 > No public license is granted. You may not copy, distribute, modify, or use this code without explicit written permission.
 
 
-An enterprise-grade, fully autonomous AI agent designed to orchestrate the complete job application lifecycle. Operating via a dual-brain architecture (Gemini Hosted Mode + Antigravity 2.0 File-Based IPC), this pipeline autonomously discovers roles, evaluates suitability, dynamically tailors ATS-compliant resumes, and executes multi-step applications across enterprise job portals.
+An enterprise-grade, fully autonomous AI agent designed to orchestrate the complete job application lifecycle. Operating via a dual-engine architecture — **API engine** (Gemini multi-key round-robin + Colab GPU gateway + Gemini inline batch) **and Integrity 2.0 engine** (Antigravity 2.0 File-Based IPC, zero-API) — this pipeline autonomously discovers roles, evaluates suitability, dynamically tailors ATS-compliant resumes, and executes multi-step applications across enterprise job portals. Both engines are load-bearing and must be preserved; priority is Colab → Gemini inline → AG Brain IPC.
 
 ## System Architecture
 
@@ -53,30 +53,38 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── 04_job_discovery.py            # Batched discovery orchestrator, SRP scraper & match score extractor
 │   ├── 05_apply_jobs.py               # DOM interaction, chatbot solver & Easy Apply handler
 │   ├── generate_factual_tailored.py   # Markdown-to-PDF ATS compiler
-│   ├── ai_client.py                   # Central AI reasoning brain, match score booster & IPC bridge
+│   ├── ai_client.py                   # Dual-engine brain (API: Gemini+Colab / Integrity 2.0: AG IPC)
+│   ├── ai_rate_manager.py               # SmartRateManager (3.5s floor, 120s model ban)
 │   ├── ipc_watcher.py                 # File-based IPC signal relay daemon (Daemon 2)
 │   ├── ipc_auto_resolver.py           # Standalone IPC question auto-resolver utility
 │   ├── knowledge/
 │   │   └── platform_heuristics.json   # Platform DOM selectors, slug routing & circuit breakers
 │   ├── scrapers/                      # Portal scraper base classes and implementations
 │   │   ├── base_scraper.py
-│   │   ├── naukri_scraper.py
-│   │   └── linkedin_scraper.py
+│   │   ├── naukri_scraper.py          # Naukri SRP (uses ctx.target_keywords/locations)
+│   │   └── linkedin_scraper.py        # LinkedIn SRP (uses ctx.target_keywords/locations)
 │   └── utils/
-│       ├── profile_context.py         # ProfileContext, Purity Enforcer & ProcessedLedger
-│       ├── browser_manager.py         # CDP browser lifecycle manager
-│       └── search_state_manager.py    # Sequential designation rotation & cycle persistence
-├── CompanySiteApply/                  # On-demand direct company ATS application engine
+│       ├── profile_context.py         # ProfileContext, Purity Enforcer & ProcessedLedger (+batch API)
+│       ├── browser_manager.py         # CDP browser lifecycle manager (with-statement safe)
+│       ├── search_state_manager.py    # Sequential designation rotation & cycle persistence
+│       ├── sanitize.py                # csv_cell / untrusted_block / safe_filename (shared)
+│       ├── url_filters.py             # build_ctc/wfh/companyJobs params (shared)
+│       └── apply_status.py            # Canonical APPLIED_*/FAILED statuses (shared)
+├── CompanySiteApply/                  # On-demand direct company ATS application engine (human-gated)
 │   ├── cli.py                         # Interactive CLI runner for direct ATS applications
 │   ├── ats_arm.py                     # ATS orchestrator arm
 │   ├── ats_detector.py                # Portal platform detection engine
-│   ├── fingers/                       # ATS platform adapters (Oracle Cloud HCM, Workday, Greenhouse, etc.)
-│   ├── nails/                         # Company-specific ATS customization layers (JPMC, Bristlecone)
-│   ├── CompanyScraper/                # Direct company career site scrapers
+│   ├── fingers/                       # Platform adapters: Oracle Cloud HCM, Workday, Greenhouse, generic
+│   ├── nails/oracle/                  # Company overrides: JPMC, Bristlecone (on top of Oracle finger)
+│   ├── CompanyScraper/                # Direct career-site scrapers (JPMorgan example) + cli_scraper.py
 │   ├── parser_doctor/                 # ATS resume parsing healing and review verification
-│   └── utils/                         # DOM helpers & honeypot guards
+│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver (no hardcoded profiles)
 ├── scripts/                           # Operational and maintenance utilities
-│   └── reevaluate_ledger.py           # Ledger re-evaluation reset utility
+│   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles
+│   ├── reevaluate_ledger.py           # Ledger re-evaluation reset utility (utf-8-sig BOM safe)
+│   ├── test_colab_connection.py       # Colab gateway diagnostic (120s finite timeout)
+│   └── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
+├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)
 ├── docs/                              # Technical blueprints, DOM catalogs & rules
 │   ├── WORKSPACE_RULES.md             # 8 directives & 43 bug prevention guardrails (33 C, 6 H, 3 D, 1 P)
 │   ├── ARCHITECTURE_REFERENCE.md      # Full architecture, DOM schemas & IPC contracts

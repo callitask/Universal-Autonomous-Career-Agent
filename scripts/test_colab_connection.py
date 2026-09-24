@@ -104,11 +104,13 @@ def run_diagnostic(profile_dir_str: str | None = None) -> None:
         sys.exit(1)
 
     # ── Instantiate OpenAI client (reads from global creds — zero hardcoding) ──
-    print("[STEP 2] Initializing OpenAI-compatible client (timeout=None for GPU inference)...")
+    # Diagnostic uses finite 120s timeout so a dead tunnel fails fast; production
+    # ai_client keeps timeout=None for 30-80s GPU inference (ENTRY #022).
+    print("[STEP 2] Initializing OpenAI-compatible client (timeout=120s diagnostic)...")
     client = openai.OpenAI(
         base_url=colab_base_url,
         api_key=colab_api_key,
-        timeout=None
+        timeout=120.0
     )
     print("         Client initialized successfully.\n")
 

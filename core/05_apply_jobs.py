@@ -84,6 +84,20 @@
 # Changes Made: Increased navigation retry timeouts to commit 60000ms and domcontentloaded 75000ms in ApplicationEngine navigation. No routing or verification logic changed.
 # Rationale: Accommodates heavy SPA loads without altering application semantics. Fast portals unaffected.
 # Preventative Notes: Do not lower timeouts without headless proxy optimizations. Never skip about:blank verification.
+#
+# [ENTRY #010]
+# Term: [PREMATURE_SUCCESS_FIX + SANITIZE_LIB]
+# Timestamp: 2026-09-23 14:20:00 +05:30
+# Issue / Context: has_completion_cue branch and drawer-close branch returned
+#   APPLIED_CHATBOT without explicit DOM success evidence (violates C1/C3);
+#   inactivity fallback became unreachable after early return. Tracker wrote
+#   portal-controlled titles unescaped (formula injection).
+# Changes Made: Both branches now require resolver.check_completion_status() or
+#   visible applied indicator before APPLIED_CHATBOT; otherwise DRAWER_CLOSED/
+#   FAILED so inactivity/timeout path stays reachable. Tracker writes via
+#   core/utils/sanitize.csv_cell. Uses core/utils/apply_status constants.
+# Rationale: No phantom successes; keeps both engines (API + Integrity 2.0) intact.
+# Preventative Notes: Never return APPLIED_* without DOM evidence.
 # ================================================================================
 """
 ================================================================================
@@ -125,6 +139,11 @@ if str(PROJECT_ROOT) not in sys.path:
 from core.utils.profile_context import ProfileContext, canonical_job_url
 from core.utils.browser_manager import BrowserManager
 from core.ai_client import AIClient
+from core.utils.sanitize import csv_cell
+from core.utils.apply_status import (
+    APPLIED_1CLICK, APPLIED_CHATBOT, FAILED, DRAWER_CLOSED,
+    FAILED_PLATFORM, REQUIRES_MANUAL,
+)
 
 
 def human_jitter(min_ms: int = 150, max_ms: int = 400):
@@ -1225,14 +1244,14 @@ class ApplicationEngine:
                     writer.writeheader()
                 writer.writerow({
                     "Date": entry.get("date", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-                    "Company": entry.get("company", "Unknown"),
-                    "Job Title": entry.get("job_title", "Unknown"),
-                    "Platform": entry.get("platform", ""),
+                    "Company": csv_cell(entry.get("company", "Unknown")),
+                    "Job Title": csv_cell(entry.get("job_title", "Unknown")),
+                    "Platform": csv_cell(entry.get("platform", "")),
                     "Job URL": entry.get("url", ""),
                     "Match Score": entry.get("score", "N/A"),
                     "Status": entry.get("status", "APPLIED"),
                     "Tailored Resume PDF": entry.get("pdf_path", ""),
-                    "Notes": entry.get("notes", "")
+                    "Notes": csv_cell(entry.get("notes", ""))
                 })
             log_substep("TRACKER", f"Recorded entry in {tracker_file.name} -> Status: {entry.get('status')}")
         except Exception as e:
@@ -1551,8 +1570,12 @@ class ApplicationEngine:
                     log_step("CHATBOT", "Clicked final Save/Submit button upon completion cue!")
                     page.wait_for_timeout(2500)
 
-                log_step("SUCCESS", f"Chatbot questionnaire finished ({len(qa_history)} question(s) answered)! Application committed.")
-                return "APPLIED_CHATBOT"
+                # Require explicit DOM confirmation (C1/C3). Cue alone is not success.
+                _done, _msg = resolver.check_completion_status()
+                if _done:
+                    log_step("SUCCESS", f"Chatbot questionnaire finished ({len(qa_history)} question(s) answered)! {_msg}")
+                    return APPLIED_CHATBOT
+                # Fall through to silent-tick/inactivity handling below.
 
             # Completion confirmation detection via resolver
             is_done, done_msg = resolver.check_completion_status()
@@ -1587,12 +1610,10 @@ class ApplicationEngine:
                                     return "APPLIED_CHATBOT"
                             except Exception:
                                 pass
-                        # If candidate answered questions and no platform rejection occurred, closing drawer represents completion
-                        if not rejected_msg:
-                            log_step("SUCCESS", f"Application Completed! Answered {len(qa_history)} screening question(s) and drawer successfully closed.")
-                            return "APPLIED_CHATBOT"
-                    log_step("DRAWER_CLOSED", "Chatbot drawer closed prematurely before answering questions. Aborting.")
-                    return "DRAWER_CLOSED"
+                        # Drawer close alone is NOT success (C3) — the applied-marker
+                        # scan above is the only closer accepted here.
+                    log_step("DRAWER_CLOSED", "Chatbot drawer closed without explicit success confirmation. Aborting.")
+                    return DRAWER_CLOSED
             
             if not active_q:
                 consecutive_silent_ticks += 1

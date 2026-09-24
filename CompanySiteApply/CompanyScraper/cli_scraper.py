@@ -14,6 +14,7 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any, Dict
 
 # Ensure repository root is on sys.path
@@ -29,33 +30,33 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from playwright.async_api import async_playwright
 from CompanySiteApply.CompanyScraper.companies.jpmorgan.jpmorgan_scraper import JPMorganScraper
+from CompanySiteApply.utils.config_resolver import resolve_candidate_config
 
 COMPANY_MAP = {
     "jpmorgan": JPMorganScraper,
     "jpmc": JPMorganScraper
 }
 
-DEFAULT_CONFIG_PATH = r"f:\JOB AI AGENT\profiles\udaysagar_kandpal\candidate_config.json"
 
-
-def load_candidate_config(config_path: str = DEFAULT_CONFIG_PATH) -> Dict[str, Any]:
-    if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+def load_candidate_config(config_path: str | None = None) -> Dict[str, Any]:
+    return resolve_candidate_config(explicit_path=config_path)
 
 
 async def run_scraper(company: str,
                       keyword: str,
                       location: str,
                       top_n: int = 5,
-                      inspect_top: bool = True):
+                      inspect_top: bool = True,
+                      config_path: str | None = None,
+                      profile_dir: str | None = None):
     scraper_cls = COMPANY_MAP.get(company.lower())
     if not scraper_cls:
         print(f"Error: Unknown company '{company}'. Available: {list(COMPANY_MAP.keys())}")
         return
 
-    candidate_cfg = load_candidate_config()
+    candidate_cfg = load_candidate_config(config_path) if config_path else resolve_candidate_config(
+        candidate_data={"profile_dir": profile_dir} if profile_dir else None
+    )
     scraper = scraper_cls()
 
     print(f"==================================================")
@@ -111,26 +112,32 @@ async def run_scraper(company: str,
             desc_snippet = details.get('description', '')[:800].encode('ascii', 'replace').decode('ascii')
             print(f"\nDescription Snippet:\n{desc_snippet}...\n")
 
-            # Save top role details to candidate output directory
-            output_dir = os.path.join(os.path.dirname(DEFAULT_CONFIG_PATH), "APPLIED ON COMPANY WEBSITE", scraper.company_name, top_role['title'])
-            os.makedirs(output_dir, exist_ok=True)
-            jd_path = os.path.join(output_dir, "job_description.json")
-            with open(jd_path, "w", encoding="utf-8") as f:
-                json.dump(details, f, indent=2)
+            # Save top role details to candidate output directory (dynamic, no hardcoded profile)
+            from CompanySiteApply.utils.config_resolver import _repo_root as _root
+            from core.utils.sanitize import safe_filename
+            _base = Path(profile_dir) if profile_dir else (_root() / "profiles" / "default_user")
+            output_dir = _base / "APPLIED ON COMPANY WEBSITE" / safe_filename(scraper.company_name) / safe_filename(top_role['title'])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            jd_path = output_dir / "job_description.json"
+            jd_path.write_text(json.dumps(details, indent=2), encoding="utf-8")
             print(f"Saved job description to: {jd_path}")
 
         # Export all scraped jobs
-        export_path = os.path.join(os.path.dirname(DEFAULT_CONFIG_PATH), "output", f"{company}_scraped_jobs.json")
+        from pathlib import Path as _P
+        _base = _P(profile_dir) if profile_dir else (_root() / "profiles" / "default_user")
+        export_path = str(_base / "output" / f"{company}_scraped_jobs.json")
         scraper.export_scraped_jobs(export_path)
 
 
 def main():
     parser = argparse.ArgumentParser(description="CompanyScraper CLI")
     parser.add_argument("--company", type=str, default="jpmorgan", help="Target company name")
-    parser.add_argument("--keyword", type=str, default="Java", help="Job search keyword")
-    parser.add_argument("--location", type=str, default="Bengaluru, Karnataka, India", help="Target location")
+    parser.add_argument("--keyword", type=str, default="", help="Job search keyword")
+    parser.add_argument("--location", type=str, default="", help="Target location")
     parser.add_argument("--top", type=int, default=5, help="Number of top jobs to display")
     parser.add_argument("--no-inspect", action="store_true", help="Skip deep inspection of top role")
+    parser.add_argument("--config", type=str, default=None, help="Path to candidate_config.json")
+    parser.add_argument("--profile", type=str, default=None, help="Profile dir (e.g. profiles/default_user)")
 
     args = parser.parse_args()
     asyncio.run(run_scraper(
@@ -138,7 +145,9 @@ def main():
         keyword=args.keyword,
         location=args.location,
         top_n=args.top,
-        inspect_top=not args.no_inspect
+        inspect_top=not args.no_inspect,
+        config_path=args.config,
+        profile_dir=args.profile,
     ))
 
 

@@ -22,6 +22,15 @@
 # Changes Made: Integrated CompanySiteApply/nails architecture (JPMCNail, BristleconeNail); added get_active_nail(); implemented _fill_section_4_more_about_you delegating custom demographic flexfields to active Nail; upgraded _fill_experience_step to detect inline Education forms by tile title and input signatures; upgraded _heal_education_modal to dynamically set End Date Month (July) and Year (2015) matching candidate profile; delegated questionnaire solving to active nail before AI fallback.
 # Rationale: Decouples universal Oracle HCM mechanics from company-specific survey fields and layouts.
 # Preventative Notes: Never hardcode company-specific question logic in OracleCloudFinger; always encapsulate in corresponding Nail.
+# [ENTRY #004]
+# Term: [ZERO_HARDCODING_PURGE]
+# Timestamp: 2026-09-23 14:25:00 +05:30
+# Issue / Context: search_roots hardcoded a live profile folder; pincode/city
+#   used literal fallbacks violating Guardrail P1.
+# Changes Made: search_roots now via config_resolver.resolve_search_roots
+#   (blueprint default_user only); pincode/city default to "" (skip when missing).
+# Rationale: Candidate-agnostic; purity scanner stays green.
+# Preventative Notes: Never add profile names or PIN/city literals here.
 # ==============================================================================
 
 import os
@@ -456,13 +465,13 @@ class OracleCloudFinger(BaseATSFinger):
             res_file = resume_path or cand.get("resume_path") or cand.get("resume_filename")
             is_already_imported = page.locator(".apply-flow-profile-import-awli__success-message:has-text('Profile successfully imported'), :has-text('Profile successfully imported.')").count() > 0
             
-            # Resolve relative resume path across known directories
+            # Resolve relative resume path across known directories (no hardcoded names)
             if res_file and not os.path.isabs(res_file):
-                search_roots = [
-                    os.path.join(os.getcwd(), "profiles", "udaysagar_kandpal"),
-                    os.path.join(os.getcwd(), "profiles", "default_user"),
-                    os.getcwd()
-                ]
+                try:
+                    from CompanySiteApply.utils.config_resolver import resolve_search_roots
+                    search_roots = resolve_search_roots(candidate_data if isinstance(candidate_data, dict) else None)
+                except Exception:
+                    search_roots = [os.getcwd()]
                 for root in search_roots:
                     cand_path = os.path.join(root, res_file)
                     if os.path.exists(cand_path):
@@ -507,14 +516,14 @@ class OracleCloudFinger(BaseATSFinger):
         addr2 = cand.get("address_line_2") or ""
         if addr2:
             DOMHelpers.set_input_value_native(page, "input[name='addressLine2'], [id^='addressLine2']", addr2)
-        pincode = str(cand.get("pincode") or cand.get("postal_code") or "560100")
+        pincode = str(cand.get("pincode") or cand.get("postal_code") or "").strip()
         if pincode:
             DOMHelpers.set_input_value_native(page, "input[name='postalCode'], [id^='postalCode']", pincode)
 
         # 4. City Combobox - Handles Official Indian Gazetteer spelling (e.g. Bengaluru, Karnataka)
-        city_val = cand.get("location") or cand.get("city") or "Bangalore"
+        city_val = str(cand.get("location") or cand.get("city") or "").strip()
         city_input = page.locator("input[name='city'], [id^='city-']").first
-        if city_input.count() > 0 and not city_input.input_value():
+        if city_input.count() > 0 and not city_input.input_value() and city_val:
             # Try official gazetteer match
             gazetteer_city = "Bengaluru, Karnataka" if "bangalore" in city_val.lower() or "bengaluru" in city_val.lower() else city_val
             city_toggle = page.locator("[id^='city-'][id$='-toggle-button']").first

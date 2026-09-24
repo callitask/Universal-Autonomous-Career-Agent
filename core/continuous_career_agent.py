@@ -138,8 +138,13 @@ def main():
         logger.error(f"[SECURITY HALT] {purity_err}")
         sys.exit(1)
 
-    # Pre-flight Chrome CDP Check
-    check_cdp_status(ctx.cdp_url)
+    # Pre-flight Chrome CDP Check — abort if Chrome is not reachable (Fix #14 — 2026-09-23)
+    if not check_cdp_status(ctx.cdp_url):
+        logger.error(
+            "[PREFLIGHT FAIL] Chrome CDP is not reachable. "
+            "Start Chrome with --remote-debugging-port before running the daemon. Aborting."
+        )
+        sys.exit(1)
 
     # Universal Step 0: Automatic Cognitive Profile Analysis & Resume Comprehension
     cog_model = ctx.load_cognitive_profile()

@@ -1,0 +1,6 @@
+# Universal Autonomous Career Agent — runtime dependencies (pinned floor, no PII)
+# Install: pip install -r requirements.txt && playwright install chromium
+playwright>=1.40
+markdown>=3.4
+google-genai>=1.0
+openai>=1.0
