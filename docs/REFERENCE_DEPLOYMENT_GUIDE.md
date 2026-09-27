@@ -149,4 +149,4 @@ When a form field is marked `*` or `required` and the answer is not found in:
 | Keystroke Jitter | 45ms – 130ms per character | Eliminates robotic typing signature |
 | Pre-Click Visual Scan | 400ms – 900ms pause | Simulates human eye gaze before mouse click |
 | Inter-Job Cooldown | 25s – 75s randomized | Prevents rate-limiting between applications |
-| Batch Cycle Sleep | 30 minutes | Emulates human session pacing |
+| Batch Cycle Sleep | 30 seconds (`--delay 30`) | Emulates human session pacing |

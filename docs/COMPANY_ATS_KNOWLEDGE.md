@@ -162,7 +162,7 @@ function scanFormErrors() {
 
 ## 5. Artifact & File Organization Standards
 
-When applying to any company website:
+When applying to any company website (CompanySiteApply scope — distinct from the `core/` portal tree at `profiles/<profile>/output/applications/<Company>_<Role>/`):
 1. **Directory Structure**:
    ```
    profiles/{profile_name}/APPLIED ON COMPANY WEBSITE/{Company_Name}/{Job_Role_Name}/

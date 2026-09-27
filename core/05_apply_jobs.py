@@ -98,6 +98,175 @@
 #   core/utils/sanitize.csv_cell. Uses core/utils/apply_status constants.
 # Rationale: No phantom successes; keeps both engines (API + Integrity 2.0) intact.
 # Preventative Notes: Never return APPLIED_* without DOM evidence.
+#
+# [ENTRY #011]
+# Term: [LINKEDIN_TRANSPORT_PARITY]
+# Timestamp: 2026-09-26 12:30:00 +05:30
+# Issue / Context: Easy Apply modal loop fired rapid-fire LLM calls per field
+#   with no handler-level pacing (chatbot path had SmartRateManager via Gemini
+#   calls only); 429 cascades under Easy Apply fan-out.
+# Changes Made: handle_easy_apply loop calls GLOBAL_RATE_MANAGER.enforce_pacing()
+#   per iteration (same singleton). LLM calls already route via
+#   answer_screening_question → _call_gemini_with_fallback (rotation, no
+#   hardcoded model) — verified, untouched.
+# Rationale: Transport-only change; zero DOM/semantic behavior change.
+# Preventative Notes: Never pass requested_model from handler code (breaks fallback).
+#
+# [ENTRY #012]
+# Term: [LINKEDIN_PARITY_C32_NAV]
+# Timestamp: 2026-09-26 12:50:00 +05:30
+# Issue / Context: apply_single_job navigated with 15s+15s
+#   (domcontentloaded+load) for both platforms, contradicting the C32
+#   60s+75s two-stage standard — slow React modals died as false FAILEDs.
+# Changes Made: Navigation now commit→domcontentloaded with timeouts from
+#   target_jobs.navigation_timeouts_ms (default [60000, 75000]). Fallback URL
+#   checks and about:blank verification untouched.
+# Rationale: Longer waits only reduce false failures; routing logic identical.
+# Preventative Notes: Never shorten below config without proxy optimization.
+#
+# [ENTRY #013]
+# Term: [LINKEDIN_PARITY_SOLVER]
+# Timestamp: 2026-09-26 12:55:00 +05:30
+# Issue / Context: Easy Apply failed on React-controlled inputs (fill without
+#   events), had no validation-error retry, and left no per-job QA audit —
+#   all solved long ago on the chatbot path.
+# Changes Made (LinkedIn-scoped only, zero Naukri impact): input/change event
+#   dispatch after fill(); LinkedIn-local _adapt_text_answer (experience/notice
+#   numerics) with ONE adapt-retry on validation error; ques_ans_linkedin.json
+#   audit written on every exit; _adapt_text_answer intentionally NOT shared
+#   with ChatbotResolver (platform isolation over dedup).
+# Rationale: Port patterns, not code paths; H1 abort+discard semantics kept.
+# Preventative Notes: Never call ChatbotResolver methods from LinkedIn code.
+#
+# [ENTRY #014]
+# Term: [LINKEDIN_PARITY_C34_TIER]
+# Timestamp: 2026-09-26 13:00:00 +05:30
+# Issue / Context: Easy Apply aborted on benign proficiency-scale questions
+#   where C34 lowest-tier mapping is the truthful answer (Naukri handles these).
+# Changes Made: _proficiency_fallback maps to the lowest tier ONLY for
+#   config-allowlisted proficiency_tier_questions minus
+#   sensitive_question_blocklist. Dormant without both keys (H1 path unchanged).
+#   Wired before IPC fallback in radio + dropdown paths. Nothing persisted.
+# Rationale: Truthful-tier completion without blind fallbacks, recruiter-safe.
+# Preventative Notes: Never extend allowlist to identity/health/disability.
+#   To enable, add both keys to candidate_config.json (documented in report).
+#
+# [ENTRY #015]
+# Term: [LINKEDIN_EXTERNAL_REDIRECT + RUN_GATE_FIX]
+# Timestamp: 2026-09-26 13:20:00 +05:30
+# Issue / Context: 4 LinkedIn 85-95% matches all FAILED as DRAWER_CLOSED with
+#   EMPTY QA logs (modal vanished before any field) — off-site Easy Apply
+#   redirects misclassified as failures; plus run()'s company gate still used
+#   substring matching (Nous-class bug fixed in discovery Gate 2 only).
+# Changes Made: premature modal close with empty QA now checks page URL —
+#   off-linkedin.com/jobs returns REDIRECT_EXTERNAL (booked + saved); run()
+#   persists it to saved_external_jobs.json; run() company gate is now
+#   word-boundary for all names.
+# Rationale: Honest classification; identical bug class fixed in both gates.
+# Preventative Notes: Keep both company gates word-boundary; verify with the
+#   Nous Infosystems probe before any future gate edit.
+#
+# [ENTRY #016]
+# Term: [LINKEDIN_MODAL_RENDER_RACE]
+# Timestamp: 2026-09-26 13:30:00 +05:30
+# Issue / Context: 5 LinkedIn 85-95% matches FAILED with empty QA: live click
+#   probe proved the Easy Apply click is swallowed (no modal in 9s, URL only
+#   gains tracking params). Handler assumed a fixed 2s render, then recorded
+#   a premature DRAWER_CLOSED.
+# Changes Made: Scroll-into-view + click, then poll is_modal_open up to ~10s
+#   before entering the handler; off-site URL returns REDIRECT_EXTERNAL.
+# Rationale: Human-like sequencing (scroll, pause, click, await render) that
+#   also fixes reliability; no submit-path changes.
+# Preventative Notes: Never assume fixed render delays on React portals.
+#
+# [ENTRY #017]
+# Term: [CHATBOT_H1_BLIND_FALLBACK_REMOVAL]
+# Timestamp: 2026-09-26 13:45:00 +05:30
+# Issue / Context: Chatbot RADIO path submitted blind options[0] (and it was
+#   persistable as learned truth) when the brain found no match — the exact
+#   Fix #9 poison class, surviving in the one place the audit missed.
+#   _best_option_match already contains the truthful C34 tier mapping.
+# Changes Made: None-match now logs REQUIRES_MANUAL_INTERVENTION and returns
+#   FAILED; click retry targets the truthful answer only (no options[0]
+#   submit ever). All other controls/aborts untouched.
+# Rationale: Fill everything answerable; abort honestly on unanswerable. A
+#   blind pick is not "completely filled" — it is a fabricated submission.
+# Preventative Notes: Never reintroduce options[0]/valid_opts[0] as an answer
+#   in any solver on any platform (see ENTRY #008, #013, #014).
+#
+# [ENTRY #018]
+# Term: [LINKEDIN_VELOCITY_GOVERNORS]
+# Timestamp: 2026-09-26 13:55:00 +05:30
+# Issue / Context: Live CDP evidence showed LinkedIn ghost-disabling Easy Apply
+#   (PerimeterX uc=scraping iframe + reCAPTCHA Enterprise armed; clicks
+#   swallowed with zero modal) — velocity/fingerprint-driven session flag.
+# Changes Made: (1) run() enforces target_jobs.linkedin_max_applies_per_day
+#   (default 20), counted from today's tracker rows + in-run increments;
+#   over-cap LinkedIn jobs skip with LIMIT log. (2) Modal-loop checkpoint
+#   detector (checkpoint/verify-identity/unusual-activity/security-check/
+#   captcha): discard + FAILED, human-gated — never auto-solved.
+# Rationale: Human-scale velocity + human-gated challenges keep the ID alive;
+#   flagged sessions need cooldown, not more automation.
+# Preventative Notes: Never raise the cap to evade limits; never auto-solve
+#   challenges. Naukri path untouched (cap is LinkedIn-scoped).
+#
+# [ENTRY #019]
+# Term: [LINKEDIN_SEARCH_PANE_FLOW]
+# Timestamp: 2026-09-26 13:50:00 +05:30
+# Issue / Context: Standalone /jobs/view/ Easy Apply button proven inert
+#   (owner watched correct clicks do nothing); search page → card click →
+#   pane button opens the modal in ~2s with pre-filled profile.
+# Changes Made: apply_single_job LinkedIn branch uses open_search_pane_for_job
+#   (exact data-job-id card match only, never a nearby job) + pane_apply_button
+#   (pane-scoped, index fallback). Naukri path untouched.
+# Rationale: Replicate the proven human-equivalent flow, not the dead button.
+# Preventative Notes: Never apply from a non-matching card; data-job-id match
+#   is mandatory.
+#
+# [ENTRY #020]
+# Term: [LINKEDIN_NUMERIC_VALIDATION_RETRY]
+# Timestamp: 2026-09-26 14:00:00 +05:30
+# Issue / Context: Owner watched live: text answers ("At least 5 years of
+#   experience") rejected by numeric-only fields ("Enter a whole number
+#   between 0 and 99", "decimal larger than 0.0"); Review/Next then dead-ends
+#   and the application died without reading the red error.
+# Changes Made: Adapt-retry now bidirectional — numeric-demanding errors strip
+#   TEXT answers to digits; other errors keep digit-to-units adaptation. Same
+#   single-retry + re-click + re-verify flow, then honest abort.
+# Rationale: Read the portal's own validation text and obey it; digits come
+#   from the candidate's own prior answer, never invented.
+# Preventative Notes: Only reformat the previously given truthful answer;
+#   never substitute a different value to satisfy validation.
+#
+# [ENTRY #021]
+# Term: [LINKEDIN_STEP_PROGRESSION_TRACKING]
+# Timestamp: 2026-09-26 14:10:00 +05:30
+# Issue / Context: Owner watched a filled form stall on Review/Next with red
+#   errors the agent never read — clicks repeated blindly for 15 steps with no
+#   diagnosis of whether the form advanced or why not.
+# Changes Made: Per-iteration step signature (header + visible questions);
+#   3 sightings = stuck → collect ALL visible errors (7-selector broad net),
+#   log each, single adapt-retry via shared helper, else abort with evidence
+#   in ques_ans_linkedin.json. Adapt logic extracted to _adapt_retry_step
+#   (single home, both triggers). Pre-filled blockers logged read-only.
+# Rationale: The agent now answers "did it advance, and if not, why" live.
+# Preventative Notes: Never bet diagnosis on a single error selector; never
+#   overwrite pre-filled values the candidate did not provide.
+#
+# [ENTRY #022]
+# Term: [LINKEDIN_CONTROL_COVERAGE]
+# Timestamp: 2026-09-26 14:15:00 +05:30
+# Issue / Context: Owner watched live: 2 custom dropdowns never answered,
+#   resume upload skipped (visibility-gated input), checkbox groups had zero
+#   handling — form could never complete.
+# Changes Made (LinkedIn-scoped): (1) file inputs handled hidden (set files +
+#   change dispatch, no visibility gate) with QA log; (2) checkbox groups
+#   resolved per-option Yes/No via brain, only confirmed checks; (3) custom
+#   div/combobox/listbox dropdowns expanded, options read, brain → C34 tier
+#   → IPC → H1 abort, click matched option, QA logged.
+# Rationale: Correct control identification per labels; H1 preserved everywhere.
+# Preventative Notes: Never blind-check a box or blind-pick an option; native
+#   <select> path untouched.
 # ================================================================================
 """
 ================================================================================
@@ -139,7 +308,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from core.utils.profile_context import ProfileContext, canonical_job_url
 from core.utils.browser_manager import BrowserManager
 from core.ai_client import AIClient
-from core.utils.sanitize import csv_cell
+from core.utils.sanitize import csv_cell, safe_filename
+from core.ai_rate_manager import GLOBAL_RATE_MANAGER
 from core.utils.apply_status import (
     APPLIED_1CLICK, APPLIED_CHATBOT, FAILED, DRAWER_CLOSED,
     FAILED_PLATFORM, REQUIRES_MANUAL,
@@ -985,15 +1155,296 @@ class LinkedInApplyHandler:
             log_step("WARNING", f"Modal discard notice: {e}")
             return False
 
+    @staticmethod
+    def _adapt_text_answer(question: str, ans: str) -> str:
+        """LinkedIn-local numeric formatter (experience/notice only).
+
+        Deliberately NOT shared with ChatbotResolver.adapt_answer_format:
+        platform isolation forbids cross-solver calls. Covers the two
+        validation shapes LinkedIn rejects most (bare digits).
+        """
+        import re as _re
+        q = (question or "").lower()
+        a = str(ans or "").strip()
+        if not _re.match(r"^(\d+(?:\.\d+)?)$", a):
+            return ans
+        if any(w in q for w in ["experience", "exp", "year", "working"]):
+            return f"{a} years"
+        if any(w in q for w in ["notice", "joining", "available", "start"]):
+            return f"{a} Days"
+        return ans
+
+    def _qa_log_path(self, job: Dict[str, Any]):
+        """Per-job LinkedIn QA audit path (mirrors ques_ans_chatbot.json)."""
+        try:
+            company = job.get("company", "Company")
+            title = job.get("job_title") or job.get("title", "Role")
+            base = getattr(self.ctx, "output_dir", Path("."))
+            d = Path(base) / "applications" / f"{safe_filename(company, 50)}_{safe_filename(title, 50)}"
+            d.mkdir(parents=True, exist_ok=True)
+            return d / "ques_ans_linkedin.json"
+        except Exception:
+            return None
+
+    def _proficiency_fallback(self, q_text: str, options) -> Optional[str]:
+        """C34-for-Easy-Apply: lowest-tier mapping, config-gated ONLY.
+
+        Active only when the profile defines `proficiency_tier_questions`
+        (allowlist, substring match on the question) and the question does not
+        match `sensitive_question_blocklist` (identity/health/disability...).
+        Both keys absent → returns None (today's H1 abort path, unchanged).
+        Never persists anything; never touches Naukri code.
+        """
+        try:
+            cfg = self.config or {}
+            allow = [str(x).lower() for x in (cfg.get("proficiency_tier_questions") or []) if str(x).strip()]
+            if not allow:
+                return None
+            block = [str(x).lower() for x in (cfg.get("sensitive_question_blocklist") or []) if str(x).strip()]
+            ql = str(q_text or "").lower()
+            if any(b in ql for b in block):
+                return None
+            if not any(a in ql for a in allow):
+                return None
+            tiers = ["beginner", "basic", "novice", "entry", "elementary", "foundational", "learning", "familiar"]
+            for o in (options or []):
+                if any(t in str(o).lower() for t in tiers):
+                    return o
+            return None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _save_qa(path, history) -> None:
+        try:
+            if path is not None:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(history, f, indent=2)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _modal_step_signature(modal) -> str:
+        """Fingerprint of the current modal step (header + visible questions).
+
+        Used to detect whether Next/Submit actually advanced the form. Any
+        exception yields a distinct non-matching signature (never false-stuck).
+        """
+        try:
+            parts = []
+            for sel in ["[data-test-modal-header]", ".artdeco-modal__header",
+                        ".jobs-easy-apply-modal__content-header", ".jobs-easy-apply-content__header"]:
+                try:
+                    h = modal.locator(sel).first
+                    if h.count():
+                        parts.append((h.inner_text() or "").strip()[:120])
+                        break
+                except Exception:
+                    continue
+            try:
+                qs = []
+                for el in modal.locator("label, legend").all()[:8]:
+                    try:
+                        t = (el.inner_text() or "").strip()[:60]
+                        if t:
+                            qs.append(t)
+                    except Exception:
+                        continue
+                parts.append("|".join(qs))
+            except Exception:
+                pass
+            sig = " / ".join(p for p in parts if p)
+            return sig if sig else "unreadable"
+        except Exception:
+            return "unreadable"
+
+    @staticmethod
+    def _collect_modal_errors(modal) -> list:
+        """All visible validation/error texts in the modal (broad selectors).
+
+        LinkedIn renders errors under several class schemes; collect everything
+        visible instead of betting on one selector.
+        """
+        found = []
+        for sel in [".artdeco-inline-feedback--error", "div[data-test-form-builder-error]",
+                    "[role='alert']", ".artdeco-inline-feedback", ".form-element__error",
+                    "span[class*='error']", "div[class*='error-message']"]:
+            try:
+                for el in modal.locator(sel).all():
+                    try:
+                        if el.is_visible():
+                            t = (el.inner_text() or "").strip()
+                            if t and t not in found:
+                                found.append(t[:200])
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+        return found
+
+    def open_search_pane_for_job(self, page, job: Dict[str, Any]) -> bool:
+        """Open the LinkedIn detail pane for THIS job via the search page.
+
+        Proven live 2026-09-26: the standalone /jobs/view/ Easy Apply button
+        is inert (clicks swallowed, no modal in 50s+), while search page →
+        card click → pane load (currentJobId) → pane button opens the modal
+        in ~2s. Never selects a different job: exact data-job-id match only.
+        """
+        import urllib.parse as _up
+        try:
+            url = job.get("url", "") or ""
+            m = re.search(r"/jobs/view/(\d+)", url)
+            jid = m.group(1) if m else ""
+            if not jid:
+                return False
+            title = job.get("job_title") or job.get("title", "")
+            loc = (job.get("location") or job.get("card_location")
+                   or self.cand.get("location") or self.cand.get("city") or "")
+            queries = [title]
+            _first_clause = re.split(r"[/|\-–]", title)[0].strip() if title else ""
+            if _first_clause and _first_clause.lower() != title.lower():
+                queries.append(_first_clause)
+            _comp = job.get("company", "") or ""
+            if _comp.strip():
+                queries.append(_comp.strip())
+            card = None
+            for _qi, _qq in enumerate(queries[:3]):
+                q = "https://www.linkedin.com/jobs/search/?keywords=" + _up.quote(_qq)
+                if str(loc).strip():
+                    q += "&location=" + _up.quote(str(loc).strip())
+                q += "&f_AL=true"
+                page.goto(q, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(3500)
+                card = page.locator(f'div.job-card-container[data-job-id="{jid}"]').first
+                if card.count() > 0:
+                    break
+                page.wait_for_timeout(1200)
+            if card is None or card.count() == 0:
+                log_step("LINKEDIN", "Exact job card not in search results; refusing nearby apply.")
+                return False
+            try:
+                card.scroll_into_view_if_needed()
+                page.wait_for_timeout(600)
+            except Exception:
+                pass
+            card.click()
+            for _ in range(6):
+                page.wait_for_timeout(1500)
+                try:
+                    if jid in str(page.url):
+                        return True
+                except Exception:
+                    pass
+            try:
+                return jid in str(page.url or "")
+            except Exception:
+                return False
+        except Exception as e:
+            log_step("WARNING", f"LinkedIn pane open notice: {e}")
+            return False
+
+    def _adapt_retry_step(self, modal, qa_history, err_blob: str = "") -> bool:
+        """One-shot adapt + refill + re-click. Returns True if re-clicked.
+
+        Both directions: numeric-demanding errors strip TEXT answers to digits;
+        other errors add units to bare digits. Pre-filled inputs (never in QA
+        history) are logged read-only for diagnosis — never overwritten blind.
+        """
+        import re as _re2
+        _needs_digits = bool(_re2.search(r"whole number|decimal|enter a .*number|digits? only|numbers? only|larger than 0", err_blob or "", _re2.I))
+        _adapted_any = False
+        for _entry in qa_history:
+            if _entry.get("control") == "TEXT":
+                _cur = str(_entry.get("answer", ""))
+                if _needs_digits:
+                    _m = _re2.search(r"\d+(?:\.\d+)?", _cur)
+                    _new = _m.group(0) if _m else _cur
+                else:
+                    _new = self._adapt_text_answer(_entry.get("question", ""), _cur)
+                if _new != _cur:
+                    _entry["answer"] = _new
+                    _adapted_any = True
+        if not _adapted_any:
+            # Diagnose pre-filled (LinkedIn profile) values blocking progress.
+            try:
+                for _inp in modal.locator("input[type='text'], input:not([type]), textarea").all():
+                    try:
+                        if _inp.is_visible() and _inp.input_value():
+                            _iid = _inp.get_attribute("id") or ""
+                            _lel = modal.locator(f"label[for='{_iid}']").first if _iid else None
+                            _qt = _lel.inner_text().strip() if (_lel and _lel.count()) else "?"
+                            log_step("LINKEDIN", f"Pre-filled blocker candidate: '{_qt}' = '{_inp.input_value()[:40]}'")
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            return False
+        log_step("LINKEDIN", "Retrying step with adapted answer formats...")
+        for _inp in modal.locator("input[type='text'], input:not([type]), textarea").all():
+            try:
+                if not _inp.is_visible():
+                    continue
+                _iid = _inp.get_attribute("id") or ""
+                _lel = modal.locator(f"label[for='{_iid}']").first if _iid else None
+                _qt = _lel.inner_text().strip() if (_lel and _lel.count()) else ""
+                for _entry in qa_history:
+                    if _entry.get("control") == "TEXT" and _entry.get("question") == _qt:
+                        _inp.click()
+                        _inp.fill("")
+                        _inp.fill(str(_entry["answer"]))
+                        try:
+                            _inp.evaluate("el => { el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); }")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        for _sel, _name in [("button:has-text('Submit application'), button:has-text('Submit')", "Submit"), ("button:has-text('Review')", "Review"), ("button:has-text('Next')", "Next")]:
+            _btn = modal.locator(_sel).first
+            if _btn.count() > 0 and _btn.is_visible():
+                log_step("LINKEDIN", f"Re-clicking '{_name}' after adapt-retry...")
+                _btn.click()
+                self.page.wait_for_timeout(2500)
+                return True
+        return False
+
+    def pane_apply_button(self, page):
+        """Detail-pane Easy Apply button (proven live); None if absent."""
+        try:
+            pane = page.locator(".jobs-search__job-details--container, .scaffold-layout__detail").first
+            if pane.count():
+                b = pane.locator("button.jobs-apply-button, button:has-text('Easy Apply')").first
+                if b.count() and b.is_visible():
+                    return b
+            btns = page.locator("button.jobs-apply-button, button:has-text('Easy Apply')").all()
+            vis = [x for x in btns if x.is_visible()]
+            if len(vis) > 1:
+                return vis[1]
+            if vis:
+                return vis[0]
+            return None
+        except Exception:
+            return None
+
     def handle_easy_apply(self, job: Dict[str, Any]) -> str:
         log_step("LINKEDIN", "Engaging LinkedIn Easy Apply Engine...")
         tailored_pdf = job.get("pdf_path") or job.get("tailored_pdf", "")
         max_steps = 15
         step = 0
+        qa_history: List[Dict[str, Any]] = []
+        qa_path = self._qa_log_path(job)
+        adapt_retried = False
+        last_step_sig = ""
+        same_step_count = 0
 
         try:
             while step < max_steps:
                 step += 1
+                # Pacing (Item 1): same singleton the chatbot/Gemini paths use —
+                # prevents Easy Apply field fan-out from tripping 429 cascades.
+                try:
+                    GLOBAL_RATE_MANAGER.enforce_pacing()
+                except Exception:
+                    pass
                 self.page.wait_for_timeout(1500)
 
                 # 1. Check for application submission success
@@ -1007,24 +1458,87 @@ class LinkedInApplyHandler:
                             dismiss_btn.click()
                     except Exception:
                         pass
+                    self._save_qa(qa_path, qa_history)
                     return "APPLIED_LINKEDIN_EASY_APPLY"
 
                 if not self.is_modal_open():
                     # Re-verify if completed
                     if any(m in body_text for m in ["application sent", "your application was sent"]):
+                        self._save_qa(qa_path, qa_history)
                         return "APPLIED_LINKEDIN_EASY_APPLY"
+                    # External redirect: Easy Apply click left linkedin.com/jobs
+                    # (company-site application). Classify honestly so the
+                    # tracker books REDIRECT_EXTERNAL instead of a false FAILED.
+                    try:
+                        _cur_url = str(self.page.url or "")
+                    except Exception:
+                        _cur_url = ""
+                    if _cur_url and "linkedin.com/jobs" not in _cur_url:
+                        log_step("LINKEDIN", f"Easy Apply led off-site ({_cur_url[:80]}). Booking external redirect.")
+                        self._save_qa(qa_path, qa_history)
+                        return "REDIRECT_EXTERNAL"
                     log_step("WARNING", "LinkedIn Easy Apply modal closed prematurely.")
+                    self._save_qa(qa_path, qa_history)
                     return "DRAWER_CLOSED"
 
                 modal = self.page.locator("div.jobs-easy-apply-modal, div.artdeco-modal").first
 
-                # 2. Handle File Upload if requested on this step
+                # Step-progression tracking: did Next/Submit actually advance us?
+                # Same signature 3 iterations running = stuck step. Inspect ALL
+                # visible errors (broad net, not one selector), adapt-retry once,
+                # else abort honestly with the evidence in the QA log.
+                _sig = self._modal_step_signature(modal)
+                if _sig != "unreadable" and _sig == last_step_sig:
+                    same_step_count += 1
+                else:
+                    same_step_count = 0
+                last_step_sig = _sig
+                if same_step_count >= 2:
+                    _errs = self._collect_modal_errors(modal)
+                    log_step("WARNING", f"LinkedIn modal stuck on same step {same_step_count + 1}x: '{_sig[:100]}'" + (f" | errors: {'; '.join(_errs[:4])}" if _errs else " | no visible error text"))
+                    qa_history.append({"question": "[STUCK_STEP]", "answer": _sig[:150], "control": "STUCK", "errors": _errs[:4]})
+                    if not adapt_retried and self._adapt_retry_step(modal, qa_history, " ".join(_errs)):
+                        adapt_retried = True
+                        self._save_qa(qa_path, qa_history)
+                        continue
+                    self._save_qa(qa_path, qa_history)
+                    self.discard_and_close_modal()
+                    return "FAILED"
+
+                # 1b. Checkpoint / challenge detector (anti-block): NEVER attempt
+                # to solve or bypass verification — discard, log for the human,
+                # and abort this application cleanly.
+                try:
+                    _modal_text = (modal.inner_text() or "").lower() if modal.count() else ""
+                except Exception:
+                    _modal_text = ""
+                if any(s in _modal_text for s in ["checkpoint", "verify your identity", "unusual activity", "security check", "captcha"]):
+                    log_step("WARNING", "LinkedIn verification challenge detected inside Easy Apply modal. Human-gating: discarding without solving.")
+                    qa_history.append({"question": "[VERIFICATION_CHALLENGE]", "answer": "[HUMAN_GATE]", "control": "CHECKPOINT"})
+                    self._save_qa(qa_path, qa_history)
+                    self.discard_and_close_modal()
+                    return "FAILED"
+
+                # 2. Handle File Upload if requested on this step.
+                # Upload inputs are deliberately hidden behind styled buttons
+                # (opacity 0 / display none), so NEVER require visibility —
+                # set files directly on the input and dispatch change.
                 file_input = modal.locator("input[type='file']").first
-                if file_input.count() > 0 and file_input.is_visible():
+                if file_input.count() > 0:
                     if tailored_pdf and os.path.exists(tailored_pdf):
-                        log_step("LINKEDIN", f"Attaching Tailored PDF: {os.path.basename(tailored_pdf)}")
-                        file_input.set_input_files(tailored_pdf)
-                        self.page.wait_for_timeout(1500)
+                        try:
+                            log_step("LINKEDIN", f"Attaching Tailored PDF: {os.path.basename(tailored_pdf)}")
+                            file_input.set_input_files(tailored_pdf)
+                            try:
+                                file_input.evaluate("el => { el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); }")
+                            except Exception:
+                                pass
+                            self.page.wait_for_timeout(1500)
+                            qa_history.append({"question": "[RESUME_UPLOAD]", "answer": os.path.basename(tailored_pdf), "control": "FILE_UPLOAD"})
+                        except Exception as _ufe:
+                            log_step("WARNING", f"Resume upload notice: {_ufe}")
+                    else:
+                        log_step("WARNING", "Upload field present but no tailored PDF available; leaving for manual review.")
 
                 # 3. Handle Form Text Inputs
                 text_inputs = modal.locator("input[type='text'], input:not([type]), textarea").all()
@@ -1049,7 +1563,15 @@ class LinkedInApplyHandler:
                                 )
                             if ans:
                                 inp.fill(ans)
+                                # React state sync (parity): fill() alone often
+                                # fails to flip React-controlled inputs — dispatch
+                                # input/change so LinkedIn registers the value.
+                                try:
+                                    inp.evaluate("el => { el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); }")
+                                except Exception:
+                                    pass
                                 human_jitter(100, 250)
+                                qa_history.append({"question": q_text, "answer": ans, "control": "TEXT"})
                     except Exception:
                         pass
 
@@ -1079,6 +1601,12 @@ class LinkedInApplyHandler:
                                     
                                     # H1 Remediation: No blind options[0] fallback; route to Antigravity IPC
                                     if not best_opt:
+                                        # C34-for-LinkedIn (last): config-allowlisted proficiency
+                                        # scales map to the lowest tier before IPC burns quota.
+                                        best_opt = self._proficiency_fallback(q_text, options)
+                                        if best_opt:
+                                            log_step("LINKEDIN", f"C34 tier mapping resolved '{q_text}' to lowest tier '{best_opt}'.")
+                                    if not best_opt:
                                         log_step("LINKEDIN", f"No exact match for '{ans}'. Engaging Antigravity IPC fallback for radio options: {options}")
                                         ipc_ans = self.ai._fallback_antigravity_ipc(
                                             prompt=(
@@ -1101,12 +1629,57 @@ class LinkedInApplyHandler:
                                         if matched_lbl.count():
                                             matched_lbl.click()
                                             human_jitter(100, 250)
+                                            qa_history.append({"question": q_text, "answer": best_opt, "control": "RADIO"})
                                     else:
                                         log_step("WARNING", f"Guardrail H1: Zero option match for radio question '{q_text}'. Refusing blind fallback. Aborting.")
+                                        self._save_qa(qa_path, qa_history)
                                         self.discard_and_close_modal()
                                         return "FAILED"
                     except Exception as ex:
                         log_step("WARNING", f"Radio fieldset handling notice: {ex}")
+
+                # 4b. Handle Checkbox Groups (multi-select, H1 Strict Compliance).
+                # Fieldsets WITHOUT radios: ask the brain per option (Yes/No),
+                # check only confirmed ones. Never blind-check.
+                for fs in modal.locator("fieldset").all():
+                    try:
+                        if not fs.is_visible():
+                            continue
+                        if fs.locator("input[type='radio']").count() > 0:
+                            continue
+                        _cbs = fs.locator("input[type='checkbox']").all()
+                        if not _cbs:
+                            continue
+                        _legend = fs.locator("legend").first
+                        _q = _legend.inner_text().strip() if _legend.count() else "Checkbox group"
+                        for _cb in _cbs:
+                            try:
+                                _cid = _cb.get_attribute("id") or ""
+                                _cl = fs.locator(f"label[for='{_cid}']").first if _cid else None
+                                _ot = _cl.inner_text().strip() if (_cl and _cl.count()) else ""
+                                if not _ot:
+                                    continue
+                                try:
+                                    _already = _cb.is_checked()
+                                except Exception:
+                                    _already = False
+                                if _already:
+                                    continue
+                                _ans = self.ai.answer_screening_question(
+                                    question=f"{_q} :: {_ot}",
+                                    candidate_profile=self.config,
+                                    options=["Yes", "No"],
+                                    control_type="RADIO"
+                                )
+                                _m = self.ai._best_option_match(_ans, ["Yes", "No"])
+                                if _m and _m.lower() == "yes":
+                                    _cb.check()
+                                    human_jitter(100, 250)
+                                    qa_history.append({"question": _q, "answer": _ot, "control": "CHECKBOX"})
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
 
                 # 5. Handle Select Dropdowns (H1 Strict Compliance)
                 selects = modal.locator("select").all()
@@ -1129,6 +1702,10 @@ class LinkedInApplyHandler:
 
                                 # H1 Remediation: No blind valid_opts[0] fallback; route to Antigravity IPC
                                 if not best:
+                                    best = self._proficiency_fallback(q_text, valid_opts)
+                                    if best:
+                                        log_step("LINKEDIN", f"C34 tier mapping resolved '{q_text}' to lowest tier '{best}'.")
+                                if not best:
                                     log_step("LINKEDIN", f"No exact match for '{ans}'. Engaging Antigravity IPC fallback for dropdown options: {valid_opts}")
                                     ipc_ans = self.ai._fallback_antigravity_ipc(
                                         prompt=(
@@ -1148,12 +1725,110 @@ class LinkedInApplyHandler:
                                 if best:
                                     sel_el.select_option(label=best)
                                     human_jitter(100, 250)
+                                    qa_history.append({"question": q_text, "answer": best, "control": "DROPDOWN"})
                                 else:
                                     log_step("WARNING", f"Guardrail H1: Zero option match for dropdown question '{q_text}'. Refusing blind fallback. Aborting.")
+                                    self._save_qa(qa_path, qa_history)
                                     self.discard_and_close_modal()
                                     return "FAILED"
                     except Exception as ex:
                         log_step("WARNING", f"Dropdown handling notice: {ex}")
+
+                # 5b. Handle CUSTOM (div-based) Dropdowns — LinkedIn renders most
+                # selects as combobox/listbox widgets, not native <select>.
+                # Click to expand, read options, brain-match, click the match.
+                for _dd in modal.locator("[role='combobox'], button[aria-haspopup='listbox'], div[class*='artdeco-dropdown'], input[role='combobox']").all():
+                    try:
+                        if not _dd.is_visible():
+                            continue
+                        _dlabel = (_dd.get_attribute("aria-label") or "").strip()
+                        if not _dlabel:
+                            _dlabel = f"Dropdown field"
+                        # Skip if this widget wraps an already-handled native select.
+                        try:
+                            _has_native = _dd.locator("xpath=ancestor::*[./select]").count() > 0
+                        except Exception:
+                            _has_native = False
+                        if _has_native:
+                            continue
+                        # Skip already-answered widgets (non-empty display value).
+                        try:
+                            _cur = (_dd.inner_text() or "").strip()
+                        except Exception:
+                            _cur = ""
+                        _dd.click()
+                        self.page.wait_for_timeout(800)
+                        _opts = []
+                        for _osel in ["[role='option']", "[role='listbox'] [role='option']", "div[class*='dropdown'] [role='option']", "ul li"]:
+                            try:
+                                for _o in modal.locator(_osel).all():
+                                    try:
+                                        if _o.is_visible():
+                                            _t = (_o.inner_text() or "").strip()
+                                            if _t and _t not in _opts and len(_t) < 80:
+                                                _opts.append(_t)
+                                    except Exception:
+                                        continue
+                                if _opts:
+                                    break
+                            except Exception:
+                                continue
+                        if not _opts:
+                            try:
+                                _dd.keyboard.press("Escape")
+                            except Exception:
+                                pass
+                            continue
+                        _ans = self.ai.answer_screening_question(
+                            question=_dlabel,
+                            candidate_profile=self.config,
+                            options=_opts,
+                            control_type="DROPDOWN"
+                        )
+                        _best = self.ai._best_option_match(_ans, _opts)
+                        if not _best:
+                            _best = self._proficiency_fallback(_dlabel, _opts)
+                        if not _best:
+                            log_step("LINKEDIN", f"No exact match for '{_ans}'. Engaging Antigravity IPC fallback for custom dropdown: {_opts}")
+                            _ipc = self.ai._fallback_antigravity_ipc(
+                                prompt=(
+                                    f"LinkedIn Easy Apply Custom Dropdown Question:\n"
+                                    f"Question: {_dlabel}\n"
+                                    f"Available Options:\n" + "\n".join(f"- {o}" for o in _opts) + "\n\n"
+                                    f"Candidate Profile: {self.config.get('candidate', {})}\n"
+                                    f"Select the exact matching option string from the available options above."
+                                ),
+                                question=_dlabel,
+                                options=_opts,
+                                control_type="DROPDOWN",
+                                task_type="SCREENING_QUESTION"
+                            )
+                            _best = self.ai._best_option_match(_ipc, _opts)
+                        if _best:
+                            _clicked = False
+                            for _o in modal.locator("[role='option']").all():
+                                try:
+                                    if (_o.inner_text() or "").strip() == _best:
+                                        _o.click()
+                                        _clicked = True
+                                        break
+                                except Exception:
+                                    continue
+                            human_jitter(100, 250)
+                            qa_history.append({"question": _dlabel, "answer": _best, "control": "DROPDOWN_CUSTOM"})
+                            if not _clicked:
+                                log_step("WARNING", f"Custom dropdown option '{_best}' matched but click missed; continuing.")
+                        else:
+                            log_step("WARNING", f"Guardrail H1: Zero option match for custom dropdown '{_dlabel}'. Refusing blind fallback. Aborting.")
+                            try:
+                                _dd.keyboard.press("Escape")
+                            except Exception:
+                                pass
+                            self._save_qa(qa_path, qa_history)
+                            self.discard_and_close_modal()
+                            return "FAILED"
+                    except Exception as ex:
+                        log_step("WARNING", f"Custom dropdown handling notice: {ex}")
 
                 # 6. Step Progression: Check buttons in order of priority
                 submit_btn = modal.locator("button:has-text('Submit application'), button:has-text('Submit')").first
@@ -1182,17 +1857,26 @@ class LinkedInApplyHandler:
                 if error_loc.count() > 0 and error_loc.is_visible():
                     err_text = error_loc.inner_text().strip()
                     log_step("WARNING", f"LinkedIn form validation error detected: {err_text}")
+                    # Adapt-retry via shared helper (once, both directions).
+                    if not adapt_retried:
+                        if self._adapt_retry_step(modal, qa_history, err_text):
+                            adapt_retried = True
+                            self._save_qa(qa_path, qa_history)
+                            continue
                 else:
                     log_step("WARNING", "No progression button (Submit/Review/Next) located in modal.")
+                self._save_qa(qa_path, qa_history)
                 self.discard_and_close_modal()
                 return "FAILED"
 
             log_step("FAILED", "Exceeded max steps in LinkedIn Easy Apply modal.")
+            self._save_qa(qa_path, qa_history)
             self.discard_and_close_modal()
             return "FAILED"
 
         except Exception as e:
             log_step("WARNING", f"Unhandled exception in LinkedIn Easy Apply handler: {e}")
+            self._save_qa(qa_path, qa_history)
             self.discard_and_close_modal()
             return "FAILED"
 
@@ -1299,7 +1983,17 @@ class ApplicationEngine:
                 page.wait_for_timeout(1500)
             else:
                 nav_success = False
-                for wait_strat, to_ms in [("domcontentloaded", 15000), ("load", 15000)]:
+                # C32 two-stage navigation (config-driven; default commit 60s +
+                # domcontentloaded 75s). Longer than the old 15s+15s: fewer false
+                # FAILEDs on slow React portals (both platforms); logic unchanged.
+                try:
+                    _nav_cfg = (getattr(self.ctx, "config", {}) or {}).get("target_jobs", {}) or {}
+                    _nav_ms = _nav_cfg.get("navigation_timeouts_ms") or [60000, 75000]
+                    _commit_ms = int(_nav_ms[0]) if len(_nav_ms) > 0 else 60000
+                    _dom_ms = int(_nav_ms[1]) if len(_nav_ms) > 1 else 75000
+                except Exception:
+                    _commit_ms, _dom_ms = 60000, 75000
+                for wait_strat, to_ms in [("commit", _commit_ms), ("domcontentloaded", _dom_ms)]:
                     try:
                         page.goto(url, wait_until=wait_strat, timeout=to_ms)
                         nav_success = True
@@ -1364,18 +2058,56 @@ class ApplicationEngine:
                 log_step("STATUS", "Already applied previously. Skipping.")
                 return "SKIPPED_ALREADY_APPLIED"
 
-        # Platform Specific Branching
+        # Platform Specific Branching (explicit dispatch: unknown platforms must
+        # NEVER fall into the Naukri path — future portals get own handlers).
         if platform == "linkedin":
             li_handler = LinkedInApplyHandler(page, self.ctx, self.ai)
-            easy_apply_btn = page.locator("button.jobs-apply-button, button:has-text('Easy Apply')").first
-            if easy_apply_btn.count() > 0 and easy_apply_btn.is_visible():
-                log_step("CLICK", "Clicking LinkedIn 'Easy Apply' button...")
+            # Proven live 2026-09-26: the standalone /jobs/view/ Easy Apply
+            # button is inert (clicks swallowed, no modal in 50s+). The WORKING
+            # flow is search page → click the job CARD (engagement loads the
+            # detail pane, currentJobId in URL) → click the PANE's apply button.
+            _li_ok = li_handler.open_search_pane_for_job(page, job)
+            if not _li_ok:
+                log_step("WARNING", "LinkedIn job pane could not be opened for apply.")
+                return "APPLY_BUTTON_NOT_FOUND"
+            easy_apply_btn = li_handler.pane_apply_button(page)
+            if easy_apply_btn is not None:
+                log_step("CLICK", "Clicking LinkedIn 'Easy Apply' button (detail pane)...")
+                # Human-like + reliable: scroll into view (React hydration +
+                # overlay safety), click, then POLL for the modal instead of
+                # assuming a fixed 2s render (proven swallowed clicks).
+                try:
+                    easy_apply_btn.scroll_into_view_if_needed()
+                    page.wait_for_timeout(800)
+                except Exception:
+                    pass
                 easy_apply_btn.click()
-                page.wait_for_timeout(2000)
+                _modal_seen = False
+                for _ in range(5):
+                    page.wait_for_timeout(2000)
+                    try:
+                        if li_handler.is_modal_open():
+                            _modal_seen = True
+                            break
+                    except Exception:
+                        pass
+                if not _modal_seen:
+                    try:
+                        _u = str(page.url or "")
+                    except Exception:
+                        _u = ""
+                    if _u and "linkedin.com/jobs" not in _u:
+                        return "REDIRECT_EXTERNAL"
+                    log_step("WARNING", "LinkedIn Easy Apply modal never rendered after click.")
+                    return "DRAWER_CLOSED"
                 return li_handler.handle_easy_apply(job)
             else:
                 log_step("WARNING", "LinkedIn Easy Apply button not found on page.")
                 return "APPLY_BUTTON_NOT_FOUND"
+
+        if platform != "naukri":
+            log_step("WARNING", f"Unsupported platform '{platform}': no apply handler registered. Skipping (never route to Naukri path).")
+            return "APPLY_BUTTON_NOT_FOUND"
 
         # Naukri Native Apply Handling
         apply_btn_selectors = [
@@ -1720,17 +2452,34 @@ class ApplicationEngine:
                 else:
                     log_step("CHOICES", f"{options}")
                     ans = resolver.resolve_answer(active_q, options=options, control_type="RADIO_CHIP")
-                    # Strict option constraint guardrail: ans MUST exist in options
+                    # Strict option constraint guardrail: ans MUST exist in options.
+                    # H1/C34 (Fix #9 poison class): blind options[0] is forbidden.
+                    # _best_option_match already attempted the truthful
+                    # proficiency-tier mapping — None means unanswerable.
                     if options and ans not in options:
                         best = resolver.ai._best_option_match(ans, options) if hasattr(resolver.ai, "_best_option_match") else None
-                        ans = best or options[0]
+                        if best:
+                            ans = best
+                        else:
+                            log_step("WARNING", f"Guardrail H1: No truthful option match for radio question '{active_q}'. Refusing blind fallback. Logging for manual review.")
+                            qa_history.append({
+                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "question": active_q,
+                                "answer": "[ABORTED_NO_TRUTHFUL_OPTION]",
+                                "control_type": "RADIO_CHIP",
+                                "status": "REQUIRES_MANUAL_INTERVENTION"
+                            })
+                            try:
+                                with open(qa_log_path, "w", encoding="utf-8") as f:
+                                    json.dump(qa_history, f, indent=2)
+                            except Exception:
+                                pass
+                            return "FAILED"
                     log_step("ACTION", f"Selecting Option: \"{ans}\"")
                     selection_ok = resolver.execute_chip_selection(ans)
-                    if not selection_ok and options and ans != options[0]:
-                        log_step("WARNING", f"Click on '{ans}' failed. Retrying first option '{options[0]}'...")
-                        selection_ok = resolver.execute_chip_selection(options[0])
-                        if selection_ok:
-                            ans = options[0]
+                    if not selection_ok:
+                        log_step("WARNING", f"Click on '{ans}' failed. Retrying truthful option once...")
+                        selection_ok = resolver.execute_chip_selection(ans)
                     if not selection_ok:
                         log_step("WARNING", "Native click failed. Attempting contenteditable fallback...")
                         resolver.execute_contenteditable_input(ans)
@@ -1861,14 +2610,41 @@ class ApplicationEngine:
         
         target_cfg = getattr(self.ctx, "config", {}).get("target_jobs", {})
         negative_companies = [c.strip().lower() for c in target_cfg.get("negative_companies", []) if c and str(c).strip()]
+        # LinkedIn daily apply cap (anti-block): human-scale velocity per day,
+        # counted from today's tracker rows. Config-driven; default 20.
+        try:
+            _li_cap = int(target_cfg.get("linkedin_max_applies_per_day", 20) or 20)
+        except Exception:
+            _li_cap = 20
+        _today = datetime.now().strftime("%Y-%m-%d")
+        _li_today = 0
+        try:
+            _tracker = self.ctx.tracker_path
+            if _tracker.exists():
+                import csv as _csv
+                with open(_tracker, "r", encoding="utf-8", errors="ignore") as _f:
+                    for _row in _csv.DictReader(_f):
+                        if (_row.get("Status") == "APPLIED_LINKEDIN_EASY_APPLY"
+                                and str(_row.get("Date", "")).startswith(_today)):
+                            _li_today += 1
+        except Exception:
+            pass
+        if _li_today >= _li_cap:
+            log_step("LIMIT", f"LinkedIn daily cap reached ({_li_today}/{_li_cap}). Skipping LinkedIn applies today.")
 
         for job in jobs_queue:
             if applied_count >= max_applications:
                 log_step("LIMIT", f"Reached target application batch limit of {max_applications}.")
                 break
+            _is_li = str(job.get("platform", "")).lower() == "linkedin"
+            if _is_li and _li_today >= _li_cap:
+                log_step("LIMIT", f"Skipping LinkedIn job '{job.get('title')}' — daily cap ({_li_cap}) reached.")
+                continue
 
             comp_raw = (job.get("company") or "").lower().strip()
-            if any((nc in comp_raw if len(nc) > 3 else re.search(rf'\b{re.escape(nc)}\b', comp_raw)) for nc in negative_companies):
+            # Word-boundary for ALL names (same Nous-class fix as Gate 2:
+            # substring "infosys" wrongly gated "Nous Infosystems").
+            if any(re.search(rf'\b{re.escape(nc)}\b', comp_raw) for nc in negative_companies):
                 log_step("GATED", f"Skipping excluded company '{job.get('company')}' for job '{job.get('title') or job.get('job_title')}'.")
                 continue
             
@@ -1899,6 +2675,7 @@ class ApplicationEngine:
                     self.stats["applied_1click"] += 1
                 elif status == "APPLIED_LINKEDIN_EASY_APPLY":
                     self.stats["applied_linkedin"] += 1
+                    _li_today += 1
                 else:
                     self.stats["applied_chatbot"] += 1
 
@@ -1914,6 +2691,10 @@ class ApplicationEngine:
                 })
             elif status == "REDIRECT_EXTERNAL":
                 self.stats["redirect_external"] += 1
+                try:
+                    self.record_external_redirect(job, "")
+                except Exception:
+                    pass
                 self.record_tracker_entry({
                     "company": company,
                     "job_title": job_title,

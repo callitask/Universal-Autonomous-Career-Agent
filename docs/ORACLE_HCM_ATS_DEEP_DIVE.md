@@ -199,6 +199,7 @@ The final submission button in Oracle Cloud HCM Candidate Experience has the fol
    - Confirmation Record: `<Company> <JobId> Applied on <MM/DD/YYYY>`
 
 ### C. Application Artifact Archiving Protocol
+> **Output-path split (by design):** this CompanySite tree (`APPLIED ON COMPANY WEBSITE/`) is separate from the portal-pipeline tree (`profiles/<profile>/output/applications/<Company>_<Role>/` used by `core/` for Naukri/LinkedIn). Never mix them.
 Every submitted application must generate a localized archive under:
 `profiles/<candidate>/APPLIED ON COMPANY WEBSITE/<Company>/<Job Role>/` containing:
 - `answers.json`: Complete snapshot of form answers, field entries, timestamps, URLs, and confirmation text.

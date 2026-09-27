@@ -8,6 +8,14 @@
 #               query parameter navigation, DOM tile extraction, and detailed JD scraping.
 # Rationale: Enables autonomous discovery and targeted role evaluation for JPMC.
 # Preventative Notes: Config loaded dynamically from config.json; zero hardcoding.
+#
+# [ENTRY #002]
+# Term: [CDP_LITERAL_PURGE]
+# Timestamp: 2026-09-26 12:00:00 +05:30
+# Issue / Context: Default literal "http://localhost:9222" bypassed env/config.
+# Changes Made: cdp_url defaults to None, inherited resolver (CDP_URL env) applies.
+# Rationale: Zero hardcoding; custom ports need no code edits.
+# Preventative Notes: Never restore a literal CDP default here.
 # ==============================================================================
 
 import json
@@ -29,7 +37,7 @@ class JPMorganScraper(BaseCompanyScraper):
     Company-specific scraper for JPMorgan Chase on Oracle Cloud HCM (CX_1001).
     """
 
-    def __init__(self, cdp_url: str = "http://localhost:9222"):
+    def __init__(self, cdp_url: str = None):
         super().__init__(cdp_url)
         # Load config dynamically from same folder
         config_path = os.path.join(os.path.dirname(__file__), "config.json")

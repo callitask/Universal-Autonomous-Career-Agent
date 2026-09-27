@@ -41,8 +41,8 @@
 """
 IPC WATCHER - AG Brain Signal Relay
 ====================================
-Polls pending_question.json every 2 seconds (single-card IPC).
-Polls batch_question.json every 1 second (batch IPC — Batch Arch v2.0).
+Polls pending_question.json and batch_question.json on a shared 2.0s interval
+(single IPC + batch IPC — Batch Arch v2.0; run(profile, poll=2.0)).
 
 When PENDING detected: prints loud structured block to stdout.
 AG Brain (running in Antigravity 2.0) reads it, generates answer,

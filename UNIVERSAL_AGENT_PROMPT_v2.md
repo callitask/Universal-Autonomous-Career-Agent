@@ -115,14 +115,14 @@ python core/continuous_career_agent.py --profile profiles/$TARGET_PROFILE
 ```powershell
 python core/ipc_watcher.py --profile profiles/$TARGET_PROFILE --poll 2.0
 ```
-- Polls `pending_question.json` every 2 seconds.
+- Polls `pending_question.json` (single IPC) and `batch_question.json` (batch IPC) on a shared 2.0s interval.
 - When a PENDING question is detected, it logs a **timestamped AG Brain action request** with the full question, JD snippet, and prompt.
-- You (AG Brain) must respond by writing the answer JSON to `pending_question.json` **within 90 seconds** or the question will time out and the application will be abandoned.
+- You (AG Brain) must respond by writing the answer JSON to `pending_question.json` **within 90 seconds** (or `batch_answer.json` with `[DEEP_SCAN, SKIP]` decisions per card **within 120 seconds** for batch triage) or the question will time out and the application will be abandoned.
 
 ### Daemon 3 — AG Brain Cron Monitor (Your Own Heartbeat)
 ```
 Schedule a recurring cron: every 1 minute
-Prompt: "Check the IPC watcher task log for any new PENDING questions. If found, write the answer to pending_question.json."
+Prompt: "Check the IPC watcher task log for any new PENDING questions. If found in pending_question.json, write the answer there; if a batch triage is pending in batch_question.json, write per-card DEEP_SCAN/SKIP decisions to batch_answer.json."
 ```
 - This is YOUR wake-up mechanism. Every minute, check the IPC watcher log for new questions.
 - Do NOT use polling loops. Use the schedule tool with `CronExpression: "* * * * *"`.

@@ -29,6 +29,37 @@
 # Changes Made: Implemented compact 2-page A4 CSS styling with exact 8mm margins and Playwright Chromium print-to-PDF rendering.
 # Rationale: Professional recruiter-standard resume presentation.
 # Preventative Notes: Never allow unconstrained CSS line heights to cause page spillover.
+#
+# [ENTRY #003]
+# Term: [ZERO_OMISSION_GUARDRAIL]
+# Timestamp: 2026-09-27 12:00:00 +05:30
+# Issue / Context: Owner observed newer tailored resumes feeling shorter than
+#   older ones and feared major points were being cut (breaks experience/ATS).
+#   Forensic diff (63/63 bullets, identical text, 2 pages both) proved the
+#   engine only reorders — but nothing ENFORCED that invariant.
+# Changes Made: _enforce_content_preservation() runs after every tailoring:
+#   any master bullet missing from output is logged loudly and restored.
+# Rationale: Omission must be structurally impossible, not just unlikely.
+# Preventative Notes: Tailoring may reorder/highlight/re-frame only; it must
+#   never drop, truncate, or merge bullets. Guardrail failures are loud.
+#
+# [ENTRY #004]
+# Term: [AI_BULLET_REFRAME_WITH_VALIDATION]
+# Timestamp: 2026-09-27 12:30:00 +05:30
+# Issue / Context: Tailoring only reordered; JD terms never entered bullets,
+#   capping ATS pickup at pre-existing words. Owner ordered AI reframing that
+#   weaves JD terms truthfully: nothing skipped, no new tech (interview-safe).
+# Changes Made: reframe_experience_bullets() sends each employment role to the
+#   AI brain with strict same-count/no-new-facts rules, gated by
+#   target_jobs.resume_bullet_reframing (default ON). Per-role atomic
+#   validation (count equality, numbers ⊆ originals, tech tokens ⊆
+#   master+JD); failures keep originals. Returned sentences are normalized
+#   to bullet markers (AI strips them; unmarked lines evade ATS bullet
+#   parsing). Guard switches to count mode.
+# Rationale: Brain thinks (diplomatic JD weaving), Python verifies (counts,
+#   numbers, tech allowlist) — actuator/brain split preserved.
+# Preventative Notes: Never reframe education/skills/summary sections here;
+#   never persist a violating reframe; offline mode keeps originals silently.
 # ================================================================================
 """
 ================================================================================
@@ -338,6 +369,122 @@ class ResumeTailorEngine:
                 section_blocks.append("\n".join(block_lines))
         return "\n\n".join(section_blocks)
 
+    @staticmethod
+    def _bullets_of(md_text):
+        return [l.strip() for l in md_text.splitlines()
+                if l.strip()[:1] in ("-", "\u2022", "*") and len(l.strip()) > 2]
+
+    # Distinctive tech tokens only (single-Capital words like Java/Spring are
+    # common English and excluded): ALLCAPS, CamelCase, ++, #, dotted names.
+    _TECH_TOKEN = re.compile(r"\b(?:[A-Z]{2,}|[A-Za-z]*[A-Z][a-z]+[A-Z][a-zA-Z]*|[A-Za-z]+\+\+|[A-Za-z]+#|[A-Za-z]+\.[A-Za-z]+)\b")
+    _SKIP_SECTION = re.compile(r"education|certification|honor|award|course|training|publication|contact|summary|skill|competenc|profile", re.I)
+
+    @staticmethod
+    def _numbers_of(text):
+        return re.findall(r"\d+(?:\.\d+)?", text or "")
+
+    def _validate_reframed(self, originals, reframed, master_resume_text, jd_text):
+        """Factual validation of AI-reframed bullets. Returns True only if:
+        (a) same count (nothing skipped), (b) every number already existed in
+        the original bullets (no invented metrics), (c) every distinctive tech
+        token exists in the master resume or the JD (no new tech → interview-safe).
+        """
+        from collections import Counter
+        if len(originals) != len(reframed) or not all(str(x).strip() for x in reframed):
+            return False
+        orig_nums = Counter(self._numbers_of(" ".join(originals)))
+        new_nums = Counter(self._numbers_of(" ".join(reframed)))
+        for num, cnt in new_nums.items():
+            if orig_nums.get(num, 0) < cnt:
+                return False
+        allow = set(self._TECH_TOKEN.findall(master_resume_text or ""))
+        allow |= set(self._TECH_TOKEN.findall(jd_text or ""))
+        allow_l = {t.lower() for t in allow}
+        for tok in self._TECH_TOKEN.findall(" ".join(reframed)):
+            if tok.lower() not in allow_l:
+                return False
+        # Advisory tripwire (not a reject): common-shaped Capitalized words
+        # (e.g. a single-word stack name) can't be judged by shape alone, so
+        # log every newly introduced one for owner audit visibility.
+        try:
+            _vocab = set(re.findall(r"[A-Za-z][a-z]{3,}", (master_resume_text or "") + " " + (jd_text or "")))
+            _vocab_l = {w.lower() for w in _vocab}
+            _new_words = sorted({w for w in re.findall(r"\b[A-Z][a-z]{3,}\b", " ".join(reframed)) if w.lower() not in _vocab_l})
+            if _new_words:
+                print(f"  [i] Reframe introduced new Capitalized words (audit): {', '.join(_new_words[:12])}", flush=True)
+        except Exception:
+            pass
+        return True
+
+    def reframe_experience_bullets(self, sections, jd_text, master_resume_text):
+        """AI reframe pass over employment role sections (level>=3 with bullets).
+
+        Gated by target_jobs.resume_bullet_reframing (default ON per owner
+        order; per-profile overridable). Per-role atomic: validated reframe
+        replaces, anything suspect keeps originals. Sets _reframed_any so the
+        preservation guard switches to count mode.
+        """
+        try:
+            _flag = ((self.cfg.get("target_jobs", {}) or {}).get("resume_bullet_reframing", True))
+        except Exception:
+            _flag = True
+        if _flag is False:
+            return sections
+        self._reframed_any = False
+        _parent = ""
+        for section in sections:
+            try:
+                if int(section.get("level", 0)) <= 2:
+                    _parent = str(section.get("heading", ""))
+                    continue
+            except Exception:
+                continue
+            if not section.get("bullets"):
+                continue
+            if self._SKIP_SECTION.search(_parent) or self._SKIP_SECTION.search(str(section.get("heading", ""))):
+                continue
+            _orig = list(section["bullets"])
+            try:
+                _new = self.ai.reframe_role_bullets(
+                    str(section.get("heading", "")), _orig, jd_text or "", master_resume_text or "")
+            except Exception as e:
+                print(f"  [!] Bullet reframe notice ({section.get('heading', '')[:40]}): {e}", flush=True)
+                continue
+            if _new and self._validate_reframed(_orig, _new, master_resume_text, jd_text):
+                # Normalize: AI returns plain sentences; bullets need markers
+                # or they render as unbulleted text (and evade bullet counters).
+                section["bullets"] = [
+                    b if b.lstrip().startswith(("-", "*", "\u2022")) else "- " + b
+                    for b in _new
+                ]
+                self._reframed_any = True
+            elif _new:
+                print(f"  [!] Reframe failed validation for '{section.get('heading', '')[:40]}' — keeping originals.", flush=True)
+        return sections
+
+    def _enforce_content_preservation(self, template_md, tailored_md):
+        """Zero-Omission Guardrail: every master bullet must survive tailoring.
+
+        Reorder/highlight/re-frame only — never drop. Any missing bullet is
+        logged loudly and restored verbatim so content loss is impossible.
+        """
+        norm = lambda b: re.sub(r"\s+", " ", b.strip().lower())
+        kept = {norm(b) for b in self._bullets_of(tailored_md)}
+        missing = [b for b in self._bullets_of(template_md) if norm(b) not in kept]
+        if not missing:
+            return tailored_md
+        if getattr(self, "_reframed_any", False):
+            # Reframed text legitimately differs: enforce count equality only.
+            _n_master = len(self._bullets_of(template_md))
+            _n_out = len(self._bullets_of(tailored_md))
+            if _n_master == _n_out:
+                return tailored_md
+            print(f"  [!] Zero-Omission Guardrail: bullet count drift ({_n_out}/{_n_master}) after reframe.", flush=True)
+            return tailored_md
+        print(f"  [!] Zero-Omission Guardrail: restoring {len(missing)} dropped bullet(s).", flush=True)
+        return (tailored_md.rstrip() + "\n\n<!-- restored by zero-omission guardrail -->\n"
+                + "\n".join(missing) + "\n")
+
     def build_tailored_resume(self, jd_text):
         if not self.resume_md_path.exists():
             print(f"  [!] Master Resume Template not found at {self.resume_md_path}", flush=True)
@@ -347,7 +494,9 @@ class ResumeTailorEngine:
         sections = self.parse_resume_sections(template_md)
         sections = self.tailor_summary_and_competencies(sections, jd_text, template_md)
         reordered = self.reorder_bullets_by_jd(sections, jd_text)
-        tailored_md = self.reassemble_markdown(reordered)
+        reframed = self.reframe_experience_bullets(reordered, jd_text, template_md)
+        tailored_md = self.reassemble_markdown(reframed)
+        tailored_md = self._enforce_content_preservation(template_md, tailored_md)
         
         jd_keywords = self.extract_jd_keywords(jd_text)
         ats_score = self.calculate_ats_match_score(tailored_md, jd_keywords)

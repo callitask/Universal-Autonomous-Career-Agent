@@ -307,6 +307,39 @@
 #   Below 40 still rejects deterministically; 60+ still qualifies directly.
 # Rationale: Code now matches ARCHITECTURE_REFERENCE; near-misses get a brain.
 # Preventative Notes: Do not widen below 40 — deterministic rejects stay cheap.
+#
+# [ENTRY #029]
+# Term: [BULLET_REFRAME_API]
+# Timestamp: 2026-09-27 12:30:00 +05:30
+# Issue / Context: Tailoring needed AI bullet reframing (weave JD terms
+#   truthfully) instead of reorder-only; validation lives in the caller.
+# Changes Made: reframe_role_bullets() — same-count JSON-array contract, skips
+#   silently with [] when no API brain exists (offline runs never stall on
+#   IPC). Uses existing generate_text chain (Colab → Gemini → IPC).
+# Rationale: Brain proposes, caller disposes; no new transport, no new IPC type.
+# Preventative Notes: Never validate here; never invent facts in the prompt.
+#
+# [ENTRY #027]
+# Term: [LINKEDIN_PARITY_BATCH]
+# Timestamp: 2026-09-26 12:35:00 +05:30
+# Issue / Context: Shared Gemini batch prompt under-served LinkedIn cards
+#   (thin metadata, no exp/salary bands) with no platform advisory.
+# Changes Made: When a chunk contains LinkedIn (_platform) cards, append a
+#   LinkedIn advisory line (title/company/chips weighting, Easy Apply fit).
+#   Advisory only; same bar, same engines, zero Naukri behavior change.
+# Rationale: Platform parity via prompt context, not code forks.
+# Preventative Notes: Never branch scoring logic per platform here.
+#
+# [ENTRY #028]
+# Term: [LINKEDIN_PARITY_SCORE_ALIAS]
+# Timestamp: 2026-09-26 12:40:00 +05:30
+# Issue / Context: evaluate_job_match accepted only naukri_match_score, and
+#   discovery built the dict but never passed it (dead param).
+# Changes Made: portal_match_score accepted as platform-neutral alias resolved
+#   into the shared working var (naukri_* kept for compat); discovery passes
+#   the dict at the call site; LinkedIn passes {} until pane parser lands.
+# Rationale: One calibration path for all portals; zero Naukri change.
+# Preventative Notes: Portal badges stay advisory-only; never disqualify on them.
 # ================================================================================
 """
 ================================================================================
@@ -1007,6 +1040,56 @@ Return STRICTLY a JSON object:
                 pass
         return {}
 
+    def reframe_role_bullets(self, role_heading: str, bullets: list,
+                             jd_text: str, master_resume_text: str) -> list:
+        """AI bullet reframing: weave JD terms into each bullet truthfully.
+
+        Returns a same-length list of reframed bullets, or [] on any failure.
+        Skips silently (originals kept) when no API brain is available, so
+        offline runs never stall on IPC waits. Validation (count, numbers,
+        tech allowlist) happens in the caller, never here.
+        """
+        if not bullets:
+            return []
+        try:
+            _has_api = bool(self.colab_client) or bool(self.gemini_client)
+        except Exception:
+            _has_api = False
+        if not _has_api:
+            return []
+        numbered = "\n".join(f"{i + 1}. {b}" for i, b in enumerate(bullets))
+        prompt = f"""You are an elite executive resume strategist. Reframe each experience bullet to weave in the target job's terminology WITHOUT changing any fact.
+ROLE: {role_heading}
+TARGET JOB DESCRIPTION (relevant excerpt):
+{jd_text[:2500]}
+
+CANDIDATE MASTER RESUME (truth source — never contradict it):
+{master_resume_text[:3000]}
+
+ORIGINAL BULLETS (reframe EACH, same order):
+{numbered}
+
+STRICT RULES:
+1. Return EXACTLY {len(bullets)} bullets in the SAME order, as a JSON array of strings.
+2. You may rephrase verbs and weave in JD keywords ONLY where the underlying skill is genuinely present in the master resume.
+3. NEVER add tools, technologies, employers, degrees, metrics, headcounts, dates, or percentages absent from the original bullets or master resume.
+4. NEVER drop a bullet, merge two bullets, or invent scope. Every number in the output must already exist in the original bullets.
+5. Diplomatically foreground the JD-relevant skills the candidate truly has; downplay nothing by deletion.
+
+Return ONLY a JSON array of strings, no other text."""
+        raw = self.generate_text(prompt=prompt, task_type="RESUME_TAILORING")
+        if not raw:
+            return []
+        try:
+            arr_match = re.search(r'\[.*\]', raw, re.DOTALL)
+            if arr_match:
+                parsed = json.loads(arr_match.group(0))
+                if isinstance(parsed, list) and len(parsed) == len(bullets):
+                    return [str(x).strip() for x in parsed]
+        except Exception:
+            pass
+        return []
+
     def _parse_json_match_result(self, raw_text: str) -> Optional[MatchResult]:
         """Extracts and validates structured MatchResult JSON from LLM or IPC responses."""
         if not raw_text:
@@ -1236,6 +1319,11 @@ Return STRICTLY a JSON object:
     ) -> MatchResult:
         if not naukri_match_score and "naukri_match_score" in kwargs:
             naukri_match_score = kwargs.get("naukri_match_score")
+        # Platform-neutral alias (parity): LinkedIn callers pass
+        # portal_match_score={...}; resolved into the same working var so all
+        # downstream calibration code is shared, not forked.
+        if not naukri_match_score and "portal_match_score" in kwargs:
+            naukri_match_score = kwargs.get("portal_match_score")
 
         """
         Two-Stage Cognitive Job Qualification Engine:
@@ -2847,8 +2935,11 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
         Chunks cards to avoid 4K context window limits.
         """
         all_final_results = []
-        chunk_size = 10
-        
+        try:
+            chunk_size = max(1, int(candidate_summary.get("colab_batch_chunk_size", 10) or 10))
+        except Exception:
+            chunk_size = 10
+
         for i in range(0, len(cards), chunk_size):
             chunk = cards[i:i + chunk_size]
             try:
@@ -2923,9 +3014,13 @@ Example: [{{"id": 0, "decision": "DEEP_SCAN", "reason": "Match"}}, {{"id": 1, "d
 
     def _gemini_batch_evaluate_inline(self, cards: list, candidate_summary: dict, designation: str) -> list:
         all_final_results = []
-        # Gemini has a massive 1M+ token context window. We can evaluate 40 cards at a time 
-        # instead of 10 to drastically reduce API requests and avoid 429 Free Tier limits.
-        chunk_size = 40
+        # Gemini has a massive 1M+ token context window. We can evaluate ~40 cards
+        # at a time instead of 10 to drastically reduce API requests and avoid
+        # 429 Free Tier limits. Size is config-driven (target_jobs).
+        try:
+            chunk_size = max(1, int(candidate_summary.get("batch_ipc_chunk_size", 40) or 40))
+        except Exception:
+            chunk_size = 40
         import time
         
         for i in range(0, len(cards), chunk_size):
@@ -2968,6 +3063,15 @@ Example: [{{"id": 0, "decision": "DEEP_SCAN", "reason": "Match"}}, {{"id": 1, "d
                 if _avoid:
                     user_prompt += f"\nHard Exclusions (downstream C6 gate scores these 0 — SKIP any card whose title contains one of these terms): {', '.join(_avoid)}\n"
                 user_prompt += f"Qualification Bar: DEEP_SCAN only cards that could plausibly score >= {_bar}% on the full JD (domain + seniority + core-stack alignment).\n"
+                # LinkedIn advisory (parity): LinkedIn cards carry thin metadata
+                # (no exp/salary bands), so judge them on title + company + skills
+                # chips only, and prefer native Easy Apply roles. Advisory only.
+                try:
+                    _has_li = any(str((c or {}).get("_platform", "")).lower() == "linkedin" for c in chunk)
+                except Exception:
+                    _has_li = False
+                if _has_li:
+                    user_prompt += "LinkedIn note: cards marked from LinkedIn have sparse metadata; weigh title/company/skill-chips, require Easy Apply native fit at the same bar.\n"
                 model_name = self.get_default_model()
                 full_prompt = sys_prompt + "\n\n" + user_prompt
                 

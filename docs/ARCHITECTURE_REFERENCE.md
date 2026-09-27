@@ -203,7 +203,8 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
 
 ### 3.1d Dual-Engine Priority + Shared Libs (2026-09-23)
 
-**Two engines, both preserved:** **API engine** = Colab GPU gateway (`colab_credentials.json`, `engine_enabled`, `timeout=None`) → Gemini multi-key round-robin inline batch (40 cards/chunk) → **Integrity 2.0 engine** = Antigravity 2.0 file IPC (`pending_question.json` 90s / `batch_question.json` 120s). Batch priority in `batch_card_evaluation_ipc()`: Colab → Gemini inline → AG Brain IPC. Empty Gemini responses rotate to the next key (never `""`-as-success); IPC runs whenever `enable_ipc` and score ≥ 50 regardless of client existence.
+**Two engines, both preserved:** **API engine** = Colab GPU gateway (`colab_credentials.json`, `engine_enabled`, `timeout=None`) → Gemini multi-key round-robin inline batch (40 cards/chunk) → **Integrity 2.0 engine** = Antigravity 2.0 file IPC (`pending_question.json` 90s / `batch_question.json` 120s). Batch priority in `batch_card_evaluation_ipc()`: Colab → Gemini inline → AG Brain IPC. Empty Gemini responses rotate to the next key (never `""`-as-success); single-eval IPC arbitration covers the documented 40–65 borderline window (`ai_client.py`, IPC gate `>= 40`), while `>= 60%` qualifies directly. In API mode a parsed Gemini verdict IS the borderline arbitration (it returns before the IPC gate, which covers LLM-failure fallback only).
+**Canonical task types:** `BATCH_JOB_EVALUATION` (card triage) vs `JOB_EVALUATION` (single deep-scan) vs `SCREENING_QUESTION`/`QUESTIONNAIRE` (forms) vs `RESUME_TAILORING`, `PROFILE_SYNTHESIS`, `STARVATION_EXPANSION`. (`JOB_CARD_EVALUATION` survives only in dead comments; `JOB_FULL_EVALUATION` does not exist.)
 
 **Shared libs (no engine changes):** `core/utils/sanitize.py` (`csv_cell` anti-formula, `untrusted_block` JD guard, `safe_filename`), `core/utils/url_filters.py` (`build_ctc/wfh/companyJobs_param`), `core/utils/apply_status.py` (verified `APPLIED_*` only with DOM evidence), `CompanySiteApply/utils/config_resolver.py` (dynamic config, blueprint `default_user` only). Discovery uses URL libs (CTC/WFH identical-branch collapse; `company_whitelist` from config, default `[]`); apply uses status+sanitize libs (no premature `APPLIED_CHATBOT`; drawer-close alone → `DRAWER_CLOSED`); `ProfileContext` adds `add_many_to_processed_ledger()` batch write, 30s `cdp_url` cache, and correct `target_keywords` (`keywords`/`designations`/`search_keywords`).
 
@@ -286,7 +287,7 @@ Pagination (Page 2+):
 ```
 https://www.naukri.com/{role_slug}-jobs-in-{loc_slug}-{page_num}?jobAge={days}&experience={years}&ctcFilter={bracket}
 ```
-*(Note: As documented in `platform_heuristics.json:15-19`, generic `/jobs?k=...` URLs are strictly PROHIBITED as Naukri's server automatically redirects them to `/jobs-in-india?k=...`, which collapses the `.srp-jobtuple-wrapper` components and returns 0 vacancies. Canonical structured SEO slugs with dynamic query parameters reliably return 20 job cards per page).*
+*(Note: As documented in `platform_heuristics.json:15-19`, generic `/jobs?k=...` URLs are strictly PROHIBITED as Naukri's server automatically redirects them to `/jobs-in-india?k=...`, which collapses the `.srp-jobtuple-wrapper` components and returns 0 vacancies. Canonical structured SEO slugs with dynamic query parameters reliably return 20 job cards per page. Known exception: the `ROLE_AND_COMPANY` fallback in `core/04_job_discovery.py:826` still uses `/jobs?k`.)*
 
 **Naukri 3-Field Header Search Bar Protocol (UI Automation):**
 When navigating via in-browser UI form interaction (`execute_naukri_header_search()`):
@@ -364,12 +365,14 @@ In `02_profile_sync_naukri.py`, duplicate evaluation strictly enforces a 3-way m
 3. Extract JD keywords: upgraded technical token regex `r'[a-z0-9]+(?:\+\+|#)?|[.][a-z0-9]+|[a-z0-9]+(?:[/\-.][a-z0-9]+)+'` preserving technical terms like `C++`, `.NET`, `K8s`, `SAP S/4HANA`, `Dynamics 365`, `SQL`, `Python3`, `C#`
 4. Score each bullet: pre-compiled word-boundary regex (`\b`) eliminates substring collisions (`"art"` vs `"smart"`)
 5. Stable-sort bullets within each section by `(-score, idx)` to preserve original order on ties
-6. Reassemble markdown → convert to HTML via `markdown` library → wrap in ATS-compliant CSS template
-7. Render PDF via Playwright's `page.pdf()` using Chrome's print engine
+6. AI reframe pass (employment roles only): brain rewrites bullets weaving truthful JD terms; Python validates count/numbers/tech-allowlist per role, keeps originals on any violation
+7. Zero-omission enforcement: every master bullet must survive in the output (logged + restored verbatim if ever missing; count mode when reframed)
+7. Reassemble markdown → convert to HTML via `markdown` library → wrap in ATS-compliant CSS template
+8. Render PDF via Playwright's `page.pdf()` using Chrome's print engine
 
 ---
 
-### 3.5 `profile_context.py` — Multi-User Sandbox Manager (166 lines)
+### 3.5 `profile_context.py` — Multi-User Sandbox Manager (~750 lines)
 
 **Profile Resolution Hierarchy:**
 1. Explicit `profile_path` parameter
@@ -385,7 +388,7 @@ os.replace(tmp_path, config_path)  # Atomic on all OSes
 
 ---
 
-### 3.6 `browser_manager.py` — CDP Lifecycle Manager (76 lines)
+### 3.6 `browser_manager.py` — CDP Lifecycle Manager (~136 lines)
 
 - Connects to existing Chrome instance via `chromium.connect_over_cdp(cdp_url)`
 - Reuses `browser.contexts[0]` for cookie/session persistence
@@ -396,7 +399,7 @@ os.replace(tmp_path, config_path)  # Atomic on all OSes
 
 ---
 
-### 3.7 `continuous_career_agent.py` — Daemon Orchestrator (64 lines)
+### 3.7 `continuous_career_agent.py` — Daemon Orchestrator (~192 lines)
 
 - Infinite `while True` loop running `04_job_discovery.py` via `subprocess.run()`
 - Optional `--sync-profile` flag triggers `02_profile_sync_naukri.py` and `03_profile_sync_linkedin.py` before the loop
@@ -405,7 +408,7 @@ os.replace(tmp_path, config_path)  # Atomic on all OSes
 
 ---
 
-### 3.8 `ipc_watcher.py` — Daemon 2: Asynchronous IPC Signal Relay (142 lines)
+### 3.8 `ipc_watcher.py` — Daemon 2: Asynchronous IPC Signal Relay (~240 lines)
 
 - Dedicated background process running concurrently with `continuous_career_agent.py`.
 - **Purpose**: Acts as an un-buffered bridge between Daemon 1 (running the Playwright application engine) and Daemon 3 (AG Brain).

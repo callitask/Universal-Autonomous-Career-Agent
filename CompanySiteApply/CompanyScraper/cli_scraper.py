@@ -7,6 +7,16 @@
 # Changes Made: Implemented cli_scraper.py supporting company dispatching, dynamic
 #               candidate config loading, profile match ranking, and JSON export.
 # Rationale: Standardizes company discovery and targeted role selection.
+#
+# [ENTRY #002]
+# Term: [CDP_LITERAL_PURGE]
+# Timestamp: 2026-09-26 12:00:00 +05:30
+# Issue / Context: connect_over_cdp() used a hardcoded localhost URL, ignoring
+#   candidate config and env entirely.
+# Changes Made: CDP URL resolves from candidate.cdp_url → CDP_URL env, with a
+#   clear error when unconfigured.
+# Rationale: Zero hardcoding; custom ports need no code edits.
+# Preventative Notes: Never restore a literal CDP URL here.
 # ==============================================================================
 
 import argparse
@@ -64,8 +74,16 @@ async def run_scraper(company: str,
     print(f"  Target Keyword: '{keyword}' | Location: '{location}'")
     print(f"==================================================")
 
+    # Resolve CDP exclusively from candidate config → env. No literals.
+    _cdp_url = ((candidate_cfg.get("candidate", {}) or {}).get("cdp_url")
+                or os.environ.get("CDP_URL"))
+    if not _cdp_url:
+        raise RuntimeError(
+            "[CompanyScraper] No CDP URL configured. Set candidate.cdp_url in "
+            "candidate_config.json or the CDP_URL environment variable."
+        )
     async with async_playwright() as p:
-        browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+        browser = await p.chromium.connect_over_cdp(_cdp_url)
         context = browser.contexts[0]
         
         # Check for existing page or create new

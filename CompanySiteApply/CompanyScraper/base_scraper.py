@@ -7,6 +7,14 @@
 # Changes Made: Defined BaseCompanyScraper with standard interfaces for searching,
 #               filtering, scraping job cards/details, and scoring candidate matches.
 # Rationale: Decouples company scraping and job discovery from ATS form filling fingers.
+#
+# [ENTRY #002]
+# Term: [CDP_LITERAL_PURGE]
+# Timestamp: 2026-09-26 12:00:00 +05:30
+# Issue / Context: Default literal "http://localhost:9222" bypassed env/config.
+# Changes Made: cdp_url defaults to None, resolves via CDP_URL env.
+# Rationale: Zero hardcoding; custom ports need no code edits.
+# Preventative Notes: Never restore a literal CDP default here.
 # ==============================================================================
 
 import abc
@@ -21,8 +29,9 @@ class BaseCompanyScraper(abc.ABC):
     Defines universal contract for discovery, search filtering, extraction, and matching.
     """
 
-    def __init__(self, cdp_url: str = "http://localhost:9222"):
-        self.cdp_url = cdp_url
+    def __init__(self, cdp_url: str = None):
+        # Resolve via explicit arg → CDP_URL env. No literals (zero-hardcoding).
+        self.cdp_url = cdp_url or os.environ.get("CDP_URL")
         self.scraped_jobs: List[Dict[str, Any]] = []
 
     @property

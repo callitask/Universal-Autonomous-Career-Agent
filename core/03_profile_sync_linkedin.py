@@ -44,6 +44,19 @@
 #   profile churn and potential portal rate-limiting.
 # Preventative Notes: Whenever adding a new return key to evaluate_profile_experience(),
 #   update ALL consumer call sites (LinkedIn sync, Naukri sync) in the same commit.
+#
+# [ENTRY #004]
+# Term: [LINKEDIN_KEY_DECOUPLING]
+# Timestamp: 2026-09-26 13:05:00 +05:30
+# Issue / Context: LinkedIn sync read/wrote `naukri_card_keyword` and drove its
+#   headline from `naukri_headline` — Naukri names governing LinkedIn behavior.
+# Changes Made: Internal field renamed to `linkedin_card_keyword` (all 5 sites,
+#   old key kept as read-fallback for on-disk compat); headline prefers new
+#   optional `profile_content.linkedin_headline`, then old keys (unchanged
+#   behavior for existing configs).
+# Rationale: Platform isolation; same-commit consumer update per ENTRY #003 rule.
+# Preventative Notes: Never reuse the other platform's config keys; add a
+#   platform-prefixed key with fallback instead.
 # ================================================================================
 """
 ================================================================================
@@ -110,17 +123,17 @@ def parse_candidate_experiences(resume_text: str, config: dict) -> List[Dict[str
     if isinstance(cfg_emp, dict):
         for key, emp_data in cfg_emp.items():
             if isinstance(emp_data, dict):
-                comp = emp_data.get("company") or emp_data.get("naukri_card_keyword") or key
+                comp = emp_data.get("company") or emp_data.get("linkedin_card_keyword") or emp_data.get("naukri_card_keyword") or key
                 desig = emp_data.get("designation") or emp_data.get("role") or "Professional"
                 desc = emp_data.get("description", "")
-                card_kw = emp_data.get("naukri_card_keyword") or comp
+                card_kw = emp_data.get("linkedin_card_keyword") or emp_data.get("naukri_card_keyword") or comp
                 composite = f"{comp.lower()}::{desig.lower()}"
                 if composite not in seen_roles:
                     seen_roles.add(composite)
                     experiences.append({
                         "company": comp.strip(),
                         "designation": desig.strip(),
-                        "naukri_card_keyword": card_kw.strip(),
+                        "linkedin_card_keyword": card_kw.strip(),
                         "description": desc.strip(),
                         "source": "config"
                     })
@@ -170,11 +183,11 @@ def parse_candidate_experiences(resume_text: str, config: dict) -> List[Dict[str
                     if composite not in seen_roles and comp_clean:
                         seen_roles.add(composite)
                         experiences.append({
-                            "company": comp_clean,
-                            "designation": desig_clean,
-                            "naukri_card_keyword": comp_clean,
-                            "description": bullets_text,
-                            "source": "resume"
+                        "company": comp_clean,
+                        "designation": desig_clean,
+                        "linkedin_card_keyword": comp_clean,
+                        "description": bullets_text,
+                        "source": "resume"
                         })
 
     return experiences
@@ -215,7 +228,9 @@ def update_headline(page, profile_content: dict, li_profile_url: str):
     """Step E (Headline): Checks live headline and updates only if different."""
     log("\n[A] Evaluating LinkedIn Headline...")
     intro_edit_url = f"{li_profile_url.rstrip('/')}/edit/intro/"
-    target_headline = profile_content.get("naukri_headline", profile_content.get("headline", ""))
+    target_headline = (profile_content.get("linkedin_headline")
+                       or profile_content.get("naukri_headline")
+                       or profile_content.get("headline", ""))
     if not target_headline:
         log("    [SKIP] No target headline found in candidate configuration.")
         return
@@ -380,7 +395,8 @@ def evaluate_and_sync_experiences(
                 matched_idx = None
                 for idx, cand_role in enumerate(candidate_roles):
                     comp_name = cand_role.get("company", "").strip().lower()
-                    card_kw = cand_role.get("naukri_card_keyword", "").strip().lower()
+                    card_kw = (cand_role.get("linkedin_card_keyword", "")
+                                 or cand_role.get("naukri_card_keyword", "")).strip().lower()
                     desig = cand_role.get("designation", "").strip().lower()
 
                     has_comp_match = False

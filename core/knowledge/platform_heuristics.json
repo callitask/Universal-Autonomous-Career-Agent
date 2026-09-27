@@ -37,6 +37,27 @@
         "zero_experience_screening": "If candidate answers 0 years for a core technology named in the job title or >=50% of experience questions resolve to 0, abort application immediately without submitting.",
         "naukri_keyskills_false": "If Naukri native match score container shows Keyskills: false (Red Cross), disqualify immediately unless candidate primary title matches."
       }
+    },
+    "linkedin": {
+      "verified": "2026-09-26 (live DOM probe)",
+      "search_routing": {
+        "url_pattern": "https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_AL=true&f_TPR=r{seconds}&start={offset}",
+        "easy_apply_only": "f_AL=true",
+        "recency_param": "f_TPR=r<unix_seconds>",
+        "pagination_param": "start={(page-1)*25}"
+      },
+      "dom_selectors": {
+        "card_container": "div.job-card-container",
+        "card_job_id_attr": "data-job-id",
+        "title_link": "a.job-card-container__link",
+        "title_fallback": ".job-card-list__title, .artdeco-entity-lockup__title",
+        "company": ".artdeco-entity-lockup__subtitle",
+        "company_fallback": ".job-card-container__company-name",
+        "location_caption": ".artdeco-entity-lockup__caption",
+        "detail_pane_description": ".jobs-description-content",
+        "easy_apply_modal": "div.jobs-easy-apply-modal, div[data-view-name=job-apply-modal], div.artdeco-modal"
+      },
+      "notes": "Legacy classes .job-card-list__title / .job-card-container__company-name / .job-card-container__metadata-item no longer render on cards; kept as fallbacks. Cards carry no exp/salary bands; seniority lives in the detail pane."
     }
   }
 }

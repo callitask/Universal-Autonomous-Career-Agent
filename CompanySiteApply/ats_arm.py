@@ -7,6 +7,15 @@
 # Changes Made: Implemented ATSArm to manage CDP connection, detection, inspection, and step filling.
 # Rationale: Acts as the central anatomical arm coordinating all platform fingers and parser doctor.
 # Preventative Notes: Preserves active browser contexts; does not terminate user Chrome on exit.
+#
+# [ENTRY #002]
+# Term: [CDP_LITERAL_PURGE]
+# Timestamp: 2026-09-26 12:00:00 +05:30
+# Issue / Context: Default literal "http://127.0.0.1:9222" bypassed env/config.
+# Changes Made: cdp_url defaults to None, resolves via CDP_URL env; connect()
+#   raises a clear error when unconfigured instead of dialing a wrong port.
+# Rationale: Zero hardcoding; explicit failure beats silent wrong-port hangs.
+# Preventative Notes: Never restore a literal CDP default here.
 # ==============================================================================
 
 import json
@@ -31,8 +40,9 @@ class ATSArm:
     Connects to Chrome via CDP, identifies ATS platform, and delegates to the appropriate finger.
     """
 
-    def __init__(self, cdp_url: str = "http://127.0.0.1:9222"):
-        self.cdp_url = cdp_url
+    def __init__(self, cdp_url: str = None):
+        # Resolve via explicit arg → CDP_URL env. No literals (zero-hardcoding).
+        self.cdp_url = cdp_url or os.environ.get("CDP_URL")
         self.playwright = None
         self.browser = None
         self.context = None
@@ -46,6 +56,11 @@ class ATSArm:
         if not self.playwright:
             self.playwright = sync_playwright().start()
 
+        if not self.cdp_url:
+            raise RuntimeError(
+                "[ATSArm] No CDP URL configured. Pass cdp_url or set the "
+                "CDP_URL environment variable to the Chrome debug endpoint."
+            )
         self.browser = self.playwright.chromium.connect_over_cdp(self.cdp_url)
         self.context = self.browser.contexts[0]
         # Find the page that is not about:blank or new-tab-page

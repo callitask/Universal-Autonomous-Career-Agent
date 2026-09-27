@@ -156,7 +156,7 @@
     - `RESUME_TAILORING`: Targeted summary adaptation and core competencies reordering.
     - `SCREENING_QUESTION`: Portal chatbot / Easy Apply modal form input resolution.
     - `STARVATION_EXPANSION`: Designation queue expansion on 0 matches.
-    The agent polls `pending_question.json` at 0.5s intervals and resumes immediately upon answer ingestion, unlinking the file. Terminal `stdin` is strictly prohibited.
+    The Daemon 1 application engine polls `pending_question.json` at 0.5s intervals and resumes immediately upon answer ingestion, unlinking the file. Daemon 2 (`ipc_watcher.py`) polls both `pending_question.json` and `batch_question.json` on a shared 2.0s interval. Terminal `stdin` is strictly prohibited.
 
 16. **Batch Job Evaluation IPC Contract (`04_job_discovery.py` & `ipc_watcher.py`):**
     Batch Architecture v2.0 introduces `batch_question.json` and `batch_answer.json`.
@@ -320,6 +320,7 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 
 ### C6: Negative Keywords Are Absolute
 **Rule:** `is_title_allowed()` and `evaluate_job_match()` Stage 1 must reject titles containing ANY negative keyword unconditionally. The presence of a positive target keyword must NOT override a negative keyword match.
+**Layer note (G-BRAIN-01 reconciliation):** discovery (`04_job_discovery.py` card loop) treats negatives as advisory-only context for AG Brain batch triage; enforcement lives in `evaluate_job_match()` / `arbitrate_card_fit()` Stage 1 (`ai_client.py`). Never re-introduce Python title-gating in the discovery loop.
 
 ### C7: 3x Stuck Question Loop Breaker
 **Rule:** `_handle_chatbot_loop()` must track consecutive question repeats (`active_q == last_processed_q`). If any question repeats $\ge 3$ times without progress, do not burn the remaining iteration budget. Immediately abort the loop, log `REQUIRES_MANUAL_INTERVENTION`, write `[ABORTED_STUCK_3X]` into `ques_ans_chatbot.json`, and return `"FAILED"`.
@@ -401,7 +402,7 @@ For pagination (Page 2+):
 https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}-{page_num}?experience={exp}&jobAge={job_age_days}&ctcFilter={ctc_filter}
 ```
 **Empirical Truth & Trap Avoidance:**
-1. **The `/jobs?k=` Trap:** Never construct `https://www.naukri.com/jobs?k=...&l=...`. Naukri's routing engine automatically redirects `/jobs?k=...` to `/jobs-in-india?k=...` which fails to render job cards (yields 0 tuples).
+1. **The `/jobs?k=` Trap:** Never construct `https://www.naukri.com/jobs?k=...&l=...`. Naukri's routing engine automatically redirects `/jobs?k=...` to `/jobs-in-india?k=...` which fails to render job cards (yields 0 tuples). Known exception: the `ROLE_AND_COMPANY` fallback in `04_job_discovery.py:826` still uses this pattern — migrate it to slugs before relying on that strategy.
 2. **The Comma Slug Trap:** The historical reason SEO slugs failed was NOT the slug URL architecture, but **trailing commas** in search tokens (`"java technical lead,"`, `"bangalore, "`). Commas encode as `%2C` which Naukri parses literally as `"2c"`, collapsing results to 0. All tokens MUST pass through `clean_search_token()` to strip commas, semicolons, and special characters before slugifying (`re.sub(r'[^a-z0-9]+', '-', clean_token.lower()).strip('-')`).
 3. Structured slug URLs with clean tokens and appended query parameters (`experience`, `jobAge`, `ctcFilter`) reliably yield **20 job tuples per page** and 25,000+ available postings.
 
@@ -521,8 +522,8 @@ https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}-{page_num}?experience={ex
 **Rule:**
 1. **Third-Party Portal Hangs:** Certain job listings on Naukri (specifically syndicated agencies like Purview India, Leading Client, or unverified recruiters) redirect through slow or non-responsive third-party gateways that hang indefinitely or exceed Playwright navigation limits.
 2. **Two-Stage Fallback Standard in `05_apply_jobs.py`:**
-   - Attempt stage 1 with `wait_until="commit"` (12,000ms timeout) to ensure HTTP response has been received.
-   - If commit succeeds, allow stage 2 with `wait_until="domcontentloaded"` (15,000ms timeout).
+    - Attempt stage 1 with `wait_until="commit"` (60,000ms timeout) to ensure HTTP response has been received.
+    - If commit succeeds, allow stage 2 with `wait_until="domcontentloaded"` (75,000ms timeout).
    - If either stage times out or throws `PlaywrightTimeoutError` / `Error`, the engine must catch the exception cleanly, log `[ERROR] Page navigation failed to load job URL within timeout`, record `Status: FAILED` in `applications_tracker.csv`, and cleanly advance to the next card.
 3. **No Unhandled Crashes:** Navigation timeouts must NEVER crash the application loop or leave orphaned zombie detail pages.
 
@@ -573,7 +574,8 @@ When investigating runtime portal anomalies, unexpected selector behavior, or pe
 ```
 F:\JOB AI AGENT\
 ├── core/                              # Python execution scripts (NEVER hardcode paths)
-│   ├── ai_client.py                   # Central AI reasoning engine
+│   ├── ai_client.py                   # Dual-engine brain (API: Gemini+Colab / Integrity 2.0: AG IPC)
+│   ├── ai_rate_manager.py               # SmartRateManager (3.5s floor, 120s model ban)
 │   ├── 01_ai_analyzer.py              # One-time profile keyword extraction
 │   ├── 02_profile_sync_naukri.py      # Surgical selective Naukri profile sync (5-step card engine)
 │   ├── 02b_naukri_fast_resume_upload.py # Atomic resume upload
@@ -587,9 +589,12 @@ F:\JOB AI AGENT\
 │   ├── knowledge/
 │   │   └── platform_heuristics.json   # Platform heuristics and DOM configuration
 │   ├── utils/
-│   │   ├── profile_context.py         # Multi-user sandbox context manager & Purity Enforcer
-│   │   ├── browser_manager.py         # CDP browser lifecycle manager
-│   │   └── search_state_manager.py    # Sequential designation rotation & cycle persistence
+│   │   ├── profile_context.py         # Multi-user sandbox context manager & Purity Enforcer (+batch API)
+│   │   ├── browser_manager.py         # CDP browser lifecycle manager (with-statement safe)
+│   │   ├── search_state_manager.py    # Sequential designation rotation & cycle persistence
+│   │   ├── sanitize.py                # csv_cell / untrusted_block / safe_filename (shared)
+│   │   ├── url_filters.py             # build_ctc/wfh/companyJobs params (shared)
+│   │   └── apply_status.py            # Canonical APPLIED_*/FAILED statuses (shared)
 │   └── scrapers/                      # Portal scraper base classes and implementations
 │
 ├── CompanySiteApply/                  # On-demand direct company ATS application engine
@@ -600,10 +605,14 @@ F:\JOB AI AGENT\
 │   ├── nails/                         # Company-specific ATS customizations (JPMC, Bristlecone)
 │   ├── CompanyScraper/                # Direct company career site scrapers
 │   ├── parser_doctor/                 # ATS resume parsing healing and review verification
-│   └── utils/                         # DOM helpers & honeypot guards
+│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver (no hardcoded profiles)
 │
 ├── scripts/                           # Operational and maintenance utilities
-│   └── reevaluate_ledger.py           # Ledger re-evaluation reset utility
+│   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles
+│   ├── reevaluate_ledger.py           # Ledger re-evaluation reset utility (utf-8-sig BOM safe)
+│   ├── test_colab_connection.py       # Colab gateway diagnostic (120s finite timeout)
+│   └── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
+├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)
 │
 ├── profiles/                          # Per-candidate sandboxed data
 │   └── <profile_name>/
@@ -639,4 +648,4 @@ F:\JOB AI AGENT\
 | `ipc_auto_resolver.py` | `google.genai`, `argparse`, `json`, `pathlib`, `sys`, `time` |
 | `search_state_manager.py` | `json`, `os`, `pathlib`, `typing` |
 
-**WARNING:** `03_profile_sync_linkedin.py` uses `from google import genai` (new SDK) while all other scripts use `import google.generativeai as genai` (legacy SDK). These are **different packages**. Do not mix them.
+**WARNING:** `03_profile_sync_linkedin.py` uses `from google import genai` (new SDK only). `ai_client.py` and `ipc_auto_resolver.py` dual-support both `google.genai` and legacy `google.generativeai`; all other scripts use the legacy SDK. These are **different packages**. Do not mix them.

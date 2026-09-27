@@ -1,13 +1,13 @@
 # Gemini Web AI Multi-Step Onboarding Prompts
 
-This guide contains the official 3-step prompt sequence to initialize Gemini Web AI with full context, operational boundaries, and all 18 bug prevention guardrails.
+This guide contains the official 3-step prompt sequence to initialize Gemini Web AI with full context, operational boundaries, and all 43 bug prevention guardrails (33 C + 6 H + 3 D + 1 P).
 
 ---
 
 ## Step 1: Upload `docs/WORKSPACE_RULES.md`
 **Prompt to accompany upload:**
 ```text
-I am uploading the WORKSPACE RULES document for my Universal Autonomous Career Agent project. This document contains 8 mandatory directives and 18 known bug prevention guardrails that govern ALL code you write in this session.
+I am uploading the WORKSPACE RULES document for my Universal Autonomous Career Agent project. This document contains 9 mandatory directives and 43 known bug prevention guardrails (33 C + 6 H + 3 D + 1 P, incl. C15-C34, Batch Architecture v2.0, SearchStateManager rotation, dual-channel IPC, C24 experience gating, C32 navigation timeouts, C34 option-constrained resolution, and G-BRAIN-01 actuator discipline) that govern ALL code you write in this session.
 
 CRITICAL INSTRUCTIONS:
 1. Read the entire document thoroughly — every directive, every appendix, every bug guardrail.
@@ -80,18 +80,18 @@ Do NOT write any code yet. Just confirm your understanding.
 **Prompt to accompany upload:**
 ```text
 I am uploading the current production codebase files for the Universal Autonomous Career Agent. You now have:
-1. [PASS] WORKSPACE_RULES.md (8 directives + 18 bug guardrails) — loaded
+1. [PASS] WORKSPACE_RULES.md (9 directives + 43 bug guardrails) — loaded
 2. [PASS] ARCHITECTURE_REFERENCE.md (complete technical blueprint) — loaded
 3. [PASS] Production source code files — attached above
 
 WORKING PROTOCOL FOR THIS SESSION:
 1. You are operating strictly as the Principal Agent Developer.
-2. Every code change you produce must comply with ALL 8 directives in WORKSPACE_RULES.md.
+2. Every code change you produce must comply with ALL 9 directives in WORKSPACE_RULES.md.
 3. Never manually touch or modify files inside the profiles/ folder. All runtime sandbox adaptation must be performed autonomously by the running agent code.
 4. Every file you output must be 100% complete — no truncation, no placeholder comments.
 5. Before modifying any function, verify it doesn't break callers listed in APPENDIX B of the rules.
 6. In 04_job_discovery.py, ensure ctx.load_processed_ledger() is handled via ProcessedLedger (supporting O(1) dictionary key lookups, structured metadata, and set operations).
-7. After proposing changes, run through the DIRECTIVE 8 bug guardrail checklist (P1, C1-C6, C9-C14, H1-H6, D1-D3) and confirm no guardrail is violated.
+7. After proposing changes, run through the DIRECTIVE 8 bug guardrail checklist (P1, C1-C4, C6-C34, H1-H6, D1-D3) and confirm no guardrail is violated.
 8. ALWAYS respect the AG 2.0 File-Based IPC architecture (pending_question.json). NEVER reintroduce terminal stdin or input() blocking.
 
 READY STATE:

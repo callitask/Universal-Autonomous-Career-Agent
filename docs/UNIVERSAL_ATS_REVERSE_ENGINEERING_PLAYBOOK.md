@@ -224,4 +224,4 @@ Under no circumstances should any autonomous agent click the final `SUBMIT` butt
    - Await confirmation route or modal (`/confirmation`, `success`, `Application Submitted`).
    - Extract Confirmation Number / Application ID.
    - Capture full receipt screenshot.
-   - Archive application metadata into `profiles/<candidate>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>/answers.json`.
+    - Archive application metadata into `profiles/<candidate>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>/answers.json`. (CompanySite tree only — portal-pipeline roles archive to `profiles/<profile>/output/applications/<Company>_<Role>/` instead.)

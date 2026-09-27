@@ -53,7 +53,8 @@ F:\JOB AI AGENT\
 │   ├── 04_job_discovery.py               # Batched discovery orchestrator & URL filter injector
 │   ├── generate_factual_tailored.py      # Factual ATS resume tailor & PDF compiler
 │   ├── 05_apply_jobs.py                  # Form solver (LinkedIn Easy Apply & Naukri Chatbot)
-│   ├── ai_client.py                      # Dual-brain cognitive engine & IPC bridge
+│   ├── ai_client.py                      # Dual-engine brain (API: Gemini+Colab / Integrity 2.0: AG IPC)
+│   ├── ai_rate_manager.py               # SmartRateManager (3.5s floor, 120s model ban)
 │   ├── ipc_watcher.py                    # File-based IPC signal relay daemon (Daemon 2)
 │   ├── ipc_auto_resolver.py              # Standalone IPC auto-resolver utility
 │   ├── knowledge/
@@ -64,8 +65,11 @@ F:\JOB AI AGENT\
 │   │   └── linkedin_scraper.py
 │   └── utils/                            # Shared core utilities
 │       ├── profile_context.py            # ProfileContext, Purity Enforcer & ProcessedLedger
-│       ├── browser_manager.py            # Chrome DevTools Protocol (CDP) session manager
-│       └── search_state_manager.py       # Sequential designation rotation manager
+│       ├── browser_manager.py            # Chrome DevTools Protocol (CDP) session manager (with-statement safe)
+│       ├── search_state_manager.py       # Sequential designation rotation manager
+│       ├── sanitize.py                # csv_cell / untrusted_block / safe_filename (shared)
+│       ├── url_filters.py             # build_ctc/wfh/companyJobs params (shared)
+│       └── apply_status.py            # Canonical APPLIED_*/FAILED statuses (shared)
 │
 ├── CompanySiteApply/                     # On-demand direct company ATS application engine
 │   ├── cli.py                            # Interactive CLI runner for direct ATS applications
@@ -75,10 +79,14 @@ F:\JOB AI AGENT\
 │   ├── nails/                            # Company-specific ATS customizations (JPMC, Bristlecone)
 │   ├── CompanyScraper/                   # Direct company career site scrapers
 │   ├── parser_doctor/                    # ATS resume parsing healing and review verification
-│   └── utils/                            # DOM helpers & honeypot guards
+│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver (no hardcoded profiles)
 │
 ├── scripts/                              # Operational and maintenance utilities
-│   └── reevaluate_ledger.py              # Ledger re-evaluation reset utility
+│   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles
+│   ├── reevaluate_ledger.py           # Ledger re-evaluation reset utility (utf-8-sig BOM safe)
+│   ├── test_colab_connection.py       # Colab gateway diagnostic (120s finite timeout)
+│   └── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
+├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)
 │
 ├── profiles/                             # Candidate profiles directory (Autonomous Sandboxes)
 │   └── default_user/                     # Master blueprint / schema exemplar
@@ -110,10 +118,10 @@ F:\JOB AI AGENT\
 ### A. Python Environment
 Ensure Python 3.10+ is installed:
 ```bash
-pip install playwright markdown
+pip install -r requirements.txt
 playwright install chromium
 ```
-*(Optional: install `google-genai` if utilizing Gemini API hosted mode).*
+*(`requirements.txt` pins `playwright`, `markdown`, `google-genai` and `openai` for the Colab GPU gateway.)*
 
 ### B. Launch Isolated Chrome Profile with CDP (Crucial Step)
 The agent operates through the Chrome DevTools Protocol (CDP on port 9222) to attach to an active browser session with established login cookies.
@@ -194,7 +202,6 @@ python core/continuous_career_agent.py --profile profiles/<candidate_name>
 | `--profile <path>` | Path to candidate profile directory (e.g., `profiles/john_doe`). If omitted, auto-discovers the active directory in `profiles/`. |
 | `--analyze` | Forces re-synthesis of `cognitive_profile.json` before starting discovery. |
 | `--sync-profile` | Triggers the 5-step cognitive selective Naukri profile sync and LinkedIn profile updater before the discovery loop. |
-| `--single-cycle` | Executes a single discovery, tailoring, and application cycle, then exits. |
 
 ### Execution Cycle Walkthrough:
 1. **Startup & Purity Enforcer (`core/continuous_career_agent.py`):**
@@ -216,7 +223,7 @@ python core/continuous_career_agent.py --profile profiles/<candidate_name>
    - **Naukri:** `ChatbotResolver` solves interactive drawer questions (targeting `.ssrc__label` chips and strictly scoped `.sendMsg` container) and attaches the tailored PDF.
 5. **Verification & Cooldown:**
    - Verifies submission in platform history ledgers and logs to `applications_tracker.csv`.
-   - Sleeps for 30 minutes before advancing to the next search cycle.
+    - Sleeps for 30 seconds (`--delay 30`, `core/continuous_career_agent.py:121`) before advancing to the next search cycle.
 
 ---
 

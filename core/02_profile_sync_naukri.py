@@ -28,6 +28,14 @@
 # Changes Made: Implemented Rule C16 (duplicate detection across Company + Designation + Tenure years) and isolated modal scroll container. Added zero-comma rule for key skills input.
 # Rationale: Prevented duplicate work history entries and browser navigation freezes.
 # Preventative Notes: Never match duplicates by company name alone; candidate can legitimately hold separate stints across different years.
+#
+# [ENTRY #003]
+# Term: [CDP_LITERAL_PURGE]
+# Timestamp: 2026-09-26 12:00:00 +05:30
+# Issue / Context: Fallback literal "http://127.0.0.1:9222" bypassed env/config.
+# Changes Made: CDP URL now resolves exclusively via ctx.cdp_url (config → env). No literals.
+# Rationale: Single canonical source; custom ports work without code edits.
+# Preventative Notes: Never hardcode a CDP URL/port anywhere in core/.
 # ================================================================================
 """
 ================================================================================
@@ -720,7 +728,7 @@ def run(profile_path: Optional[str] = None):
     cfg = ctx.config
     cand = cfg.get("candidate", {})
     p_content = cfg.get("profile_content", {})
-    cdp_url = cand.get("cdp_url", "http://127.0.0.1:9222")
+    cdp_url = ctx.cdp_url or os.environ.get("CDP_URL")  # Canonical source (config → env); no literals
 
     ai_client = AIClient(ctx)
 

@@ -7,6 +7,14 @@
 # Changes Made: Implemented CLI with inspect, heal, fill, and detect commands.
 # Rationale: Provides human-in-the-loop and development inspection hooks for live ATS cracking.
 # Preventative Notes: Never runs as an uncontrolled daemon; strictly on-demand. Zero candidate PII.
+#
+# [ENTRY #002]
+# Term: [CDP_LITERAL_PURGE]
+# Timestamp: 2026-09-26 12:00:00 +05:30
+# Issue / Context: --cdp-url defaulted to a hardcoded localhost URL.
+# Changes Made: Default is now None; ATSArm resolves via CDP_URL env.
+# Rationale: Zero hardcoding; custom ports need no code edits.
+# Preventative Notes: Never restore a literal CDP default here.
 # ==============================================================================
 
 import argparse
@@ -107,7 +115,7 @@ def cmd_fill(args):
 
 def main():
     parser = argparse.ArgumentParser(description="CompanySiteApply - Enterprise ATS Multi-Finger Tool")
-    parser.add_argument("--cdp-url", default="http://127.0.0.1:9222", help="CDP connection endpoint")
+    parser.add_argument("--cdp-url", default=None, help="CDP connection endpoint (falls back to CDP_URL env var)")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # inspect

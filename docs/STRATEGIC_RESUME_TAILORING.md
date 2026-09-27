@@ -1,5 +1,5 @@
 # STRATEGIC RESUME TAILORING ARCHITECTURE & COMPILATION GOVERNANCE
-# Version: 1.0 | Upgraded: 2026-09-17 | Universal Autonomous Career Agent
+# Version: 1.1 | Upgraded: 2026-09-27 | Universal Autonomous Career Agent
 
 ---
 
@@ -15,6 +15,10 @@ Blind copy-pasting causes two catastrophic failure modes:
 * Identifying the target role's **Architectural Archetype** (e.g. Distributed Systems Lead, Enterprise Integration Architect, Cloud Modernization Lead).
 * Aligning the candidate's **authentic, verifiable work history** to demonstrate exact technical domain depth, architectural scale, and high-velocity delivery in those specific focus areas.
 * Never inventing fake credentials, never exaggerating timelines, and never stripping foundational career evidence.
+
+**Zero-Omission Guarantee:** tailoring reorders, highlights, and re-frames existing bullets only — it never drops, truncates, or merges them. Every build runs `_enforce_content_preservation()` (`core/generate_factual_tailored.py`), which diffs output bullets against the master resume and loudly logs + restores anything missing. Forensically verified: tailored outputs carry 100% of master bullets with identical text (reordered by JD relevance), rendering to the same 2-page budget.
+
+**AI Bullet Reframing (brain proposes, Python disposes):** each employment role's bullets are sent to the AI brain (`ai_client.reframe_role_bullets`), which rewrites them weaving JD terminology where truthfully applicable — same count, same order, same facts. Python then validates per role before accepting: (a) bullet count equality (nothing skipped), (b) every number already existed in the originals (no invented metrics), (c) every distinctive tech token exists in the master resume or the JD (no new stack → interview-safe). Any violation keeps the original bullets untouched. Newly introduced Capitalized words are logged to terminal for owner audit. Returned sentences are normalized back to bullet markers (models strip them). Skipped silently when no API brain exists (offline runs keep originals, never stall). Toggle per profile via `target_jobs.resume_bullet_reframing` (default ON).
 
 ---
 
@@ -67,6 +71,7 @@ When tailoring for specific job focus areas (e.g. Kafka, AWS, Cassandra):
 * Frame responsibilities using strong, active engineering verbs (*Architected*, *Engineered*, *Spearheaded*, *Orchestrated*, *Refactored*, *Deployed*).
 
 ### Rule 4: Isolated & Structured Output Storage
+> **Output-path split (by design):** portal-pipeline roles (Naukri/LinkedIn via `core/`) write to `profiles/<profile>/output/applications/<Company>_<Role>/`; direct company-site applications (via `CompanySiteApply/`) write below. Never mix the two trees.
 Every tailored resume must be saved strictly in the official company application folder:
 ```
 profiles/<profile_name>/APPLIED ON COMPANY WEBSITE/<Company_Name>/<Job_Title>/

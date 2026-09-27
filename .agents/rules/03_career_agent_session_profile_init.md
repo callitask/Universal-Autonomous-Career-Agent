@@ -7,7 +7,7 @@
 
 ### STEP 1 — Mandatory Pre-Flight Documentation Ingestion
 Before executing any user command, running any Python script (`python core/...`), or making any code changes, immediately read and internalize:
-1. `F:\JOB AI AGENT\docs\WORKSPACE_RULES.md` (Directives 1-8, all Bug Prevention Guardrails P1, C1-C20, H1-H6, D1-D3)
+1. `F:\JOB AI AGENT\docs\WORKSPACE_RULES.md` (Directives 1-9, all 43 Bug Prevention Guardrails P1, C1-C34, H1-H6, D1-D3)
 2. `F:\JOB AI AGENT\docs\ARCHITECTURE_REFERENCE.md` (Module anatomy, IPC contracts, data schemas)
 3. `F:\JOB AI AGENT\docs\PLATFORM_KNOWLEDGE.md` (Naukri/LinkedIn DOM patterns, SEO slugs, zero-comma rules)
 
@@ -17,7 +17,7 @@ Compliance is mandatory regardless of whether the user explicitly mentions the d
 
 ### STEP 2 — Identify Active Candidate Profile
 1. Inspect `F:\JOB AI AGENT\profiles` to determine the target candidate directory:
-   - If the user specifies a profile (e.g. `udaysagar_kandpal`), use `profiles/<specified_profile>`.
+    - If the user specifies a profile (e.g. `john_doe`), use `profiles/<specified_profile>`.
    - If unspecified, check the most recently active profile or default reference:
      * Canonical template & schema blueprint: `profiles/default_user`
      * Active candidate directory: `profiles/udaysagar_kandpal`

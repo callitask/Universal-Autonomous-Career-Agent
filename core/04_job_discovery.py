@@ -207,6 +207,63 @@
 # Rationale: Pure waste removal; zero decision change (dupes got identical
 #   verdicts anyway).
 # Preventative Notes: Dedupe key must be the canonical URL, never bare title.
+#
+# [ENTRY #020]
+# Term: [CDP_LITERAL_PURGE]
+# Timestamp: 2026-09-26 12:00:00 +05:30
+# Issue / Context: Fallback literal "http://127.0.0.1:9222" bypassed env/config.
+# Changes Made: CDP URL now resolves exclusively via ctx.cdp_url (config →
+#   env, 30s probe cache) with os.environ fallback. No literals.
+# Rationale: Single canonical source; custom ports work without code edits.
+# Preventative Notes: Never hardcode a CDP URL/port anywhere in core/.
+#
+# [ENTRY #021]
+# Term: [LINKEDIN_PARITY_SCORE_WIRE]
+# Timestamp: 2026-09-26 12:40:00 +05:30
+# Issue / Context: Portal-signal dict was built but never passed to
+#   evaluate_job_match (dead param); LinkedIn had no adapter slot.
+# Changes Made: Call site passes portal_match_score=dict ({} until LinkedIn
+#   pane parser lands). Actual container scraping deferred (needs live DOM).
+# Rationale: Wiring first, no behavior change while dict is empty.
+# Preventative Notes: Never fabricate Keyskills True; {} means no bonus.
+#
+# [ENTRY #022]
+# Term: [LINKEDIN_PARITY_ENRICH]
+# Timestamp: 2026-09-26 12:45:00 +05:30
+# Issue / Context: LinkedIn cards carried empty salary/location/posted/skills
+#   and positional metadata [0] (location, not exp) — thin batches, dead salary
+#   gate, crippled C24. Chunk sizes 40/10 were literals.
+# Changes Made: Classify ALL LI metadata items (exp-band regex wins, location
+#   = first non-band item, posted from <time>); batch/colab chunk sizes read
+#   from target_jobs (defaults 40/10). Naukri branch byte-identical.
+# Rationale: Same card schema for both portals; config-driven sizes.
+# Preventative Notes: Enrichment is best-effort try/except; empties are honest.
+#
+# [ENTRY #023]
+# Term: [LINKEDIN_SELECTOR_REPAIR]
+# Timestamp: 2026-09-26 13:00:00 +05:30
+# Issue / Context: LinkedIn SRP yielded 0 cards fleet-wide with zero errors:
+#   `.job-card-list__title` no longer exists in LinkedIn DOM, so every card hit
+#   `if not title_el.count(): continue`. Silent total starvation.
+# Changes Made: Title → `a.job-card-container__link`, company →
+#   `.artdeco-entity-lockup__subtitle`, location from
+#   `.artdeco-entity-lockup__caption` (all verified via live CDP DOM probe);
+#   old classes kept as fallbacks; relative /jobs/view hrefs absolutized;
+#   verified selector map added to platform_heuristics.json platforms.linkedin.
+# Rationale: Empirical DOM truth over cached assumptions (Axiom 1).
+# Preventative Notes: Re-probe live DOM before assuming LI selectors; they
+#   rotate without notice. Never drop old selectors — A/B layouts coexist.
+#
+# [ENTRY #024]
+# Term: [LINKEDIN_HREFLESS_FIX]
+# Timestamp: 2026-09-26 13:10:00 +05:30
+# Issue / Context: After the selector repair, LinkedIn still yielded 0 cards
+#   silently: Ember anchors often carry NO href, so `"/view/" in url` threw
+#   TypeError on None, swallowed by the card loop's bare `except: continue`.
+# Changes Made: href defaults to ""; LinkedIn falls back to container
+#   data-job-id → https://www.linkedin.com/jobs/view/<id>/.
+# Rationale: Never let a missing attribute become a silent total blackout.
+# Preventative Notes: Never use `in` on a possibly-None get_attribute result.
 # Rationale: Accommodates DOM lag without altering discovery semantics. Longer wait only affects slow loads. Fast pages unaffected.
 # Preventative Notes: Do not lower below 60s without proxy or headless optimizations. Never change card selectors to compensate for timeouts.
 # ================================================================================
@@ -617,7 +674,7 @@ def run_batched_discovery(profile_path: str):
     
     cand = config.get("candidate", {})
     target = config.get("target_jobs", {})
-    cdp_url = cand.get("cdp_url", "http://127.0.0.1:9222")
+    cdp_url = ctx.cdp_url or os.environ.get("CDP_URL")  # Canonical source (config → env); no literals
     
     # ── BATCH ARCH V2: SearchStateManager Designation Rotation Engine ─────────
     # Build the full designation list from cognitive profile + config + recommended titles
@@ -751,6 +808,8 @@ def run_batched_discovery(profile_path: str):
         "active_search_titles": all_positive_targets[:8],
         "advisory_avoid_terms": list(negative_keywords),
         "match_threshold": int(match_threshold),
+        "batch_ipc_chunk_size": int(target.get("batch_ipc_chunk_size", 40) or 40),
+        "colab_batch_chunk_size": int(target.get("colab_batch_chunk_size", 10) or 10),
         "negative_companies": negative_companies[:20]
     }
     # ─────────────────────────────────────────────────────────────────────────
@@ -914,8 +973,12 @@ def run_batched_discovery(profile_path: str):
                         for card in cards[:20]:
                             try:
                                 if platform == "linkedin":
-                                    title_el = card.locator(".job-card-list__title, .artdeco-entity-lockup__title").first
-                                    comp_el = card.locator(".job-card-container__company-name").first
+                                    # Verified 2026-09-26 vs live DOM (old .job-card-list__title
+                                    # no longer exists): title link, entity-lockup subtitle
+                                    # (company), caption (location). Old classes kept as
+                                    # fallbacks for A/B layouts.
+                                    title_el = card.locator("a.job-card-container__link, .job-card-list__title, .artdeco-entity-lockup__title").first
+                                    comp_el = card.locator(".artdeco-entity-lockup__subtitle, .job-card-container__company-name").first
                                     exp_el = card.locator(".job-card-container__metadata-item").first
                                     rating_text = ""
                                     reviews_text = ""
@@ -923,6 +986,33 @@ def run_batched_discovery(profile_path: str):
                                     loc_text = ""
                                     posted_text = ""
                                     skill_tags = []
+                                    try:
+                                        _cap = card.locator(".artdeco-entity-lockup__caption").first
+                                        if _cap.count():
+                                            loc_text = (_cap.inner_text() or "").strip()
+                                    except Exception:
+                                        pass
+                                    # LinkedIn enrichment (parity): classify ALL metadata
+                                    # items instead of trusting position [0] (often
+                                    # location/workplace, not an exp band). Best-effort;
+                                    # empties preserved on any failure.
+                                    _exp_hit = ""
+                                    try:
+                                        _li_meta = [m.inner_text().strip() for m in card.locator(".job-card-container__metadata-item").all()]
+                                        _li_meta = [m for m in _li_meta if m]
+                                        _exp_hit = next((m for m in _li_meta if re.search(r"\d+\s*(?:-\s*\d+)?\s*(?:yrs?|years)|fresher", m, re.I)), "")
+                                        if _exp_hit:
+                                            loc_text = next((m for m in _li_meta if m != _exp_hit), loc_text)
+                                        else:
+                                            loc_text = _li_meta[0] if _li_meta else ""
+                                    except Exception:
+                                        pass
+                                    try:
+                                        _time_el = card.locator("time").first
+                                        if _time_el.count():
+                                            posted_text = (_time_el.get_attribute("datetime") or _time_el.inner_text() or "").strip()
+                                    except Exception:
+                                        pass
                                 else:
                                     title_el = card.locator("a.title, a.job-title").first
                                     comp_el = card.locator("a.comp-name, a.companyName").first
@@ -944,13 +1034,32 @@ def run_batched_discovery(profile_path: str):
                                 if not title_el.count(): continue
                                 title = title_el.inner_text().strip()
                                 company = comp_el.inner_text().strip() if comp_el.count() else "Hiring Company"
-                                url = title_el.get_attribute("href")
+                                url = title_el.get_attribute("href") or ""
                                 exp_text = exp_el.inner_text().strip() if exp_el.count() else ""
-                                
+                                if platform == "linkedin":
+                                    # Prefer the regex-classified band over positional
+                                    # item [0] (usually location/workplace on LI cards).
+                                    # Non-numeric text never triggers C24 gating.
+                                    if _exp_hit:
+                                        exp_text = _exp_hit
+
                                 session_seen_titles.add(title)
 
-                                if platform == "linkedin" and "/view/" in url:
-                                    url = url.split("?")[0]
+                                if platform == "linkedin":
+                                    if "/view/" in url:
+                                        url = url.split("?")[0]
+                                        if url and not url.startswith("http"):
+                                            url = "https://www.linkedin.com" + url
+                                    if not url:
+                                        # Ember cards sometimes render anchors without
+                                        # href (verified live 2026-09-26); fall back to
+                                        # the container data-job-id for a view URL.
+                                        try:
+                                            _jid = (card.get_attribute("data-job-id") or "").strip()
+                                        except Exception:
+                                            _jid = ""
+                                        if _jid:
+                                            url = f"https://www.linkedin.com/jobs/view/{_jid}/"
                                 elif platform == "naukri" and url and not url.startswith("http"):
                                     url = "https://www.naukri.com" + url
                                     
@@ -1294,7 +1403,10 @@ def run_batched_discovery(profile_path: str):
                     job_description=combined_desc or exp_text,
                     matching_skills=extracted_skills or card_skills,
                     profile_dir=profile_dir,
-                    enable_ipc=True
+                    enable_ipc=True,
+                    # Portal signal dict (Naukri container when scraped, else {};
+                    # LinkedIn adapter returns {} until pane parser lands).
+                    portal_match_score=naukri_match_score
                 )
                 score = match_result.score if hasattr(match_result, "score") else (match_result.get("score", 0) if isinstance(match_result, dict) else 0)
                 reasoning = match_result.reasoning if hasattr(match_result, "reasoning") else (match_result.get("reasoning", "") if isinstance(match_result, dict) else "")
