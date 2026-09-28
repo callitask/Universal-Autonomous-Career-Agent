@@ -340,6 +340,63 @@
 #   the dict at the call site; LinkedIn passes {} until pane parser lands.
 # Rationale: One calibration path for all portals; zero Naukri change.
 # Preventative Notes: Portal badges stay advisory-only; never disqualify on them.
+#
+# [ENTRY #030]
+# Term: [GEMINI_CALL_HANG_GUARD]
+# Timestamp: 2026-09-27 22:20:00 +05:30
+# Issue / Context: Live freeze traced line-precise: generate_content() in
+#   _call_gemini_with_fallback carries no network timeout — page loaded, JD
+#   scraped, scoring call silent 7+ min, whole daemon cycle wedged. Every
+#   other wait in the system (IPC 90s, batch 120s, nav C32) has a deadline.
+# Changes Made: SDK call runs on a worker thread with result(timeout)
+#   from target_jobs.gemini_call_timeout_seconds (default 90s); expiry
+#   rotates to the next model/key; pool teardown never blocks on the hung
+#   worker; final exhaustion still raises into existing caller fallbacks.
+# Rationale: Bounded stall (~90s) then fallback beats infinite freeze; zero
+#   behavior change on healthy calls.
+# Preventative Notes: Never call the SDK inline without the deadline wrapper;
+#   never swallow TimeoutError as success — always rotate or raise.
+#
+# [ENTRY #031]
+# Term: [EXPERIENCE_GROUND_TRUTH_VALIDATOR]
+# Timestamp: 2026-09-27 22:40:00 +05:30
+# Issue / Context: Live wrong answers typed into validated portal fields:
+#   total experience answered "0 years", Spring Boot answered "3 years" vs 8
+#   in the map. Mechanism: the explicit skill-years map never reached the
+#   model prompt (factual_db carried names only), and no layer checked model
+#   numerics against truth before typing.
+# Changes Made: (1) skill_years_of_experience map added to the model prompt
+#   DB + rule 4 sharpened (mapped skills never estimated); (2) C35
+#   _validate_experience_answer heals total-type + known-skill numerics at all
+#   three answer return points (learned cache, ats cache, final) by replacing
+#   the first number token; unknown skills, prose, and months pass through.
+# Rationale: Correct what is KNOWN wrong at the single choke point covering
+#   Naukri + LinkedIn + IPC; never invent for unknown skills.
+# Preventative Notes: Validator must stay total/known-skill only; keep the
+#   ±1.0 tolerance (9.8 vs "10" must not churn); never persist corrections
+#   beyond the existing verified-only persistence rule.
+#
+# [ENTRY #032]
+# Term: [CTC_SCALE_FORMATTER_AND_WHOLE_NUMBER_RULE]
+# Timestamp: 2026-09-28 00:10:00 +05:30
+# Issue / Context: Live portal garbage: expected pay typed as "21.12 LPA" /
+#   "2112000 LPA" (rupees digits wearing an LPA unit) into validated boxes;
+#   chatbot filled team management "1 year" vs owner-stated 2.5 (map lacked
+#   the key, model estimated). Owner directive: detect field scale/type and
+#   answer accordingly, never guess.
+# Changes Made: (1) _format_ctc_answer at all four answer exits: unambiguous
+#   current-XOR-expected Qs emit profile canonicals (rupees exact / lakhs /
+#   LPA by detected scale; contradictory units resolved to the stated scale);
+#   ambiguous/unit-less prose untouched. New screening_heuristics keys
+#   (ctc_question_keywords/current/expected_markers, word-boundary matched)
+#   in blueprint + live profile; team management 2.5 added to live skill map.
+#   (2) Validator whole-coercion only for NUMERIC controls / whole-number
+#   phrasing (half-up); TEXT emits truth as-is ("2.5", "9.8").
+# Rationale: Pay answers become canonical lookups, not generations; decimals
+#   the owner states survive verbatim.
+# Preventative Notes: Never snap ambiguous-sides CTC Qs; never add skill
+#   years without owner confirmation; keep scale detection word-boundaried
+#   ("lac" must not match "lack").
 # ================================================================================
 """
 ================================================================================
@@ -365,6 +422,7 @@ import sys
 import json
 import re
 import time
+import concurrent.futures
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 from datetime import datetime
@@ -620,25 +678,53 @@ class AIClient:
             # 2. Get the highest priority model that is NOT exhausted
             model_name = requested_model if requested_model else GLOBAL_RATE_MANAGER.get_available_model(models_to_try)
             
+            # Hang guard: the SDK call below carries no network timeout, so a
+            # stalled socket used to freeze the whole daemon indefinitely
+            # (live case: page loaded, JD scraped, scoring call silent 7+ min).
+            # Run it on a worker thread with a config-driven deadline; on
+            # expiry rotate to the next model/key instead of hanging. All
+            # existing fallbacks (empty-response skip, 429/503 ban, final
+            # raise into caller IPC/heuristic chains) are preserved.
             try:
+                _tj = ((self.profile_context.config.get("target_jobs", {}) if self.profile_context else {}) or {})
+                _call_timeout = float(_tj.get("gemini_call_timeout_seconds", 90))
+            except Exception:
+                _call_timeout = 90.0
+            if not _call_timeout or _call_timeout <= 0:
+                _call_timeout = 90.0
+
+            def _one_sdk_call():
                 if hasattr(self.gemini_client, "models"):
-                    resp = self.gemini_client.models.generate_content(
+                    return self.gemini_client.models.generate_content(
                         model=model_name,
                         contents=contents
                     )
-                    if resp and resp.text:
-                        return resp.text.strip()
                 elif hasattr(self.gemini_client, "generate_content"):
-                    resp = self.gemini_client.generate_content(contents)
-                    if resp and resp.text:
-                        return resp.text.strip()
-                
-                
+                    return self.gemini_client.generate_content(contents)
+                return None
+
+            _pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            try:
+                try:
+                    resp = _pool.submit(_one_sdk_call).result(timeout=_call_timeout)
+                finally:
+                    # Never block teardown on a hung worker (pool threads are
+                    # daemonized; the stuck socket dies with the process).
+                    _pool.shutdown(wait=False, cancel_futures=True)
+                if resp and resp.text:
+                    return resp.text.strip()
+
+
                 # Response was empty/blocked — try next model in rotation instead of
                 # silently returning "" which callers would treat as a successful empty answer,
                 # bypassing IPC and default_fallback entirely. (Fix #7 — 2026-09-23)
                 continue
-                
+
+            except concurrent.futures.TimeoutError:
+                last_err = TimeoutError(f"Gemini call exceeded {_call_timeout:.0f}s on {model_name}")
+                print(f"[AI CLIENT] Gemini call timed out after {_call_timeout:.0f}s on {model_name}; rotating to next model/key.", flush=True)
+                continue
+
             except Exception as e:
                 last_err = e
                 err_str = str(e)
@@ -2057,6 +2143,9 @@ Return STRICTLY a JSON object with this exact schema:
                 # Guard against stale false-negative zero/no-experience caches for experience queries
                 if val.lower() in ["0", "no experience", "0.0", "none"] and any(w in q_lower for w in ["experience", "years"]):
                     break
+                # C35: correct known-wrong numerics even when served from cache.
+                val = self._validate_experience_answer(q_clean, val, cand, ats, profile, control_type)
+                val = self._format_ctc_answer(q_clean, val, cand, ats, profile, control_type)
                 if control_type and str(control_type).upper() in ["NUMBER", "INTEGER", "NUMERIC"]:
                     if not re.match(r'^\d+(?:\.\d+)?$', val):
                         num_m = re.search(r'\b\d+(?:\.\d+)?\b', val)
@@ -2082,6 +2171,9 @@ Return STRICTLY a JSON object with this exact schema:
             )
             if is_match:
                 val = str(v).strip()
+                # C35: correct known-wrong numerics even when served from cache.
+                val = self._validate_experience_answer(q_clean, val, cand, ats, profile, control_type)
+                val = self._format_ctc_answer(q_clean, val, cand, ats, profile, control_type)
                 if options:
                     matched_opt = self._best_option_match(val, options)
                     if matched_opt:
@@ -2095,6 +2187,10 @@ Return STRICTLY a JSON object with this exact schema:
         # without introducing 30s IPC stalls.
         if self._is_standard_screening_query(q_clean):
             fast_ans = self._heuristic_screening_answer(q_clean, options=options, control_type=control_type)
+            # C35: heuristic numerics get the same truth check (e.g. bare
+            # "9.8" into whole-number portal fields normalizes to "10").
+            fast_ans = self._validate_experience_answer(q_clean, fast_ans, cand, ats, profile, control_type) if fast_ans else fast_ans
+            fast_ans = self._format_ctc_answer(q_clean, fast_ans, cand, ats, profile, control_type) if fast_ans else fast_ans
             if fast_ans:
                 if options:
                     matched_opt = self._best_option_match(fast_ans, options)
@@ -2122,7 +2218,11 @@ Return STRICTLY a JSON object with this exact schema:
             "employment_history": p_content.get("employment", {}),
             "certifications": p_content.get("certifications", []),
             "key_skills": p_content.get("key_skills", []),
-            "taxonomy_skills": taxonomy
+            "taxonomy_skills": taxonomy,
+            # The explicit per-skill years map was never sent to the model,
+            # so it "estimated" mapped skills from prose (live case: Spring
+            # Boot answered 3 years vs 8 in the map). Ground it directly.
+            "skill_years_of_experience": ats.get("skill_years_experience", {})
         }
 
         prompt = f"""You are answering an official recruiter screening questionnaire on behalf of the candidate.
@@ -2149,8 +2249,8 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
    - NEVER assume the candidate knows a technology just because it is commonly used in their domain.
 3. If choices/options are provided, your answer MUST match one of the available choices EXACTLY verbatim.
 4. EXPERIENCE CALCULATIONS:
-   - Calculate the exact years of experience for the requested skill by referencing the Candidate Factual Database (e.g. `taxonomy_skills`, `total_experience_years`) or Master Resume.
-   - If the candidate has explicit years of experience listed for the skill, you MUST answer with that exact number.
+   - Calculate the exact years of experience for the requested skill by referencing the Candidate Factual Database (`skill_years_of_experience` map first, then `total_experience_years`) or Master Resume.
+   - If the skill has an explicit entry in `skill_years_of_experience`, you MUST answer with that exact number. NEVER estimate, round down, or derive a mapped skill from prose.
    - If the skill is present in their profile but lacks a specific year count, intelligently estimate the years based on their overall `total_experience_years` and how long they have worked in roles utilizing that skill.
    - CRITICAL STRICT RULE: If the skill (e.g. Loan Origination System, Terraform, AWS) is completely missing from the candidate's profile, YOU MUST ANSWER '0'. DO NOT guess or award 1 year.
 5. COMMUNICATION & SOFT SKILLS:
@@ -2206,6 +2306,11 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 task_type="QUESTIONNAIRE"
             )
 
+        # C35: correct known-wrong numerics from ANY layer (model, heuristic,
+        # IPC) before option matching and persistence.
+        answer = self._validate_experience_answer(q_clean, answer, cand, ats, profile, control_type)
+        answer = self._format_ctc_answer(q_clean, answer, cand, ats, profile, control_type)
+
         # Track whether answer is AI-verified (not a blind fallback) before persisting.
         _answer_is_ai_verified = bool(answer)
         if options and answer:
@@ -2241,6 +2346,159 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
         cfg = getattr(self.profile_context, "config", {}) if self.profile_context else {}
         patterns = cfg.get("screening_heuristics", {}).get("standard_screening_patterns", [])
         return any(p in q for p in patterns)
+
+    def _validate_experience_answer(self, question: str, answer: str,
+                                    cand: Optional[Dict[str, Any]] = None,
+                                    ats: Optional[Dict[str, Any]] = None,
+                                    profile: Optional[Dict[str, Any]] = None,
+                                    control_type: Optional[str] = None) -> str:
+        """Ground-truth validator for numeric experience answers (Guardrail C35).
+
+        Corrects total-type and known-skill numerics against profile truth by
+        replacing the first number token (surrounding format preserved).
+        Unknown skills, prose answers, and months-format answers pass through
+        untouched: correct what is KNOWN wrong, never invent. Never raises.
+        """
+        try:
+            if not answer or not isinstance(answer, str):
+                return answer
+            ql = (question or "").lower()
+            sh = ((profile.get("screening_heuristics", {}) if isinstance(profile, dict) else {}) or {})
+            total_keys = [str(k).lower() for k in (sh.get("total_experience_keywords", []) or [])]
+            skill_keys = [str(k).lower() for k in (sh.get("skill_experience_keywords", []) or [])]
+            num_trig = [str(k).lower() for k in (sh.get("numeric_question_triggers", []) or [])]
+            excl = [str(k).lower() for k in (sh.get("numeric_question_exclusions", []) or [])]
+            months_keys = [str(k).lower() for k in (sh.get("months_format_keywords", []) or [])]
+            if any(e in ql for e in excl if e):
+                return answer
+            if any(m in ql for m in months_keys if m):
+                return answer
+            is_total = any(k in ql for k in total_keys if k)
+            is_skill = (not is_total) and (
+                any(k in ql for k in skill_keys if k)
+                or any(k in ql for k in num_trig if k)
+            )
+            if not (is_total or is_skill):
+                return answer
+            m = re.search(r'\b\d+(?:\.\d+)?\b', answer)
+            if not m:
+                return answer
+            ans_num = float(m.group(0))
+            truth = None
+            if is_total:
+                try:
+                    truth = float((cand or {}).get("total_experience_years", 0) or 0)
+                except Exception:
+                    truth = 0
+            else:
+                skill_map = ((ats or {}).get("skill_years_experience", {}) or {})
+                best_key, best_len = None, 0
+                for sk in skill_map:
+                    skl = str(sk).lower()
+                    if skl and skl in ql and len(skl) > best_len:
+                        best_key, best_len = sk, len(skl)
+                if best_key is not None:
+                    try:
+                        truth = float(skill_map[best_key])
+                    except Exception:
+                        truth = None
+                if truth is None:
+                    return answer
+            if not truth or truth <= 0:
+                return answer
+            # Whole-number coercion ONLY when the field demands it (numeric
+            # control or whole/integer phrasing); otherwise emit truth in its
+            # own form ("2.5", "9.8") — never silently round a stated decimal.
+            wants_whole = (str(control_type or "").upper() in ("NUMBER", "INTEGER", "NUMERIC")
+                           or "whole number" in ql or "integer" in ql)
+            if wants_whole:
+                truth_str = str(int(float(truth) + 0.5))
+            else:
+                truth_str = str(int(truth)) if float(truth).is_integer() else ('%g' % float(truth))
+            if abs(ans_num - float(truth)) <= 1.0:
+                return answer
+            corrected = re.sub(r'\b\d+(?:\.\d+)?\b', truth_str, answer, count=1)
+            if float(truth_str) != 1:
+                corrected = re.sub(r'\byear\b', 'years', corrected)
+            print(f"[AI CLIENT] Experience validator corrected '{answer[:60]}' -> '{corrected[:60]}' (profile truth {truth_str}).", flush=True)
+            return corrected
+        except Exception:
+            return answer
+
+    def _format_ctc_answer(self, question: str, answer: str,
+                           cand: Optional[Dict[str, Any]] = None,
+                           ats: Optional[Dict[str, Any]] = None,
+                           profile: Optional[Dict[str, Any]] = None,
+                           control_type: Optional[str] = None) -> str:
+        """CTC scale formatter (Guardrail C35 extension).
+
+        Portal pay fields disagree on scale (exact rupees vs lakhs vs LPA
+        decimals) and reject unit-suffixed text in integer boxes ("2112000
+        LPA"). When the question unambiguously names current XOR expected pay,
+        emit the profile canonical figure in the detected scale; ambiguous or
+        unit-less prose passes through untouched. Never raises.
+        """
+        try:
+            if not answer or not isinstance(answer, str):
+                return answer
+            ql = (question or "").lower()
+            sh = ((profile.get("screening_heuristics", {}) if isinstance(profile, dict) else {}) or {})
+            qkeys = [str(k).lower() for k in (sh.get("ctc_question_keywords", []) or [])]
+            if not any(re.search(r'\b' + re.escape(k) + r'\b', ql) for k in qkeys if k):
+                return answer
+            cur_m = [str(k).lower() for k in (sh.get("ctc_current_markers", []) or [])]
+            exp_m = [str(k).lower() for k in (sh.get("ctc_expected_markers", []) or [])]
+            is_cur = any(m in ql for m in cur_m if m)
+            is_exp = any(m in ql for m in exp_m if m)
+            if is_cur == is_exp:
+                return answer
+            cand = cand or {}
+            if is_exp:
+                exact = cand.get("expected_ctc_exact") or ((ats or {}).get("expected_ctc_lakhs", 0) or 0) * 100000
+                lpa = cand.get("expected_ctc_lpa") or (ats or {}).get("expected_ctc_lakhs", 0)
+            else:
+                exact = cand.get("current_ctc_exact") or ((ats or {}).get("current_ctc_lakhs", 0) or 0) * 100000
+                lpa = cand.get("current_ctc_lpa") or (ats or {}).get("current_ctc_lakhs", 0)
+            try:
+                exact_i, lpa_f = int(exact), float(lpa)
+            except Exception:
+                return answer
+            if not exact_i or not lpa_f:
+                return answer
+            ctl = str(control_type or "").upper()
+            # Scale precedence: the QUESTION defines the field; the answer's
+            # units only break ties for short form-like answers (<=60 chars)
+            # — the live garbage class is digits wearing a contradictory unit
+            # ("2112000 LPA"). A bare control with zero unit words anywhere
+            # stays untouched (32 rupees vs 32 lakhs is a 100000x coin flip
+            # no code may take). Long prose is never rescaled.
+            ans_units = answer.lower() if len(answer) <= 60 else ""
+            if ("lakh" in ql or "lac" in ql) and "lpa" not in ql:
+                scale, canon = "lakhs", ('%g' % (exact_i / 100000.0))
+            elif "lpa" in ql:
+                scale, canon = "lpa", ('%g' % lpa_f)
+            elif (ctl in ("NUMBER", "INTEGER", "NUMERIC") or "inr" in ql
+                    or "rupees" in ql or "digit" in ql or "number" in ql):
+                scale, canon = "rupees", str(exact_i)
+            elif ("lakh" in ans_units or "lac" in ans_units) and "lpa" not in ans_units:
+                scale, canon = "lakhs", ('%g' % (exact_i / 100000.0))
+            elif "lpa" in ans_units:
+                scale, canon = "lpa", ('%g' % lpa_f)
+            else:
+                return answer
+            m = re.search(r'\d[\d,]*(?:\.\d+)?', answer)
+            if not m:
+                return answer
+            if m.group(0).replace(",", "") == canon.replace(",", ""):
+                return answer
+            corrected = re.sub(r'\d[\d,]*(?:\.\d+)?', canon, answer, count=1)
+            if scale == "rupees":
+                corrected = re.sub(r'\s*\b(lpa|lakhs?|lacs?|inr|rs\.?|rupees?|per annum|p\.?a\.?)\b', '', corrected, flags=re.I)
+                corrected = re.sub(r'\s+', ' ', corrected).strip(' ,')
+            print(f"[AI CLIENT] CTC formatter set {scale} canonical '{canon}' for '{question[:50]}...'.", flush=True)
+            return corrected
+        except Exception:
+            return answer
 
     def _heuristic_screening_answer(
         self,

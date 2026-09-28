@@ -105,7 +105,7 @@ F:\JOB AI AGENT\
 │           └── search_state.json         # Search designation rotation state
 │
 └── docs/                                 # Authoritative documentation & blueprints
-    ├── WORKSPACE_RULES.md                # 9 mandatory directives & 43 bug prevention guardrails
+    ├── WORKSPACE_RULES.md                # 9 mandatory directives & 46 bug prevention guardrails
     ├── ARCHITECTURE_REFERENCE.md         # Comprehensive system architecture & data contracts
     ├── REFERENCE_DEPLOYMENT_GUIDE.md     # Fast deployment & verification guide
     └── GEMINI_WEB_AI_PROMPTS.md          # 3-step onboarding prompts for Gemini Web AI

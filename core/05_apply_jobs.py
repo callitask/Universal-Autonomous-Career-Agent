@@ -267,6 +267,40 @@
 # Rationale: Correct control identification per labels; H1 preserved everywhere.
 # Preventative Notes: Never blind-check a box or blind-pick an option; native
 #   <select> path untouched.
+#
+# [ENTRY #023]
+# Term: [LINKEDIN_RESUME_SETTLE_AND_THROTTLE_STATUS]
+# Timestamp: 2026-09-27 20:40:00 +05:30
+# Issue / Context: Owner watched live: resume step may submit the previously
+#   selected resume (fixed 1.5s wait, zero selection proof), and Submit clicks
+#   are swallowed under LinkedIn soft-throttle yet booked as generic FAILED.
+# Changes Made (LinkedIn-scoped): (1) upload settle-verify — pre-signature
+#   snapshot, up-to-15s poll for spinner-gone/signature-changed, QA
+#   [RESUME_UPLOAD_SETTLED]; abort ONLY on spinner still live at deadline
+#   (same-basename PDFs make filename proof unsafe); (2) submit-clicked flag —
+#   no buttons + no error + prior Submit click returns canonical
+#   FAILED_SUBMIT_THROTTLED (new, outside VERIFIED_SET) with QA
+#   [SUBMIT_SWALLOWED] and a distinct tracker row; Naukri paths untouched.
+# Rationale: Stale-resume and throttle evidence stay observable, countable,
+#   and re-queueable; no new false-abort or false-success surface.
+# Preventative Notes: Never assert selection by filename alone (basenames
+#   repeat); never put a FAILED_* variant in VERIFIED_SET.
+#
+# [ENTRY #024]
+# Term: [LINKEDIN_DISGUISED_DROPDOWN_DEFERRAL]
+# Timestamp: 2026-09-27 22:25:00 +05:30
+# Issue / Context: Owner watched live: an overall-experience DROPDOWN was
+#   filled as a TEXT box (§3 grabs input:not([type])), portal showed red
+#   validation errors, adapt-retry burned, apply aborted. Never assume input
+#   type from the tag — inspect the element.
+# Changes Made (LinkedIn-scoped): §3 skips inputs carrying dropdown markers
+#   (readonly, role combobox/listbox, aria-haspopup, aria-expanded), logs a
+#   DROPDOWN_DEFERRED QA line, and lets §5/5b resolve via options+brain.
+#   Genuine text inputs byte-identical; Naukri paths untouched.
+# Rationale: Detection before action; no new abort surface (worst case the
+#   existing stuck-step/adapt path handles it as before).
+# Preventative Notes: Never fill a readonly/combobox input as TEXT; never
+#   extend the marker list to placeholder-only heuristics (too greedy).
 # ================================================================================
 """
 ================================================================================
@@ -312,7 +346,7 @@ from core.utils.sanitize import csv_cell, safe_filename
 from core.ai_rate_manager import GLOBAL_RATE_MANAGER
 from core.utils.apply_status import (
     APPLIED_1CLICK, APPLIED_CHATBOT, FAILED, DRAWER_CLOSED,
-    FAILED_PLATFORM, REQUIRES_MANUAL,
+    FAILED_PLATFORM, REQUIRES_MANUAL, FAILED_SUBMIT_THROTTLED,
 )
 
 
@@ -1433,6 +1467,7 @@ class LinkedInApplyHandler:
         qa_history: List[Dict[str, Any]] = []
         qa_path = self._qa_log_path(job)
         adapt_retried = False
+        submit_clicked = False
         last_step_sig = ""
         same_step_count = 0
 
@@ -1528,13 +1563,63 @@ class LinkedInApplyHandler:
                     if tailored_pdf and os.path.exists(tailored_pdf):
                         try:
                             log_step("LINKEDIN", f"Attaching Tailored PDF: {os.path.basename(tailored_pdf)}")
+                            try:
+                                _pre_sig = self._modal_step_signature(modal)
+                            except Exception:
+                                _pre_sig = "unreadable"
                             file_input.set_input_files(tailored_pdf)
                             try:
                                 file_input.evaluate("el => { el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); }")
                             except Exception:
                                 pass
-                            self.page.wait_for_timeout(1500)
+                            # Settle-verify: LinkedIn uploads async (spinner →
+                            # selected row). Tailored PDFs share one basename so
+                            # the filename alone proves nothing: settle = upload
+                            # progress gone (5 consecutive calm 500ms rounds) or
+                            # resume-area signature changed. Abort ONLY on
+                            # positive evidence of an UNSETTLED upload still
+                            # spinning at the 15s deadline — never on mere
+                            # absence of proof (avoids false-aborting good
+                            # applies when the selection text is identical).
+                            _spin_words = ("uploading", "processing", "please wait")
+                            _sig_changed = False
+                            _calm_rounds = 0
+                            _settled_kind = "unverified-proceeded"
+                            for _w in range(30):
+                                self.page.wait_for_timeout(500)
+                                try:
+                                    _mt = (modal.inner_text() or "").lower()
+                                except Exception:
+                                    _mt = ""
+                                _spinning = any(_s in _mt for _s in _spin_words)
+                                try:
+                                    _post_sig = self._modal_step_signature(modal)
+                                except Exception:
+                                    _post_sig = "unreadable"
+                                if (_post_sig != "unreadable" and _pre_sig != "unreadable"
+                                        and _post_sig != _pre_sig):
+                                    _sig_changed = True
+                                if not _spinning:
+                                    _calm_rounds += 1
+                                else:
+                                    _calm_rounds = 0
+                                if _sig_changed or _calm_rounds >= 5:
+                                    _settled_kind = ("selection-changed" if _sig_changed
+                                                     else "settled-no-spinner")
+                                    break
                             qa_history.append({"question": "[RESUME_UPLOAD]", "answer": os.path.basename(tailored_pdf), "control": "FILE_UPLOAD"})
+                            qa_history.append({"question": "[RESUME_UPLOAD_SETTLED]", "answer": _settled_kind, "control": "FILE_UPLOAD"})
+                            if _settled_kind == "unverified-proceeded":
+                                try:
+                                    _mt2 = (modal.inner_text() or "").lower()
+                                except Exception:
+                                    _mt2 = ""
+                                if any(_s in _mt2 for _s in _spin_words):
+                                    log_step("WARNING", "Resume upload still in progress at deadline; aborting rather than submitting a stale resume.")
+                                    self._save_qa(qa_path, qa_history)
+                                    self.discard_and_close_modal()
+                                    return "FAILED"
+                            log_step("LINKEDIN", f"Resume upload settled: {_settled_kind}")
                         except Exception as _ufe:
                             log_step("WARNING", f"Resume upload notice: {_ufe}")
                     else:
@@ -1545,6 +1630,30 @@ class LinkedInApplyHandler:
                 for inp in text_inputs:
                     try:
                         if inp.is_visible() and not inp.input_value():
+                            # Dropdown-in-disguise guard: LinkedIn renders
+                            # dropdowns (e.g. overall-experience pickers) as
+                            # text-like inputs. Filling them as TEXT poisons
+                            # portal validation (red errors). Detect, don't
+                            # assume — defer to §5/5b dropdown handlers.
+                            try:
+                                _role = (inp.get_attribute("role") or "").lower()
+                                _has_popup = (inp.get_attribute("aria-haspopup") or "").lower()
+                                _expanded = inp.get_attribute("aria-expanded")
+                                _readonly = inp.get_attribute("readonly")
+                            except Exception:
+                                _role, _has_popup, _expanded, _readonly = "", "", None, None
+                            if (_readonly is not None or _role in ("combobox", "listbox")
+                                    or _has_popup in ("listbox", "menu", "true")
+                                    or _expanded is not None):
+                                try:
+                                    _dlabel = (inp.get_attribute("aria-label")
+                                               or inp.get_attribute("placeholder")
+                                               or "Dropdown field").strip()
+                                except Exception:
+                                    _dlabel = "Dropdown field"
+                                log_step("LINKEDIN", f"Deferring disguised dropdown to dropdown handler: '{_dlabel[:60]}'")
+                                qa_history.append({"question": _dlabel, "answer": "[DEFERRED_TO_DROPDOWN]", "control": "DROPDOWN_DEFERRED"})
+                                continue
                             inp_id = inp.get_attribute("id") or ""
                             label_el = modal.locator(f"label[for='{inp_id}']").first if inp_id else None
                             q_text = label_el.inner_text().strip() if (label_el and label_el.count()) else "Input field"
@@ -1835,6 +1944,7 @@ class LinkedInApplyHandler:
                 if submit_btn.count() > 0 and submit_btn.is_visible():
                     log_step("LINKEDIN", "Clicking 'Submit application'...")
                     submit_btn.click()
+                    submit_clicked = True
                     self.page.wait_for_timeout(3000)
                     continue
 
@@ -1865,6 +1975,17 @@ class LinkedInApplyHandler:
                             continue
                 else:
                     log_step("WARNING", "No progression button (Submit/Review/Next) located in modal.")
+                    if submit_clicked:
+                        # Submit was clicked but no success text and no form
+                        # error appeared: classic swallowed click under LinkedIn
+                        # soft-throttle (reads work, writes don't land). Book it
+                        # distinctly so it stays countable and re-queueable via
+                        # scoped ledger reset — never a generic form FAILED.
+                        log_step("WARNING", "Submit clicked with no success text and no validation error: suspected LinkedIn throttle.")
+                        qa_history.append({"question": "[SUBMIT_SWALLOWED]", "answer": "throttle-suspect; safe to re-queue", "control": "SUBMIT"})
+                        self._save_qa(qa_path, qa_history)
+                        self.discard_and_close_modal()
+                        return FAILED_SUBMIT_THROTTLED
                 self._save_qa(qa_path, qa_history)
                 self.discard_and_close_modal()
                 return "FAILED"
@@ -2707,6 +2828,18 @@ class ApplicationEngine:
                 })
             elif status == "SKIPPED_ALREADY_APPLIED":
                 self.stats["skipped"] += 1
+            elif status == "FAILED_SUBMIT_THROTTLED":
+                self.stats["failed"] += 1
+                self.record_tracker_entry({
+                    "company": company,
+                    "job_title": job_title,
+                    "platform": platform,
+                    "url": job.get("url"),
+                    "score": job.get("score") or job.get("match_score", "N/A"),
+                    "status": "FAILED_SUBMIT_THROTTLED",
+                    "pdf_path": pdf_path,
+                    "notes": "Submit click swallowed under suspected LinkedIn throttle; safe to re-queue via scoped ledger reset"
+                })
             else:
                 self.stats["failed"] += 1
                 failure_reason = "Application could not be committed or drawer failed"

@@ -8,7 +8,7 @@ These rules are loaded automatically at every session start and before every pro
 
 1. **Automatic Documentation Ingestion**:
    Whenever this agent is started, or before executing any user command, running any Python script (python core/...), or making any code changes, the agent MUST immediately read and internalize the core documentation files in F:\JOB AI AGENT\docs\:
-    - F:\JOB AI AGENT\docs\WORKSPACE_RULES.md (Directives 1-9 and all 43 Bug Prevention Guardrails: 33 C + 6 H + 3 D + 1 P)
+    - F:\JOB AI AGENT\docs\WORKSPACE_RULES.md (Directives 1-9 and all 46 Bug Prevention Guardrails: 36 C + 6 H + 3 D + 1 P)
    - F:\JOB AI AGENT\docs\ARCHITECTURE_REFERENCE.md (Module anatomy, IPC contracts, data schemas)
    - F:\JOB AI AGENT\docs\PLATFORM_KNOWLEDGE.md (Naukri/LinkedIn DOM patterns, SEO slugs, zero-comma rules)
 2. **Universal Compliance**:

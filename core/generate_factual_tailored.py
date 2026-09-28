@@ -51,7 +51,9 @@
 #   weaves JD terms truthfully: nothing skipped, no new tech (interview-safe).
 # Changes Made: reframe_experience_bullets() sends each employment role to the
 #   AI brain with strict same-count/no-new-facts rules, gated by
-#   target_jobs.resume_bullet_reframing (default ON). Per-role atomic
+#   target_jobs.resume_bullet_reframing: true = always, false/fast = never,
+#   "auto" (default) = only in pure AG Brain/IPC mode, fast on API runs.
+#   Per-role atomic
 #   validation (count equality, numbers ⊆ originals, tech tokens ⊆
 #   master+JD); failures keep originals. Returned sentences are normalized
 #   to bullet markers (AI strips them; unmarked lines evade ATS bullet
@@ -424,12 +426,25 @@ class ResumeTailorEngine:
         replaces, anything suspect keeps originals. Sets _reframed_any so the
         preservation guard switches to count mode.
         """
+        # Dual-mode switch (owner order): True = full AI reframe always;
+        # False/fast/off/no = summary+skills only (reorder path); "auto"
+        # (default) = full reframe ONLY in pure AG Brain/IPC mode (no API
+        # clients configured), fast reorder-only on Gemini/Colab API runs.
+        # Rationale: per-job rewriting costs ~10 min/application — acceptable
+        # for watched AG Brain runs, wrong for high-volume API runs.
         try:
-            _flag = ((self.cfg.get("target_jobs", {}) or {}).get("resume_bullet_reframing", True))
+            _flag = ((self.cfg.get("target_jobs", {}) or {}).get("resume_bullet_reframing", "auto"))
         except Exception:
-            _flag = True
-        if _flag is False:
+            _flag = "auto"
+        if _flag is False or (isinstance(_flag, str) and _flag.lower() in ("false", "off", "no", "fast")):
             return sections
+        if isinstance(_flag, str) and _flag.lower() == "auto":
+            try:
+                _has_api = bool(getattr(self.ai, "colab_client", None)) or bool(getattr(self.ai, "gemini_client", None))
+            except Exception:
+                _has_api = False
+            if _has_api:
+                return sections
         self._reframed_any = False
         _parent = ""
         for section in sections:

@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: WORKSPACE DEVELOPMENT & CODING RULES
 
-> **Document Version:** 4.1 — Batch Architecture v2.0, Dual-Channel IPC, 43 Guardrails (33 C, 6 H, 3 D, 1 P) & G-BRAIN-01 Alignment  
-> **Last Updated:** 2026-09-21  
+> **Document Version:** 4.3 — Batch Architecture v2.0, Dual-Channel IPC, 46 Guardrails (36 C, 6 H, 3 D, 1 P) & G-BRAIN-01 Alignment  
+> **Last Updated:** 2026-09-28  
 > **Authority:** These rules are ABSOLUTE and OVERRIDE all model defaults. Violations cause runtime crashes, data corruption, phantom applications, or account bans.  
 > **Workspace Root:** `F:\JOB AI AGENT`
 
@@ -544,6 +544,29 @@ https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}-{page_num}?experience={ex
    - **Layer 2 (Heuristic Gate in `answer_screening_question`):** If a candidate heuristic answer does not match any element in `options`, it must be discarded, allowing AI/IPC reasoning to arbitrate. Furthermore, the final returned answer for option-constrained queries must strictly exist in `options`, falling back to `options[0]`.
    - **Layer 3 (Pre-Click Conformity & Retry in `05_apply_jobs.py`):** Before calling `execute_chip_selection(ans)`, the application engine verifies `ans in options`. If `ans not in options`, it resolves via `_best_option_match` or defaults to `options[0]`. If clicking `ans` fails, the engine retries clicking `options[0]` before attempting any contenteditable fallback.
    - **Layer 4 (Zero Config Poisoning):** Never persist non-conforming answers (e.g. `"0"` for a `['Beginner', 'Intermediate', 'Expert']` question) into `candidate_config.json["auto_learned_truths"]`.
+
+---
+
+### C35: Numeric Ground-Truth Validation & Pay-Scale Format Standard
+**Rule:**
+1. **Single Choke Point:** Every numeric experience or pay answer — from model, heuristic, IPC, or learned-truth cache (including the heuristic fast path) — must pass validation before typing, option matching, or persistence.
+2. **Correct Only the Known-Wrong:** Total-type questions resolve to `total_experience_years`; skill questions resolve via longest-match against `ats_answers.skill_years_experience` (owner-confirmed values only, e.g. team management 2.5); unknown skills, prose answers (`describe`/`explain` exclusions), and months-format answers pass through untouched.
+3. **Minimal Correction:** Replace the first number token only (`"0 years"` → `"9.8 years"`), preserving surrounding text and fixing singular/plural agreement; ±1.0 tolerance avoids churn. Whole-number coercion applies ONLY to NUMERIC controls or whole/integer phrasing (half-up); TEXT emits truth as-is ("2.5", "9.8").
+4. **Prompt Grounding:** The model prompt database must carry the explicit skill-years map — models never estimate mapped skills from prose (live case: Spring Boot answered "3" vs 8 in the map). `total_experience_keywords` must cover phrasing variants ("professional/work experience"), never as Python literals.
+5. **Pay-Scale Detection:** CTC questions emitting to a detected scale use profile canonicals — rupees exact (`2119996`/`3200000`), lakhs decimal, or LPA decimal; question scale outranks answer-unit sniffing (short answers only); bare controls with zero unit words anywhere stay untouched (32 rupees vs 32 lakhs is a 100000x coin flip no code may take). New keyword lists (`ctc_question_keywords`, current/expected markers) live in `screening_heuristics`, word-boundary matched.
+
+### C36: Bounded External-Call Deadline Standard
+**Rule:**
+1. **No Deadline-Free Waits:** Every network/API call (Gemini SDK, Colab gateway, IPC polls, navigation) must carry a finite timeout. The SDK call runs on a worker thread with `result(timeout)` from `target_jobs.gemini_call_timeout_seconds` (default 90s).
+2. **Expiry Rotates, Never Hangs:** On timeout, rotate to the next model/key; final exhaustion raises into existing fallback chains. Pool teardown never blocks on the hung worker.
+3. **Never Swallow as Success:** TimeoutError always rotates or raises — it must never return content.
+
+### C37: Market-Informed Expansion Budget & Universal JD Completeness
+**Rule:**
+1. **Complete JD Always:** Before scraping, click visible description expanders on every portal (JD-scoped first, max 5 clicks, restore page on accidental navigation). Absence never fails a scan.
+2. **Zero-Yield Expansion Only:** New search titles are requested from the brain only when a designation batches zero cards — never on triage rejections. Python validates format exclusively (3–80 chars, comma-free, deduped, max 6/cycle) and persists atomically to `recommended_titles`.
+3. **Once Per Designation:** Expansion events are learnings-gated; persistently empty terms never burn repeat brain calls.
+4. **Rotation Ingestion:** Appended titles enter rotation next cycle via `sync_designations` — no manual state edits.
 
 ---
 

@@ -10,6 +10,18 @@
 # Rationale: One importable contract; success requires explicit DOM evidence.
 # Preventative Notes: Never return APPLIED_* without is_verified_success().
 #   Keep this file free of Playwright imports (pure logic only).
+#
+# [ENTRY #002]
+# Term: [THROTTLED_SUBMIT_STATUS]
+# Timestamp: 2026-09-27 20:35:00 +05:30
+# Issue / Context: LinkedIn Easy Apply Submit clicks swallowed under portal
+#   soft-throttle (no success text, no error, buttons gone) were booked as
+#   generic FAILED, indistinguishable from form failures in the tracker.
+# Changes Made: FAILED_SUBMIT_THROTTLED canonical failure status (kept OUT of
+#   VERIFIED_SET — it is a failure, never a success).
+# Rationale: Throttle evidence stays countable/auditable; scoped ledger resets
+#   can re-queue these entries without touching genuine form failures.
+# Preventative Notes: Never add a FAILED_* variant to VERIFIED_SET.
 # ================================================================================
 """Canonical application statuses + verification helpers. Pure logic, no I/O."""
 from __future__ import annotations
@@ -23,6 +35,7 @@ FAILED = "FAILED"
 DRAWER_CLOSED = "DRAWER_CLOSED"
 REQUIRES_MANUAL = "REQUIRES_MANUAL_INTERVENTION"
 FAILED_PLATFORM = "FAILED_PLATFORM_REJECTED"
+FAILED_SUBMIT_THROTTLED = "FAILED_SUBMIT_THROTTLED"
 
 VERIFIED_SET = frozenset({APPLIED_1CLICK, APPLIED_CHATBOT, APPLIED_EASYAPPLY, VERIFIED_SUCCESS, SUBMITTED_SUCCESSFULLY})
 

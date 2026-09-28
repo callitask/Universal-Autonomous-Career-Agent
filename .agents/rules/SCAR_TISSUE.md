@@ -138,3 +138,27 @@ all semantic job fit evaluations. Keyword lists in config are advisory context f
 - **What happened**: To update `candidate_config.json` role titles, AI wrote a `scripts/update_roles.py` file and ran it. User correctly called this out: the config JSON should be edited directly, not through a hardcoded script.
 - **Correct behavior**: `candidate_config.json` is a data file. Edit it directly using `replace_file_content` or the `view_file` → Python `json.load/dump` one-liner pattern. Never create a named script just to mutate a config value.
 - **Never repeat**: Config JSON files (`candidate_config.json`, `gemini_credentials.json`, etc.) are directly editable data files. Never create intermediary Python scripts to update them unless the user explicitly requests a migration utility.
+
+## [2026-09-27] DEADLINE-FREE NETWORK CALL FROZE WHOLE CYCLE
+- **File**: `core/ai_client.py` → `_call_gemini_with_fallback()`
+- **What happened**: Live daemon wedged 7+ minutes with zero output mid-deep-scan (page loaded, JD scraped). Every other wait in the system has a deadline (IPC 90s, batch 120s, nav C32) — the raw SDK call had none, so one stalled socket froze the cycle. Diagnosed line-precise only because the freeze point (post-scrape, pre-score) was readable in logs.
+- **Correct behavior**: Worker-thread `result(timeout)` from `target_jobs.gemini_call_timeout_seconds` (default 90s); expiry rotates keys, teardown never blocks, exhaustion raises into existing fallbacks (Guardrail C36).
+- **Never repeat**: Never ship a network call without a finite deadline. When a freeze has zero output, bisect by pipeline checkpoint (page? JD? score?) before touching anything.
+
+## [2026-09-27] UNGROUNDED NUMERIC EXPERIENCE ANSWERS TYPED INTO VALIDATED FIELDS
+- **File**: `core/ai_client.py` → `answer_screening_question()` (+ prompt DB)
+- **What happened**: Total experience answered "0 years" and mapped Spring Boot answered "3 years" (map: 8) into LinkedIn validated fields → red errors → adapt-retry burned → honest abort. Mechanism: the explicit skill-years map never reached the model prompt (names only), and no layer checked model numerics against truth. "Professional/work experience" phrasing additionally bypassed total-type detection entirely.
+- **Correct behavior**: Skill-years map in the prompt DB (models never estimate mapped skills) + C35 validator healing total/known-skill numerics at all three answer return points; "professional/work experience" added to `total_experience_keywords` (blueprint + live); unknown skills/prose/months untouched.
+- **Never repeat**: Never let a numeric answer reach a portal without a truth check. Never hardcode question phrases in Python — extend `screening_heuristics`, never literals.
+
+## [2026-09-28] PAY-SCALE GARBAGE + MISSING SKILL KEY GUESSES
+- **File**: `core/ai_client.py` → `_format_ctc_answer()` (new); `candidate_config.json` skill map + `screening_heuristics`
+- **What happened**: Expected pay typed as "21.12 LPA" / "2112000 LPA" (rupees digits wearing an LPA unit) into validated boxes; team management answered "1 year" vs owner-stated 2.5 because the skill map had no such key and the model estimated. Owner directive: detect field scale/type and answer canonically, never guess.
+- **Correct behavior**: CTC Qs disambiguated current-XOR-expected emit profile canonicals (question scale outranks answer sniffing; bare ambiguous controls untouched); "team management": 2.5 added as owner-confirmed fact; whole-coercion numeric-controls only; plural agreement fixed ("2.5 year" → "2.5 years").
+- **Never repeat**: Never emit pay figures in a scale the field didn't declare. Never let the model estimate a skill the owner can pin — ask, then pin it in the map.
+
+## [2026-09-28] CATALOGUED-BUT-NEVER-WIRED DISCOVERY MECHANICS
+- **File**: `core/04_job_discovery.py` (read-more click, expansion trigger)
+- **What happened**: Two documented capabilities were fiction: the Naukri read-more selector lived only in a JSON catalog with zero code readers (descriptions would truncate if Naukri reactivates), and `analyze_and_expand_designations()` had zero callers since Batch v2 (market titles never entered config). Docs claimed both; code did neither. Caught only because the owner asked for proof, not prose.
+- **Correct behavior**: Universal pre-scrape expander pass (C37) + zero-yield market expansion hook with budget caps (C37). Docs describe only what code provably does.
+- **Never repeat**: Never trust a capability claim without a caller/clicker. Grep the verb (click/call), not the noun, when verifying a feature.

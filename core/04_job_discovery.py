@@ -266,6 +266,66 @@
 # Preventative Notes: Never use `in` on a possibly-None get_attribute result.
 # Rationale: Accommodates DOM lag without altering discovery semantics. Longer wait only affects slow loads. Fast pages unaffected.
 # Preventative Notes: Do not lower below 60s without proxy or headless optimizations. Never change card selectors to compensate for timeouts.
+#
+# [ENTRY #025]
+# Term: [LINKEDIN_PANE_NAV_JD]
+# Timestamp: 2026-09-27 18:15:00 +05:30
+# Issue / Context: LinkedIn EXECUTE deep-scan used single 25s domcontentloaded
+#   plus generic Naukri JD selectors, so throttled /jobs/view pages timed out
+#   and right-pane descriptions were missed (cards carry title/company only).
+# Changes Made: LinkedIn-scoped two-stage nav (commit 60s fallback
+#   domcontentloaded 25s, explicit wait for .jobs-description-content, 15s)
+#   plus LinkedIn-first JD selector list from platform_heuristics.json.
+#   Naukri branch byte-identical.
+# Rationale: Portal-separated paths (C32 pattern for LinkedIn only); proves
+#   right-pane JD reaches evaluate_job_match instead of thin exp_text fallback.
+# Preventative Notes: Keep branches platform-scoped; never lower LI commit
+#   below 60s; re-probe LI selectors live before changing them.
+#
+# [ENTRY #026]
+# Term: [LINKEDIN_SRP_WAIT_HEARTBEAT]
+# Timestamp: 2026-09-28 07:45:00 +05:30
+# Issue / Context: Owner reported a freeze: six empty SRP pages each burned a
+#   silent 60s wait_for_selector with zero output (cycle actually completed
+#   fine 2.5 min later). Silence reads as stuck.
+# Changes Made (LinkedIn branch only): same 60s budget as six 10s polls with
+#   "[...] still loading" heartbeat every 20s; early exit ONLY on LinkedIn's
+#   explicit empty-state text, never on mere card absence (slow renders keep
+#   full budget). Zero-timeout-change: worst case identical, best case faster.
+# Rationale: Observability without behavior risk; empty pages now narrate.
+# Preventative Notes: Never early-exit on card absence alone; never raise the
+#   60s budget without proxy/headless work.
+#
+# [ENTRY #027]
+# Term: [UNIVERSAL_JD_EXPANSION]
+# Timestamp: 2026-09-28 08:00:00 +05:30
+# Issue / Context: Owner directive: complete JD must be analyzed on EVERY
+#   portal — clamped previews silently degrade scoring. Audit found the Naukri
+#   read-more selector catalogued but clicked by zero code paths.
+# Changes Made: Platform-agnostic expander pass before JD scrape (Naukri
+#   verified selectors + generic See/Read/Show/View-more texts), JD-scoped
+#   first, max 5 clicks, restores the page if a click navigates away,
+#   best-effort (absence never fails a scan).
+# Rationale: Full text in, full text scored; portals converge on one path.
+# Preventative Notes: Never add navigation-capable texts ("See more jobs");
+#   never let expansion failure fail the scan.
+#
+# [ENTRY #028]
+# Term: [MARKET_INFORMED_KEYWORD_EXPANSION]
+# Timestamp: 2026-09-28 08:00:00 +05:30
+# Issue / Context: Owner directive: learn real market titles from live
+#   searches and expand config search terms for maximum applies. Audit found
+#   analyze_and_expand_designations() defined with ZERO callers (trigger died
+#   in Batch v2); nothing pulls market titles into config.
+# Changes Made: Zero-batch cycles call the brain with resume + exp + current
+#   terms + session-seen market titles; Python format-validates only
+#   (3-80 chars, comma-free, dedupe, max 6) and appends to
+#   recommended_titles atomically (rotation picks them up next cycle via
+#   sync_designations). Once per designation, learnings-gated.
+# Rationale: G-BRAIN-01 preserved (brain decides semantics); persistently
+#   empty terms can't burn a brain call per cycle.
+# Preventative Notes: Never append without dedupe + cap; never expand on
+#   triage-rejected batches (terms work, fit doesn't — expansion adds noise).
 # ================================================================================
 """
 ================================================================================
@@ -928,7 +988,32 @@ def run_batched_discovery(profile_path: str):
                                         except Exception:
                                             pass
                             else:
-                                page.wait_for_selector(card_selector, timeout=60000)
+                                # LinkedIn SRP wait with heartbeat: the old single
+                                # 60s silent wait looked frozen on empty pages.
+                                # Same 60s budget as six 10s polls; prints
+                                # progress and exits early ONLY on LinkedIn's
+                                # explicit empty-state text (never on mere
+                                # absence of cards — a slow render must keep
+                                # its full budget).
+                                _empty_markers = ("No matching jobs", "No results found",
+                                                  "0 results", "0 jobs found")
+                                _waited = 0
+                                for _poll in range(6):
+                                    try:
+                                        page.wait_for_selector(card_selector, timeout=10000)
+                                        break
+                                    except Exception:
+                                        _waited += 10
+                                        try:
+                                            _srp_text = (page.locator("main").first.inner_text() or "") if page.locator("main").count() else ""
+                                        except Exception:
+                                            _srp_text = ""
+                                        if any(_m.lower() in _srp_text.lower() for _m in _empty_markers):
+                                            print(f"  [-] LinkedIn reports no results after {_waited}s; moving on.", flush=True)
+                                            break
+                                        if _waited % 20 == 0:
+                                            print(f"  [...] SRP still loading ({_waited}s/60s)...", flush=True)
+                                        continue
                         except Exception as e:
                             logger.warning(f"Notice during SRP load: {e}")
                             continue
@@ -1322,19 +1407,24 @@ def run_batched_discovery(profile_path: str):
             naukri_match_score = {}
 
             try:
-                try:
-                    detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
-                    detail_page.wait_for_timeout(1500)
-                    if detail_page.locator("body").count() > 0 and len(detail_page.inner_text("body").strip()) < 50:
-                        detail_page.wait_for_timeout(1000)
-                        if len(detail_page.inner_text("body").strip()) < 50:
-                            detail_page.reload(wait_until="domcontentloaded", timeout=25000)
-                            detail_page.wait_for_timeout(1500)
-                except Exception as _nav_err:
-                    time.sleep(1)
+                if _exec_platform == "linkedin":
+                    # LinkedIn view pages throttle under automation (soft-throttle):
+                    # two-stage commit first, then explicit right-pane JD wait.
                     try:
-                        detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
+                        try:
+                            detail_page.goto(nav_url, wait_until="commit", timeout=60000)
+                        except Exception:
+                            detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
                         detail_page.wait_for_timeout(1500)
+                        try:
+                            detail_page.wait_for_selector(".jobs-description-content, div.jobs-description__content, div[class*='jobs-description']", timeout=15000)
+                        except Exception:
+                            pass
+                        if detail_page.locator("body").count() > 0 and len(detail_page.inner_text("body").strip()) < 50:
+                            detail_page.wait_for_timeout(1000)
+                            if len(detail_page.inner_text("body").strip()) < 50:
+                                detail_page.reload(wait_until="domcontentloaded", timeout=25000)
+                                detail_page.wait_for_timeout(1500)
                     except Exception as _nav_err2:
                         print(f"     [ERROR NAVIGATING] {_nav_err2}", flush=True)
                         processed_ledger.add(url.lower())
@@ -1342,6 +1432,27 @@ def run_batched_discovery(profile_path: str):
                         if job_id: processed_ledger.add(job_id)
                         processed_ledger.add(composite_key)
                         continue
+                else:
+                    try:
+                        detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
+                        detail_page.wait_for_timeout(1500)
+                        if detail_page.locator("body").count() > 0 and len(detail_page.inner_text("body").strip()) < 50:
+                            detail_page.wait_for_timeout(1000)
+                            if len(detail_page.inner_text("body").strip()) < 50:
+                                detail_page.reload(wait_until="domcontentloaded", timeout=25000)
+                                detail_page.wait_for_timeout(1500)
+                    except Exception as _nav_err:
+                        time.sleep(1)
+                        try:
+                            detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=25000)
+                            detail_page.wait_for_timeout(1500)
+                        except Exception as _nav_err2:
+                            print(f"     [ERROR NAVIGATING] {_nav_err2}", flush=True)
+                            processed_ledger.add(url.lower())
+                            if can_url: processed_ledger.add(can_url)
+                            if job_id: processed_ledger.add(job_id)
+                            processed_ledger.add(composite_key)
+                            continue
 
                 # Re-verify opened page URL against ledger in case of redirects
                 page_can_url = canonical_job_url(detail_page.url)
@@ -1373,7 +1484,53 @@ def run_batched_discovery(profile_path: str):
                         ctx.add_to_processed_ledger(can_url or url, status="already_applied_banner", metadata={"title": title, "company": company})
                         continue
 
+                # Universal JD expansion (all portals): click any "read more /
+                # see more / show more" expander BEFORE scraping so the FULL
+                # description — not the clamped preview — is what gets scored.
+                # Scoped to JD containers first; restores the page if a click
+                # ever navigates away. Best-effort: absence never fails a scan.
+                try:
+                    _jd_scope = detail_page.locator("div.jobs-description__content, div.styles_JD-section__umHEZ, div.job-description").first
+                    _scope = _jd_scope if _jd_scope.count() else detail_page.locator("body")
+                    _expanders = [
+                        "span.styles_rm-link__RgrMs", ".customReadMoreLabelClass",
+                        "button:has-text('See more')", "a:has-text('See more')",
+                        "button:has-text('see more')", "span:has-text('see more')",
+                        "button:has-text('Read more')", "a:has-text('Read more')",
+                        "button:has-text('Show more')", "a:has-text('Show more')",
+                        "button:has-text('View more')", "span:has-text('Show more')",
+                    ]
+                    _expanded = 0
+                    for _esel in _expanders:
+                        if _expanded >= 5:
+                            break
+                        try:
+                            for _el in _scope.locator(_esel).all()[:3]:
+                                try:
+                                    if _el.is_visible():
+                                        _el.click(timeout=3000)
+                                        _expanded += 1
+                                        detail_page.wait_for_timeout(600)
+                                except Exception:
+                                    continue
+                        except Exception:
+                            continue
+                    if _expanded:
+                        print(f"     [JD EXPANDED: {_expanded} section(s)]", flush=True)
+                        detail_page.wait_for_timeout(800)
+                    try:
+                        if detail_page.url.split("?")[0].rstrip("/") != nav_url.split("?")[0].rstrip("/"):
+                            detail_page.goto(nav_url, wait_until="domcontentloaded", timeout=15000)
+                            detail_page.wait_for_timeout(1000)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
                 # Scrape full JD for evaluate_job_match
+                # LinkedIn view pages render the JD in the right-pane description
+                # container (verified map: platform_heuristics.json
+                # platforms.linkedin.dom_selectors.detail_pane_description).
                 _jd_selectors = [
                     "div.styles_JD-section__umHEZ",
                     "div.job-description",
@@ -1383,6 +1540,15 @@ def run_batched_discovery(profile_path: str):
                     "article",
                     "main"
                 ]
+                if _exec_platform == "linkedin":
+                    _jd_selectors = [
+                        ".jobs-description-content",
+                        "div.jobs-description__content",
+                        "div[class*='jobs-description']",
+                        "div.job-description",
+                        "article",
+                        "main"
+                    ]
                 for _sel in _jd_selectors:
                     _jd_el = detail_page.locator(_sel).first
                     if _jd_el.count() > 0:
@@ -1478,6 +1644,54 @@ def run_batched_discovery(profile_path: str):
         cards_approved=len(approved_jobs),
         cards_applied=applied_count
     )
+
+    # ── MARKET-INFORMED KEYWORD EXPANSION (Tier 4 revival, G-BRAIN-01 safe):
+    # Zero batchable cards = this term yields nothing. Ask the brain for new
+    # titles inspired by the resume + real titles seen on portals this run.
+    # Python only format-validates (length, comma-free, dedupe, max 6); the
+    # brain alone decides semantics. Saved atomically; flows into rotation
+    # next cycle via sync_designations. Once per designation (learnings-gated)
+    # so persistently-empty terms never burn a brain call every cycle.
+    if not designation_batch_cards:
+        try:
+            _prior_exp = {}
+            try:
+                _learnings = ai.load_profile_learnings(profile_dir) or {}
+                _prior_exp = _learnings.get("expansion_events", {}) or {}
+            except Exception:
+                _prior_exp = {}
+            if active_designation not in _prior_exp:
+                _exp_titles = ai.analyze_and_expand_designations(
+                    resume_text=getattr(ctx, "resume_text", "") or "",
+                    candidate_exp=float((cand or {}).get("total_experience_years", 0) or 0),
+                    current_keywords=list(dict.fromkeys(list(keywords) + list(recommended))),
+                    market_seen_titles=sorted(session_seen_titles or set()),
+                ) or []
+                _have = set(t.lower().strip() for t in list(keywords) + list(recommended))
+                _fresh = []
+                for _t in _exp_titles:
+                    _ts = re.sub(r'\s+', ' ', str(_t or "").replace(",", " ").replace(";", " ").strip()).strip()
+                    if 3 < len(_ts) <= 80 and _ts.lower() not in _have:
+                        _fresh.append(_ts)
+                        _have.add(_ts.lower())
+                    if len(_fresh) >= 6:
+                        break
+                if _fresh:
+                    _tj = ctx.config.setdefault("target_jobs", {}) if isinstance(ctx.config, dict) else target
+                    _tj.setdefault("recommended_titles", []).extend(_fresh)
+                    ctx.save_config()
+                    print(f"[EXPANSION] Brain added {len(_fresh)} titles for '{active_designation}': {_fresh}", flush=True)
+                try:
+                    ai.record_profile_learning(profile_dir, "expansion_events", active_designation, {
+                        "added": _fresh,
+                        "recorded_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                    })
+                except Exception:
+                    pass
+            else:
+                print(f"[EXPANSION] '{active_designation}' already expanded once; skipping repeat brain call.", flush=True)
+        except Exception as _exp_err:
+            logger.warning(f"Notice during market expansion: {_exp_err}")
 
     # Advance to next designation for the next daemon cycle
     next_designation = state_mgr.advance()

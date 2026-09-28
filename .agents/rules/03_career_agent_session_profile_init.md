@@ -7,7 +7,7 @@
 
 ### STEP 1 — Mandatory Pre-Flight Documentation Ingestion
 Before executing any user command, running any Python script (`python core/...`), or making any code changes, immediately read and internalize:
-1. `F:\JOB AI AGENT\docs\WORKSPACE_RULES.md` (Directives 1-9, all 43 Bug Prevention Guardrails P1, C1-C34, H1-H6, D1-D3)
+1. `F:\JOB AI AGENT\docs\WORKSPACE_RULES.md` (Directives 1-9, all 46 Bug Prevention Guardrails P1, C1-C37, H1-H6, D1-D3)
 2. `F:\JOB AI AGENT\docs\ARCHITECTURE_REFERENCE.md` (Module anatomy, IPC contracts, data schemas)
 3. `F:\JOB AI AGENT\docs\PLATFORM_KNOWLEDGE.md` (Naukri/LinkedIn DOM patterns, SEO slugs, zero-comma rules)
 

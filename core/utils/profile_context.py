@@ -86,6 +86,18 @@
 # Rationale: Correctness + perf without changing engine contracts.
 # Preventative Notes: Keep keyword keys in sync with default_user schema.
 #   Never probe network in a @property without cache.
+#
+# [ENTRY #008]
+# Term: [BOUNDED_EXECUTION_LOG]
+# Timestamp: 2026-09-27 22:45:00 +05:30
+# Issue / Context: terminal_execution_log.txt grows unbounded (740KB+ in days);
+#   at 100-profile volume it becomes a disk hazard. Only writer is
+#   append_execution_log (single choke point).
+# Changes Made: Past 5MB, keep the newest half before appending. Telemetry
+#   only — ledgers/trackers untouched.
+# Rationale: Bounded disk with zero behavior change; newest history (the
+#   diagnostically valuable half) always survives.
+# Preventative Notes: Never rotate ledgers, trackers, or QA files — logs only.
 # ================================================================================
 """
 ================================================================================
@@ -371,6 +383,14 @@ class ProfileContext:
         entry = f"[{ts}] {text.strip()}\n"
         try:
             log_file = self.logs_dir / "terminal_execution_log.txt"
+            try:
+                # Bounded log: keep the newest half past 5MB so volume runs
+                # (100 profiles/day) cannot fill the disk. Telemetry only.
+                if log_file.exists() and log_file.stat().st_size > 5 * 1024 * 1024:
+                    kept = log_file.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+                    log_file.write_text("".join(kept[len(kept) // 2:]), encoding="utf-8")
+            except Exception:
+                pass
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(entry)
         except Exception:
