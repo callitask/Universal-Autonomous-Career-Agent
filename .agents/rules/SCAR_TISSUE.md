@@ -162,3 +162,9 @@ all semantic job fit evaluations. Keyword lists in config are advisory context f
 - **What happened**: Two documented capabilities were fiction: the Naukri read-more selector lived only in a JSON catalog with zero code readers (descriptions would truncate if Naukri reactivates), and `analyze_and_expand_designations()` had zero callers since Batch v2 (market titles never entered config). Docs claimed both; code did neither. Caught only because the owner asked for proof, not prose.
 - **Correct behavior**: Universal pre-scrape expander pass (C37) + zero-yield market expansion hook with budget caps (C37). Docs describe only what code provably does.
 - **Never repeat**: Never trust a capability claim without a caller/clicker. Grep the verb (click/call), not the noun, when verifying a feature.
+
+## [2026-09-29] SILENT DEDUP READ AS BROKEN RETRIEVAL
+- **File**: `core/04_job_discovery.py` → ARM card loop
+- **What happened**: Owner watched full Naukri pages with zero log lines and concluded the scraper was dead after 5 hours. Live DOM probe proved 20/20 cards extract fine — the ledger `continue` was simply silent, so a saturated inventory looked identical to dead selectors. Single supervised cycle reproduced the healthy path end to end.
+- **Correct behavior**: Per-page ledger-skip count with explicit "(retrieval healthy)" marker (logging only, zero behavior change).
+- **Never repeat**: Every silent skip path must narrate itself. When a user reports "finds nothing", first split saturation vs breakage with a live DOM count before touching any code.

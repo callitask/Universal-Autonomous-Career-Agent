@@ -301,6 +301,33 @@
 #   existing stuck-step/adapt path handles it as before).
 # Preventative Notes: Never fill a readonly/combobox input as TEXT; never
 #   extend the marker list to placeholder-only heuristics (too greedy).
+#
+# [ENTRY #025]
+# Term: [INCOGNITO_CONTEXT_SELECTION]
+# Timestamp: 2026-09-29 20:35:00 +05:30
+# Issue / Context: Owner watched search run in incognito while the apply
+#   step reopened the normal window (focus visibly "switched back"):
+#   ApplicationEngine hardcoded the default context via BrowserManager.
+# Changes Made: BrowserManager takes browser_context from ctx and resolves
+#   via resolve_worker_context; modal, upload, and submit all stay in the
+#   profile's context for the whole application.
+# Rationale: The apply path can never leave the search context again.
+# Preventative Notes: Never construct BrowserManager without the profile's
+#   browser_context.
+#
+# [ENTRY #026]
+# Term: [LINKEDIN_HUMAN_PACING]
+# Timestamp: 2026-09-30 20:20:00 +05:30
+# Issue / Context: Owner requires minimum bot-detection surface on LinkedIn
+#   at any cost. Modal progression clicks fired at fixed machine cadence.
+# Changes Made (LinkedIn-scoped): randomized 700–2000ms pre-click pause
+#   before every step-progression click (Next/Review/Submit) via existing
+#   human_jitter; daily cap field honored (profile sets conservative 15).
+#   Challenge handling unchanged (discard + human-gate, never solve).
+# Rationale: Reading-speed cadence plus human-scale daily volume plus
+#   never-touch-challenges is the full honest anti-detection posture.
+# Preventative Notes: No automated behavior can guarantee zero detection —
+#   never claim it. Never shorten pacing below human-plausible floors.
 # ================================================================================
 """
 ================================================================================
@@ -1940,6 +1967,9 @@ class LinkedInApplyHandler:
                         log_step("WARNING", f"Custom dropdown handling notice: {ex}")
 
                 # 6. Step Progression: Check buttons in order of priority
+                # Human pacing (anti-bot): randomized pre-click pause so modal
+                # steps advance at reading speed, never machine-gun cadence.
+                human_jitter(700, 2000)
                 submit_btn = modal.locator("button:has-text('Submit application'), button:has-text('Submit')").first
                 if submit_btn.count() > 0 and submit_btn.is_visible():
                     log_step("LINKEDIN", "Clicking 'Submit application'...")
@@ -2010,7 +2040,7 @@ class ApplicationEngine:
     def __init__(self, profile_path: Optional[str] = None):
         self.ctx = ProfileContext(profile_path, PROJECT_ROOT)
         self.ctx.verify_codebase_purity()
-        self.browser_mgr = BrowserManager(cdp_url=self.ctx.cdp_url)
+        self.browser_mgr = BrowserManager(cdp_url=self.ctx.cdp_url, browser_context=self.ctx.browser_context)
         self.ai = AIClient(self.ctx)
         self.stats = {
             "total": 0,

@@ -62,6 +62,16 @@
 #   numbers, tech allowlist) — actuator/brain split preserved.
 # Preventative Notes: Never reframe education/skills/summary sections here;
 #   never persist a violating reframe; offline mode keeps originals silently.
+#
+# [ENTRY #005]
+# Term: [INCOGNITO_CONTEXT_SELECTION]
+# Timestamp: 2026-09-29 20:35:00 +05:30
+# Issue / Context: Owner runs portal sessions in incognito only; hardcoded
+#   contexts[0] pinned PDF-render browsing to the regular profile.
+# Changes Made: CDP context resolved via resolve_worker_context(browser,
+#   self.ctx.browser_context); local headless fallback untouched.
+# Rationale: One helper, per-profile config, fail-fast over wrong-session.
+# Preventative Notes: Never index browser.contexts directly here again.
 # ================================================================================
 """
 ================================================================================
@@ -94,6 +104,7 @@ BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
 from core.utils.profile_context import ProfileContext
+from core.utils.browser_manager import resolve_worker_context
 from core.ai_client import AIClient
 
 HTML_WRAPPER = """<!doctype html>
@@ -538,7 +549,7 @@ class ResumeTailorEngine:
             browser = None
             try:
                 browser = p.chromium.connect_over_cdp(self.cdp_url, timeout=3000)
-                context = browser.contexts[0] if browser.contexts else browser.new_context()
+                context = resolve_worker_context(browser, self.ctx.browser_context)
                 page = context.new_page()
                 is_connected_cdp = True
             except Exception as e:

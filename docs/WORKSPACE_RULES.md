@@ -318,6 +318,8 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 ### C4: Atomic Config Writes
 **Rule:** `save_config()` must write to a `.tmp` file first, then `os.replace()` to the target. Direct `open("w")` on `candidate_config.json` is forbidden.
 
+> **Numbering note (verified 2026-09-30):** no C5 was ever issued — numbering jumps C4 → C6. The header count (36 C) counts existing sections and is correct; guardrails are never renumbered (code comments, scar log, and history cite these IDs).
+
 ### C6: Negative Keywords Are Absolute
 **Rule:** `is_title_allowed()` and `evaluate_job_match()` Stage 1 must reject titles containing ANY negative keyword unconditionally. The presence of a positive target keyword must NOT override a negative keyword match.
 **Layer note (G-BRAIN-01 reconciliation):** discovery (`04_job_discovery.py` card loop) treats negatives as advisory-only context for AG Brain batch triage; enforcement lives in `evaluate_job_match()` / `arbitrate_card_fit()` Stage 1 (`ai_client.py`). Never re-introduce Python title-gating in the discovery loop.
@@ -402,7 +404,7 @@ For pagination (Page 2+):
 https://www.naukri.com/{query_slug}-jobs-in-{loc_slug}-{page_num}?experience={exp}&jobAge={job_age_days}&ctcFilter={ctc_filter}
 ```
 **Empirical Truth & Trap Avoidance:**
-1. **The `/jobs?k=` Trap:** Never construct `https://www.naukri.com/jobs?k=...&l=...`. Naukri's routing engine automatically redirects `/jobs?k=...` to `/jobs-in-india?k=...` which fails to render job cards (yields 0 tuples). Known exception: the `ROLE_AND_COMPANY` fallback in `04_job_discovery.py:826` still uses this pattern — migrate it to slugs before relying on that strategy.
+1. **The `/jobs?k=` Trap:** Never construct `https://www.naukri.com/jobs?k=...&l=...`. Naukri's routing engine automatically redirects `/jobs?k=...` to `/jobs-in-india?k=...` which fails to render job cards (yields 0 tuples). Known exception: the `ROLE_AND_COMPANY` fallback in `04_job_discovery.py:973` still uses this pattern — migrate it to slugs before relying on that strategy.
 2. **The Comma Slug Trap:** The historical reason SEO slugs failed was NOT the slug URL architecture, but **trailing commas** in search tokens (`"java technical lead,"`, `"bangalore, "`). Commas encode as `%2C` which Naukri parses literally as `"2c"`, collapsing results to 0. All tokens MUST pass through `clean_search_token()` to strip commas, semicolons, and special characters before slugifying (`re.sub(r'[^a-z0-9]+', '-', clean_token.lower()).strip('-')`).
 3. Structured slug URLs with clean tokens and appended query parameters (`experience`, `jobAge`, `ctcFilter`) reliably yield **20 job tuples per page** and 25,000+ available postings.
 

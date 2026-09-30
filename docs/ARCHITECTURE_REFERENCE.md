@@ -116,6 +116,7 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
 - `candidate_config.json` — Self-learning truth cache (read/write by all scripts)
 - `batch_question.json` / `batch_answer.json` — Asynchronous Batch Card Evaluation IPC channel between Discovery Engine and AG Brain (120s SLA)
 - `pending_question.json` — Asynchronous Single-Query File-Based IPC handshake between Application Engine, IPC Watcher, and AG Brain (90s SLA)
+- **Completion-switch rule (both IPC channels):** readers accept a payload ONLY with `status: "ANSWERED"` plus non-empty content (`answer` / `decisions`); PENDING or half-written payloads keep polling. Writers must flip status atomically with content (tmp-file + replace). Polls already return the instant a final payload lands — timeouts burn only when nobody answers, and no switch shortens absence (tune via `batch_ipc_timeout_seconds`).
 - `search_state.json` — State persistence for `SearchStateManager` designation rotation
 - `ques_ans_chatbot.json` — Per-job Q&A audit log stored alongside tailored resumes
 - `Job_Description.md` — Raw un-clamped multi-section scraped JD markdown saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
@@ -287,7 +288,7 @@ Pagination (Page 2+):
 ```
 https://www.naukri.com/{role_slug}-jobs-in-{loc_slug}-{page_num}?jobAge={days}&experience={years}&ctcFilter={bracket}
 ```
-*(Note: As documented in `platform_heuristics.json:15-19`, generic `/jobs?k=...` URLs are strictly PROHIBITED as Naukri's server automatically redirects them to `/jobs-in-india?k=...`, which collapses the `.srp-jobtuple-wrapper` components and returns 0 vacancies. Canonical structured SEO slugs with dynamic query parameters reliably return 20 job cards per page. Known exception: the `ROLE_AND_COMPANY` fallback in `core/04_job_discovery.py:826` still uses `/jobs?k`.)*
+*(Note: As documented in `platform_heuristics.json:15-19`, generic `/jobs?k=...` URLs are strictly PROHIBITED as Naukri's server automatically redirects them to `/jobs-in-india?k=...`, which collapses the `.srp-jobtuple-wrapper` components and returns 0 vacancies. Canonical structured SEO slugs with dynamic query parameters reliably return 20 job cards per page. Known exception: the `ROLE_AND_COMPANY` fallback in `core/04_job_discovery.py:973` still uses `/jobs?k`.)*
 
 **Naukri 3-Field Header Search Bar Protocol (UI Automation):**
 When navigating via in-browser UI form interaction (`execute_naukri_header_search()`):

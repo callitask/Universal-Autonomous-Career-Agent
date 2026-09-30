@@ -397,6 +397,43 @@
 # Preventative Notes: Never snap ambiguous-sides CTC Qs; never add skill
 #   years without owner confirmation; keep scale detection word-boundaried
 #   ("lac" must not match "lack").
+#
+# [ENTRY #033]
+# Term: [EXPANSION_EVENT_PERSISTENCE_AND_BUDGET]
+# Timestamp: 2026-09-28 21:00:00 +05:30
+# Issue / Context: My own defect: record_profile_learning silently dropped
+#   unknown categories, so the expansion once-per-designation gate never
+#   engaged — rotation ballooned 38 → 535 terms (~27h per rotation), starving
+#   high-value terms for hours. No error anywhere; pure silent drop.
+# Changes Made: (1) Unknown learnings categories persist generically (never
+#   drop silently); (2) global budget of 24 expansion-added titles in the 04
+#   hook with explicit budget-reached logging. One-time prune of the bloated
+#   list back to curated originals + measured winners done as config curation
+#   (backup first).
+# Rationale: Budgets bound blast radius; silent drops are the worst failure
+#   mode — this one hid behind a try/except pass.
+# Preventative Notes: Never add a learnings category without a persistence
+#   path + a test that reads it back. Never let auto-growth run uncapped.
+#
+# [ENTRY #034]
+# Term: [IPC_COMPLETION_SWITCH]
+# Timestamp: 2026-09-29 19:00:00 +05:30
+# Issue / Context: Owner proposal: an explicit complete/incomplete switch so
+#   Python proceeds the moment the AI finishes instead of burning waits.
+#   Audit found the wait was never fixed-duration (polls return immediately
+#   on a valid answer; 120s burns only when NOBODY answers) and both readers
+#   accepted any non-empty payload without checking completion — a partial
+#   streaming save under PENDING could be consumed as final.
+# Changes Made: _is_final_ipc_answer / _is_final_batch_answer completion
+#   gates (status ANSWERED + non-empty content, case-insensitive, never
+#   raise) enforced at both poll loops; writers must flip status atomically
+#   with content (tmp+replace). Timeouts unchanged — no switch shortens a
+#   wait for an answer that never comes; Gemini-inline order + the existing
+#   batch_ipc_timeout_seconds knob remain the latency answers.
+# Rationale: The switch hardens the handoff (partial writes can no longer
+#   pass as final); it does not and cannot fix absence.
+# Preventative Notes: Never consume a PENDING payload as final; never remove
+#   the timeout (absence must still resolve to a safe default).
 # ================================================================================
 """
 ================================================================================
@@ -816,6 +853,12 @@ class AIClient:
         learnings = self.load_profile_learnings(target_dir)
         learnings["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if category in ("high_yield_keywords", "zero_yield_keywords", "learned_question_answers"):
+            learnings.setdefault(category, {})[key] = value
+        elif category == "expansion_events":
+            # Live defect 2026-09-28: unknown categories fell through silently,
+            # so the expansion once-per-designation gate never engaged and the
+            # rotation list ballooned 38 → 535. Persist all other categories
+            # generically; never drop a learning silently again.
             learnings.setdefault(category, {})[key] = value
         elif category == "evaluated_jobs_summary":
             summary = learnings.setdefault("evaluated_jobs_summary", {})
@@ -3086,6 +3129,42 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
         except Exception as e:
             print(f"[AI BRAIN] Warning: Could not persist learned truth: {e}", flush=True)
 
+    @staticmethod
+    def _is_final_ipc_answer(data: Any) -> bool:
+        """Completion-switch check for single-question IPC payloads.
+
+        The writer signals completeness by flipping status to ANSWERED
+        atomically with the content. A payload still marked PENDING — or a
+        half-written file that parses but carries no answer — is NOT final,
+        no matter what else it contains. Never raises.
+        """
+        try:
+            if not isinstance(data, dict):
+                return False
+            if str(data.get("status", "")).strip().upper() != "ANSWERED":
+                return False
+            return bool(str(data.get("answer", "")).strip())
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_final_batch_answer(data: Any) -> bool:
+        """Completion-switch check for batch IPC payloads.
+
+        Requires status ANSWERED plus a non-empty decisions list. Partial
+        streaming writes (decisions still being appended under PENDING) keep
+        polling instead of being consumed as final. Never raises.
+        """
+        try:
+            if not isinstance(data, dict):
+                return False
+            if str(data.get("status", "")).strip().upper() != "ANSWERED":
+                return False
+            decisions = data.get("decisions", [])
+            return isinstance(decisions, list) and len(decisions) > 0
+        except Exception:
+            return False
+
     def _fallback_antigravity_ipc(
         self,
         prompt: str,
@@ -3161,7 +3240,8 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 try:
                     with open(ipc_file, "r", encoding="utf-8") as f:
                         data = json.load(f)
-
+                    if not self._is_final_ipc_answer(data):
+                        continue  # still PENDING / being written — not complete
                     ans = str(data.get("answer", "")).strip()
                     if ans:
                         preview = ans if len(ans) <= 80 else ans[:80] + "..."
@@ -3478,6 +3558,8 @@ Example: [{{"id": 0, "decision": "DEEP_SCAN", "reason": "Match"}}, {{"id": 1, "d
                 try:
                     raw = answer_file.read_text(encoding="utf-8")
                     data = json.loads(raw)
+                    if not self._is_final_batch_answer(data):
+                        continue  # PENDING / streaming write — not complete
                     decisions = data.get("decisions", [])
                     if isinstance(decisions, list) and len(decisions) > 0:
                         print(f"[BATCH IPC] AG Brain answered: {len(decisions)} decisions received.", flush=True)

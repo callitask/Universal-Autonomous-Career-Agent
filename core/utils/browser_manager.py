@@ -47,6 +47,21 @@
 #   stops Playwright. close() remains backward compatible.
 # Rationale: Deterministic cleanup without changing existing call sites.
 # Preventative Notes: Prefer `with` blocks for new code; never terminate user Chrome.
+#
+# [ENTRY #005]
+# Term: [INCOGNITO_CONTEXT_SELECTION]
+# Timestamp: 2026-09-29 20:30:00 +05:30
+# Issue / Context: Owner runs portal sessions in incognito only, but every
+#   call site hardcoded contexts[0] (regular profile) — incognito sessions
+#   were invisible, and a closed incognito window would have run logged-out
+#   silently. Audit also proved no code path can close incognito at all.
+# Changes Made: resolve_worker_context(browser, name): "default" keeps
+#   contexts[0]; "incognito" takes contexts[1] (Chrome shares exactly one
+#   off-record context) and raises loudly when absent. BrowserManager takes
+#   browser_context param (default preserves all call sites).
+# Rationale: Per-profile, config-driven, fail-fast over silent-wrong.
+# Preventative Notes: Never index contexts[1] without the length guard;
+#   never fall back to default when incognito was requested.
 # ================================================================================
 """
 ================================================================================
@@ -65,13 +80,39 @@ from typing import Optional
 from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
 
 
+def resolve_worker_context(browser: Browser, context_name: str = "default") -> BrowserContext:
+    """Selects the CDP browser context by profile-configured name.
+
+    "default"    → contexts[0] (unchanged legacy behavior).
+    "incognito"  → first non-default context. Chrome shares exactly ONE
+                   off-the-record context across all its incognito windows,
+                   so contexts[1] is deterministic. Raises RuntimeError when
+                   no incognito window is open — fail fast instead of ever
+                   running logged-out silently.
+    """
+    name = str(context_name or "default").strip().lower()
+    contexts = list(browser.contexts) if browser.contexts else []
+    if name == "incognito":
+        if len(contexts) > 1:
+            return contexts[1]
+        raise RuntimeError(
+            "[BrowserManager] Profile requires incognito context but no incognito "
+            "window is open in the CDP browser. Open an incognito window (with portal "
+            "logins) in the Chrome instance and re-run — refusing to run logged-out."
+        )
+    if contexts:
+        return contexts[0]
+    return browser.new_context()
+
+
 class BrowserManager:
     """
     Manages Playwright connection to an active Chrome instance via CDP.
     """
 
-    def __init__(self, cdp_url: str = None):
+    def __init__(self, cdp_url: str = None, browser_context: str = "default"):
         self.cdp_url = cdp_url or os.environ.get("CDP_URL")
+        self.browser_context_name = str(browser_context or "default").strip().lower()
         self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -90,10 +131,7 @@ class BrowserManager:
                     f"Ensure Chrome is initialized with the correct remote-debugging-port. Error: {e}"
                 )
 
-        if self.browser.contexts:
-            self.context = self.browser.contexts[0]
-        else:
-            self.context = self.browser.new_context()
+        self.context = resolve_worker_context(self.browser, self.browser_context_name)
 
         return self.context
 

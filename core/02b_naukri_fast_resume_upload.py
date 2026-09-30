@@ -29,6 +29,16 @@
 # Changes Made: Removed fallback.
 # Rationale: Ensure dynamic configuration.
 # Preventative Notes: Never hardcode these values again.
+#
+# [ENTRY #003]
+# Term: [INCOGNITO_CONTEXT_SELECTION]
+# Timestamp: 2026-09-29 20:35:00 +05:30
+# Issue / Context: Owner runs portal sessions in incognito only; hardcoded
+#   contexts[0] pinned upload to the regular profile.
+# Changes Made: Context resolved via resolve_worker_context(browser,
+#   ctx.browser_context); missing incognito fails loudly, never silently.
+# Rationale: One helper, per-profile config, fail-fast over wrong-session.
+# Preventative Notes: Never index browser.contexts directly here again.
 # ================================================================================
 """
 ================================================================================
@@ -60,6 +70,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from core.utils.profile_context import ProfileContext
+from core.utils.browser_manager import resolve_worker_context
 
 
 def log(msg: str):
@@ -115,7 +126,7 @@ def run_fast_upload(profile_path: str):
     with sync_playwright() as p:
         try:
             browser = p.chromium.connect_over_cdp(cdp_url)
-            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            context = resolve_worker_context(browser, ctx.browser_context)
 
             # Use dedicated worker page for fast upload to protect primary browsing tab
             upload_page = context.new_page()

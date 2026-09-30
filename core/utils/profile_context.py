@@ -98,6 +98,16 @@
 # Rationale: Bounded disk with zero behavior change; newest history (the
 #   diagnostically valuable half) always survives.
 # Preventative Notes: Never rotate ledgers, trackers, or QA files — logs only.
+#
+# [ENTRY #009]
+# Term: [BROWSER_CONTEXT_PROPERTY]
+# Timestamp: 2026-09-29 20:30:00 +05:30
+# Issue / Context: Browser context selection (default vs incognito) must
+#   resolve per profile from candidate.browser_context, defaulting to
+#   "default" (zero behavior change for existing setups).
+# Changes Made: browser_context @property on ProfileContext.
+# Rationale: Single config-driven source; purity-safe (config, not literal).
+# Preventative Notes: Never hardcode a context name in engine code.
 # ================================================================================
 """
 ================================================================================
@@ -698,6 +708,11 @@ class ProfileContext:
             except Exception:
                 pass
         return configured
+
+    @property
+    def browser_context(self) -> str:
+        """Profile-configured browser context name: 'default' or 'incognito'."""
+        return str(self.candidate.get("browser_context", "default") or "default").strip().lower()
 
     @property
     def target_jobs(self) -> Dict[str, Any]:

@@ -27,7 +27,7 @@ https://www.naukri.com/{role_slug}-jobs-in-{loc_slug}-{page_num}?experience={yea
 1. **The `/jobs?k=` Redirect Trap:**
    - Constructing `https://www.naukri.com/jobs?k=...&l=...` causes Naukri's server to redirect immediately to `https://www.naukri.com/jobs-in-india?k=...`.
    - On this redirect page, Naukri fails to render `.srp-jobtuple-wrapper` components, resulting in **0 job cards found** and triggering false starvation.
-    - **Rule:** Never use `/jobs?k=`. Always route directly to `{role_slug}-jobs-in-{loc_slug}`. (Known exception: the `ROLE_AND_COMPANY` fallback in `core/04_job_discovery.py:826` still uses `/jobs?k` — migrate before relying on it.)
+    - **Rule:** Never use `/jobs?k=`. Always route directly to `{role_slug}-jobs-in-{loc_slug}`. (Known exception: the `ROLE_AND_COMPANY` fallback in `core/04_job_discovery.py:973` still uses `/jobs?k` — migrate before relying on it.)
 
 2. **The Pre-Encoded `%20` Slug Corruption Trap:**
    - If a search query is URL-encoded before slug generation (e.g. `urllib.parse.quote("java technical lead")` $\rightarrow$ `"java%20technical%20lead"`), and then passed into standard slug stripping (`re.sub(r'[^a-z0-9]+', '-', text)`), the `%` character is stripped, producing `"java-20technical-20lead"`.

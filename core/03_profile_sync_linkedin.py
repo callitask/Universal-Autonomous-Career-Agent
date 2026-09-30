@@ -57,6 +57,16 @@
 # Rationale: Platform isolation; same-commit consumer update per ENTRY #003 rule.
 # Preventative Notes: Never reuse the other platform's config keys; add a
 #   platform-prefixed key with fallback instead.
+#
+# [ENTRY #005]
+# Term: [INCOGNITO_CONTEXT_SELECTION]
+# Timestamp: 2026-09-29 20:35:00 +05:30
+# Issue / Context: Owner runs portal sessions in incognito only; hardcoded
+#   contexts[0] pinned sync to the regular profile.
+# Changes Made: Context resolved via resolve_worker_context(browser,
+#   ctx.browser_context); missing incognito fails loudly, never silently.
+# Rationale: One helper, per-profile config, fail-fast over wrong-session.
+# Preventative Notes: Never index browser.contexts directly here again.
 # ================================================================================
 """
 ================================================================================
@@ -95,6 +105,7 @@ BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
 from core.utils.profile_context import ProfileContext
+from core.utils.browser_manager import resolve_worker_context
 from core.ai_client import AIClient
 
 
@@ -628,7 +639,11 @@ def run_sync(profile_path: Optional[str] = None):
             log(f"[!] CDP Connection Failed. Ensure Chrome is running with correct CDP port. Error: {e}")
             return
 
-        context = browser.contexts[0] if browser.contexts else browser.new_context()
+        try:
+            context = resolve_worker_context(browser, ctx.browser_context)
+        except Exception as e:
+            log(f"[!] {e}")
+            return
         page = context.pages[0] if context.pages else context.new_page()
 
         log("[1/4] Navigating to LinkedIn profile...")

@@ -326,6 +326,33 @@
 #   empty terms can't burn a brain call per cycle.
 # Preventative Notes: Never append without dedupe + cap; never expand on
 #   triage-rejected batches (terms work, fit doesn't — expansion adds noise).
+#
+# [ENTRY #029]
+# Term: [DEDUP_SKIP_VISIBILITY]
+# Timestamp: 2026-09-29 18:45:00 +05:30
+# Issue / Context: Owner watched pages of live Naukri cards scroll by with
+#   zero log output and concluded retrieval was broken. It wasn't: ledger
+#   dedup `continue`d silently, so seen inventory looked identical to dead
+#   selectors. Proven live: 20/20 cards extract fine; silence = saturation.
+# Changes Made (logging only, zero behavior change): per-page count of
+#   ledger-skipped cards with an explicit "(retrieval healthy)" line.
+# Rationale: Silence must never be ambiguous between "broken" and "nothing
+#   new" — the single most misread signal in the pipeline.
+# Preventative Notes: Never add behavior to observability edits; counters
+#   stay page-local, never persisted.
+#
+# [ENTRY #030]
+# Term: [INCOGNITO_CONTEXT_SELECTION]
+# Timestamp: 2026-09-29 20:35:00 +05:30
+# Issue / Context: Owner runs portal sessions in incognito only, but ARM and
+#   EXECUTE both hardcoded contexts[0] — searches could run in one context
+#   while applications opened in another ("switches back to normal").
+# Changes Made: Both adoption sites resolve via resolve_worker_context(
+#   browser, ctx.browser_context); a missing incognito window aborts the
+#   cycle loudly instead of running logged-out.
+# Rationale: Single context for the whole cycle — search and apply can never
+#   split across windows again.
+# Preventative Notes: Never index browser.contexts directly here again.
 # ================================================================================
 """
 ================================================================================
@@ -372,6 +399,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from core.utils.profile_context import ProfileContext, canonical_job_url, extract_platform_job_id
+from core.utils.browser_manager import resolve_worker_context
 from core.ai_client import AIClient
 from core.utils.search_state_manager import SearchStateManager
 from core.utils.url_filters import build_ctc_param, build_wfh_param, build_company_jobs_param
@@ -877,7 +905,7 @@ def run_batched_discovery(profile_path: str):
     with sync_playwright() as p:
         try:
             browser = p.chromium.connect_over_cdp(cdp_url)
-            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            context = resolve_worker_context(browser, ctx.browser_context)
             # Tab Hygiene (Rule C20): Adopt Tab 0 and prune leftover abandoned tabs from prior runs
             if context.pages:
                 discovery_page = context.pages[0]
@@ -1055,6 +1083,7 @@ def run_batched_discovery(profile_path: str):
                         })
                             
                         jobs_to_scan = []
+                        dup_skipped = 0
                         for card in cards[:20]:
                             try:
                                 if platform == "linkedin":
@@ -1161,6 +1190,7 @@ def run_batched_discovery(profile_path: str):
                                         or (job_id and job_id in processed_ledger)
                                         or composite_key in processed_ledger
                                     ):
+                                        dup_skipped += 1
                                         continue
 
                                     card_info = f"Rating: {rating_text}" if rating_text else ""
@@ -1186,6 +1216,9 @@ def run_batched_discovery(profile_path: str):
                                     })
                             except Exception:
                                 continue
+
+                        if dup_skipped:
+                            print(f"  [INFO] {dup_skipped} card(s) already in ledger — skipped as seen (retrieval healthy).", flush=True)
 
                         # ── BATCH ARCH V2 — ARM PHASE: Accumulate cards, no per-card IPC ──────────
                         # Cards are pre-gated only on OBJECTIVE NUMERIC CRITERIA (blacklist, salary,
@@ -1351,7 +1384,7 @@ def run_batched_discovery(profile_path: str):
     with sync_playwright() as _exec_p:
         try:
             _exec_browser = _exec_p.chromium.connect_over_cdp(cdp_url)
-            _exec_context = _exec_browser.contexts[0] if _exec_browser.contexts else _exec_browser.new_context()
+            _exec_context = resolve_worker_context(_exec_browser, ctx.browser_context)
             if _exec_context.pages:
                 _exec_page = _exec_context.pages[0]
                 for _extra in _exec_context.pages[1:]:
@@ -1660,7 +1693,16 @@ def run_batched_discovery(profile_path: str):
                 _prior_exp = _learnings.get("expansion_events", {}) or {}
             except Exception:
                 _prior_exp = {}
-            if active_designation not in _prior_exp:
+            _exp_total = 0
+            try:
+                for _ev in _prior_exp.values():
+                    _exp_total += len((_ev or {}).get("added", []) or [])
+            except Exception:
+                _exp_total = 0
+            # Global budget: at most 24 expansion-added titles ever. Volume
+            # without bound turns rotation into a 27-hour crawl (live incident
+            # 2026-09-28: 38 → 535 terms). Curate further only by hand.
+            if active_designation not in _prior_exp and _exp_total < 24:
                 _exp_titles = ai.analyze_and_expand_designations(
                     resume_text=getattr(ctx, "resume_text", "") or "",
                     candidate_exp=float((cand or {}).get("total_experience_years", 0) or 0),
@@ -1688,8 +1730,10 @@ def run_batched_discovery(profile_path: str):
                     })
                 except Exception:
                     pass
-            else:
+            elif active_designation in _prior_exp:
                 print(f"[EXPANSION] '{active_designation}' already expanded once; skipping repeat brain call.", flush=True)
+            else:
+                print(f"[EXPANSION] Global budget reached ({_exp_total} titles); no further auto-expansion.", flush=True)
         except Exception as _exp_err:
             logger.warning(f"Notice during market expansion: {_exp_err}")
 

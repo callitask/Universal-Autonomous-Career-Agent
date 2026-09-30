@@ -36,6 +36,16 @@
 # Changes Made: CDP URL now resolves exclusively via ctx.cdp_url (config → env). No literals.
 # Rationale: Single canonical source; custom ports work without code edits.
 # Preventative Notes: Never hardcode a CDP URL/port anywhere in core/.
+#
+# [ENTRY #004]
+# Term: [INCOGNITO_CONTEXT_SELECTION]
+# Timestamp: 2026-09-29 20:35:00 +05:30
+# Issue / Context: Owner runs portal sessions in incognito only; hardcoded
+#   contexts[0] pinned sync to the regular profile.
+# Changes Made: Context resolved via resolve_worker_context(browser,
+#   ctx.browser_context); missing incognito fails loudly, never silently.
+# Rationale: One helper, per-profile config, fail-fast over wrong-session.
+# Preventative Notes: Never index browser.contexts directly here again.
 # ================================================================================
 """
 ================================================================================
@@ -74,6 +84,7 @@ BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
 from core.utils.profile_context import ProfileContext
+from core.utils.browser_manager import resolve_worker_context
 from core.ai_client import AIClient
 
 
@@ -753,7 +764,11 @@ def run(profile_path: Optional[str] = None):
             log(f"[!] CDP Connection Failed. Ensure Chrome is running with remote debugging on 9222. Error: {e}")
             return
 
-        context = browser.contexts[0] if browser.contexts else browser.new_context()
+        try:
+            context = resolve_worker_context(browser, ctx.browser_context)
+        except Exception as e:
+            log(f"[!] {e}")
+            return
         page = context.new_page()
         page.bring_to_front()
 
