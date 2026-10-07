@@ -434,6 +434,29 @@
 #   pass as final); it does not and cannot fix absence.
 # Preventative Notes: Never consume a PENDING payload as final; never remove
 #   the timeout (absence must still resolve to a safe default).
+#
+# [ENTRY #035]
+# Term: [SECRETS_OUT_OF_PROFILES_AND_HEURISTICS_CONFIG_MIGRATION]
+# Timestamp: 2026-10-07 16:00:00 +05:30
+# Issue / Context: (a) Gemini API key and model lived in
+#   profiles/<live>/candidate_config.json candidate block and ai_client /
+#   ipc_auto_resolver read them from there, making per-profile copies/backups
+#   secret carriers. (b) ~20 screening keyword lists remained as Python literals
+#   in _heuristic_screening_answer/_best_option_match despite the zero-literals
+#   rule. (c) get_default_model fell back to a hardcoded model literal.
+# Changes Made: (a) Secrets resolve ONLY from gemini_credentials.json or
+#   GEMINI_API_KEY/GEMINI_MODEL env; profile reads removed; live profiles
+#   scrubbed with timestamped backups. (b) All residual lists migrated to new
+#   screening_heuristics keys (general_experience, zero_equivalent, sub_one_year,
+#   ctc_full_inr/current/expected, disability, age, work_auth, sponsorship,
+#   military, passport, education_10p2, boolean_positive, zero_target/option,
+#   proficiency_lowest_tier, zero_option_contains) with blueprint-mirroring
+#   fallbacks for old profiles. (c) get_default_model order is file model ->
+#   env -> first fallback_models entry -> empty (IPC handles absence).
+# Rationale: Single secure secrets source; tuning screening means editing config,
+#   never Python; no model literal survives in code.
+# Preventative Notes: Never read keys/models from candidate_config.json again.
+#   New screening lists go in screening_heuristics first, Python second.
 # ================================================================================
 """
 ================================================================================
@@ -569,7 +592,12 @@ class AIClient:
             except Exception:
                 self.profile_context = None
 
-        # Resolve Gemini API client if API key is present in gemini_credentials.json, environment, or candidate config
+        # Resolve Gemini API client from secure sources ONLY:
+        # 1) gemini_credentials.json (global, git-ignored) api_keys array
+        # 2) GEMINI_API_KEY environment variable (legacy single-key)
+        # SECURITY: candidate_config.json is NEVER a secrets carrier (profiles/ are
+        # git-ignored runtime sandboxes that get copied/backed up; secrets there leak
+        # via backups and violate zero-trust). Removed 2026-10-07.
         
         # Load global Gemini credentials if they exist
         gemini_creds_path = Path("gemini_credentials.json")
@@ -588,12 +616,9 @@ class AIClient:
         self._current_client_idx = 0
         
         if gemini_engine_enabled:
-            api_keys = gemini_creds.get("api_keys", [])
+            api_keys = list(gemini_creds.get("api_keys", []) or [])
             legacy_key = gemini_creds.get("api_key", "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
-            
-            if not legacy_key and self.profile_context and hasattr(self.profile_context, "config"):
-                legacy_key = self.profile_context.config.get("candidate", {}).get("gemini_api_key", "").strip()
-                
+
             if legacy_key and legacy_key not in api_keys:
                 api_keys.insert(0, legacy_key)
                 
@@ -682,15 +707,22 @@ class AIClient:
             self._current_client_idx = (self._current_client_idx + 1) % len(self._gemini_clients)
 
     def get_default_model(self) -> str:
-        """Retrieves configured Gemini model name from gemini_credentials, candidate config, or environment."""
+        """Retrieves configured Gemini model name from gemini_credentials.json or GEMINI_MODEL env.
+
+        SECURITY: profile candidate_config.json is never consulted for models or keys.
+        Resolution order: gemini_credentials.json model -> GEMINI_MODEL env -> first
+        fallback_models entry -> empty string (caller falls back to IPC).
+        """
         if hasattr(self, "_gemini_creds_model") and self._gemini_creds_model:
             return str(self._gemini_creds_model).strip()
-            
-        if self.profile_context and hasattr(self.profile_context, "config"):
-            configured_model = self.profile_context.config.get("candidate", {}).get("gemini_model")
-            if configured_model and str(configured_model).strip():
-                return str(configured_model).strip()
-        return os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip()
+
+        env_model = os.environ.get("GEMINI_MODEL", "").strip()
+        if env_model:
+            return env_model
+        fb = list(getattr(self, "gemini_fallback_models", []) or [])
+        if fb and str(fb[0]).strip():
+            return str(fb[0]).strip()
+        return ""
 
     def _call_gemini_with_fallback(self, contents: str, requested_model: str = None) -> str:
         if not self.gemini_client:
@@ -2803,7 +2835,7 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 or any(t in resume_text.lower() for t in topic_tokens if len(t) > 2)
             )
 
-            is_general_exp = any(k in q_clean for k in ["relevant years", "years of work experience", "total experience", "overall experience"])
+            is_general_exp = any(k in q_clean for k in sh.get("general_experience_keywords", []))
             if matched_skill_val is not None and matched_skill_val > 0:
                 calc_val = matched_skill_val
             elif is_general_exp and total_exp:
@@ -2821,7 +2853,7 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                     for opt in options:
                         nums = [float(n) for n in re.findall(r'\d+', opt)]
                         thresh = max(nums) if nums else 0.0
-                        if any(w in opt.lower() for w in ["no prior", "no experience", "none", "fresher"]):
+                        if any(w in opt.lower() for w in sh.get("zero_equivalent_option_markers", [])):
                             thresh = 0.0
                         if calc_val >= thresh and thresh > max_tier_thresh:
                             max_tier_thresh = thresh
@@ -2831,7 +2863,7 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
 
                     for opt in options:
                         opt_l = opt.lower().strip()
-                        if any(k in opt_l for k in ["< 1", "<1", "< 1 year", "<1 year", "< 1 yr", "0-1", "0 to 1", "6 month", "fresher", "intern"]):
+                        if any(k in opt_l for k in sh.get("sub_one_year_option_markers", [])):
                             return opt
                     matched = self._best_option_match("1 year", options) or self._best_option_match("1", options)
                     if matched and not any(z in matched.lower() for z in ["no", "0"]):
@@ -2914,15 +2946,15 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
 
         is_full_inr = (
             (control_type and str(control_type).upper() in ["NUMBER", "INTEGER", "NUMERIC"] and not any(l in q_clean for l in ["lakh", "lpa", "lacs"]))
-            or any(k in q_clean for k in ["inr", "rupees", "rs.", "rs ", "exact", "annual ctc", "annual salary"])
+            or any(k in q_clean for k in sh.get("ctc_full_inr_scale_keywords", []))
         )
 
-        if any(k in q_clean for k in ["current ctc", "current salary", "fixed ctc", "annual salary"]):
+        if any(k in q_clean for k in sh.get("ctc_current_keywords", [])):
             if is_full_inr:
                 return str(current_ctc_exact or int(float(current_ctc or 0) * 100000))
             return str(current_ctc) if current_ctc else "0"
 
-        if any(k in q_clean for k in ["expected ctc", "expected salary", "hike"]):
+        if any(k in q_clean for k in sh.get("ctc_expected_keywords", [])):
             if "hike" in q_clean and options:
                 matched = self._best_option_match("Yes", options)
                 if matched:
@@ -2939,21 +2971,13 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
         # Explicit handler must appear BEFORE generic boolean fallback and options[0] fallback.
         # Reads has_disability from candidate_config.json; absent field = False (default: no disability).
         # NEVER default to options[0] blindly for identity or health questions.
-        _disability_keys = [
-            "disability", "pwd", "specially abled", "differently abled",
-            "handicap", "impairment", "physically challenged",
-            "disability percentage", "type of disability", "kind of disability",
-            "health condition", "medical condition"
-        ]
+        _disability_keys = sh.get("disability_keys", [])
         if any(k in q_clean for k in _disability_keys):
             declared_disability = bool(cand.get("has_disability", False))
             if not declared_disability:
                 if options:
                     # Prefer options that clearly state "no disability"
-                    _no_disability_markers = [
-                        "don't have", "do not have", "no disability",
-                        "none", "0%", "not applicable", "na", "n/a"
-                    ]
+                    _no_disability_markers = sh.get("no_disability_markers", [])
                     for opt in options:
                         if any(m in opt.lower() for m in _no_disability_markers):
                             return opt
@@ -2968,33 +2992,33 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 return "0"
 
         # 6c. AGE VERIFICATION (18+)
-        if any(k in q_clean for k in ["18 years", "at least 18", "age of majority", "legal age"]):
+        if any(k in q_clean for k in sh.get("age_verification_keywords", [])):
             if options:
                 return self._best_option_match("Yes", options) or "Yes"
             return "Yes"
 
         # 6d. LEGAL WORK AUTHORIZATION & RIGHT TO WORK
-        if any(k in q_clean for k in ["authorized to work", "legally authorized", "right to work", "work permit", "work authorization"]):
+        if any(k in q_clean for k in sh.get("work_auth_keywords", [])):
             if options:
                 return self._best_option_match("Yes", options) or "Yes"
             return "Yes"
 
         # 6e. VISA SPONSORSHIP REQUIREMENT
-        if any(k in q_clean for k in ["require sponsorship", "sponsorship for an employment", "visa sponsorship", "require visa"]):
+        if any(k in q_clean for k in sh.get("sponsorship_keywords", [])):
             if options:
                 return self._best_option_match("No", options) or "No"
             return "No"
 
         # 6f. MILITARY STATUS / INDIA UNIFORMED FORCES
-        if any(k in q_clean for k in ["uniformed forces", "military status", "military service", "defense forces"]):
+        if any(k in q_clean for k in sh.get("military_keywords", [])):
             forces_status = cand.get("india_uniformed_forces", "No")
             if options:
                 return self._best_option_match(forces_status, options) or self._best_option_match("No", options) or "No"
             return forces_status
 
         # 6g. PASSPORT & CITIZENSHIP VERIFICATION
-        if any(k in q_clean for k in ["passport", "citizenship"]):
-            if any(k in q_clean for k in ["other than", "foreign", "different country"]):
+        if any(k in q_clean for k in sh.get("passport_keywords", [])):
+            if any(k in q_clean for k in sh.get("passport_foreign_markers", [])):
                 if options:
                     return self._best_option_match("No", options) or "No"
                 return "No"
@@ -3005,14 +3029,14 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 return "Yes"
 
         # 6h. HIGH SCHOOL DIPLOMA / 10+2
-        if any(k in q_clean for k in ["high school diploma", "10+2", "hsc or ged"]):
+        if any(k in q_clean for k in sh.get("education_10p2_keywords", [])):
             if options:
                 return self._best_option_match("Yes", options) or "Yes"
             return "Yes"
 
         # 7. Boolean / Yes-No Fallback
         if options and len(options) == 2 and any(o.lower() in ["yes", "no"] for o in options):
-            if any(k in q_clean for k in ["available", "interview", "comfortable", "virtual", "open to", "flexible"]):
+            if any(k in q_clean for k in sh.get("boolean_positive_keywords", [])):
                 return self._best_option_match("Yes", options) or "Yes"
             return self._best_option_match("No", options) or "No"
 
@@ -3045,17 +3069,30 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 return opt
 
         # 3. H3 Strict Zero / No Experience matching priority
+        # All equivalence sets resolve from screening_heuristics (zero literals).
+        _sh = {}
+        try:
+            _ctx = getattr(self, "profile_context", None)
+            _cfg = getattr(_ctx, "config", {}) if _ctx else {}
+            if isinstance(_cfg, dict):
+                _sh = _cfg.get("screening_heuristics", {}) or {}
+        except Exception:
+            _sh = {}
+        _zero_targets = [str(x).lower() for x in _sh.get("zero_target_equivalents", ["0", "0.0", "zero", "none", "no experience", "fresher", "no", "nil", "n/a", "na", "no relevant"])]
+        _zero_options = [str(x).lower() for x in _sh.get("zero_option_equivalents", ["no experience", "none", "0", "0 years", "0-1 year", "fresher", "nil", "n/a", "na", "no"])]
+        _zero_contains = [str(x).lower() for x in _sh.get("zero_option_contains_phrases", ["no experience", "not experienced", "none of the above", "zero experience", "no relevant"])]
+        _lowest_tier = [str(x).lower() for x in _sh.get("proficiency_lowest_tier", ["beginner", "basic", "novice", "entry", "elementary", "foundational", "learning"])]
         nums = re.findall(r"\d+", target_clean)
         is_zero_target = (
-            target_clean in ["0", "0.0", "zero", "none", "no experience", "fresher", "no", "nil", "n/a", "na", "no relevant"]
+            target_clean in _zero_targets
             or (nums and float(nums[0]) == 0.0)
         )
         if is_zero_target:
             for opt in options:
                 opt_low = opt.lower().strip()
-                if opt_low in ["no experience", "none", "0", "0 years", "0-1 year", "fresher", "nil", "n/a", "na", "no"]:
+                if opt_low in _zero_options:
                     return opt
-                if any(z in opt_low for z in ["no experience", "not experienced", "none of the above", "zero experience", "no relevant"]):
+                if any(z in opt_low for z in _zero_contains):
                     return opt
                 opt_digits = re.findall(r"\d+", opt)
                 if opt_digits == ["0"]:
@@ -3064,7 +3101,7 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
             # Proficiency tier fallback for zero/novice experience (e.g. ['Beginner', 'Intermediate', 'Expert'])
             for opt in options:
                 opt_low = opt.lower().strip()
-                if opt_low in ["beginner", "basic", "novice", "entry", "elementary", "foundational", "learning"]:
+                if opt_low in _lowest_tier:
                     return opt
 
         # 4. Numeric extraction match

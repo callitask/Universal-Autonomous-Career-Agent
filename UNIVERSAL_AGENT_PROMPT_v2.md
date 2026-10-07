@@ -26,7 +26,7 @@ Before executing ANY action, running ANY command, or touching ANY file:
 ```
 F:\JOB AI AGENT\.agents\rules\ACTIVE_CONSTRAINT_BLOCK.md
 ```
-→ 10 hard gates. Verify all pass.
+→ 11 hard gates. Verify all pass.
 
 **0b. Read the Scar Tissue Log (before any code edit):**
 ```

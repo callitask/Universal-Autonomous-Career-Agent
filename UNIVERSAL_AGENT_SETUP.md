@@ -1,7 +1,7 @@
 # Universal Autonomous Career Agent — Setup & Execution Guide
 
-> **Document Version:** 4.0 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC & 43 Guardrails  
-> **Last Updated:** 2026-09-21  
+> **Document Version:** 4.1 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC & 46 Guardrails  
+> **Last Updated:** 2026-10-07  
 > **Proprietary Notice:** Confidential and Proprietary. Copyright (c) 2026 Amitsagar Kandpal. All Rights Reserved. No public license granted.
 
 Welcome to the **Universal Autonomous Career Agent** (`F:\JOB AI AGENT`). This system is an enterprise-grade, multi-agent autonomous pipeline engineered to execute end-to-end job discovery, cognitive profile synthesis, factual resume tailoring, and automated ATS application submission across platforms including LinkedIn and Naukri.

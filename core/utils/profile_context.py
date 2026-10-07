@@ -108,6 +108,17 @@
 # Changes Made: browser_context @property on ProfileContext.
 # Rationale: Single config-driven source; purity-safe (config, not literal).
 # Preventative Notes: Never hardcode a context name in engine code.
+#
+# [ENTRY #010]
+# Term: [SECRETS_HYGIENE_GUARD]
+# Timestamp: 2026-10-07 16:00:00 +05:30
+# Issue / Context: Live profiles carried gemini_api_key/gemini_model in the
+#   candidate block, contradicting the global-secrets-only policy.
+# Changes Made: Startup secrets-hygiene warning when candidate block contains
+#   gemini_api_key/gemini_model/colab_api_key (warn only; removal is a
+#   principal-ordered profile operation with backup). No behavior change otherwise.
+# Rationale: Defense in depth so a future secret in profiles/ is loud, not silent.
+# Preventative Notes: Never auto-delete profile keys in engine code; warn only.
 # ================================================================================
 """
 ================================================================================
@@ -358,6 +369,18 @@ class ProfileContext:
 
         # 6. Guardrail P1: Zero-Trust Codebase Purity Verification
         self.verify_codebase_purity()
+
+        # 6b. Secrets hygiene guard: profiles must never carry API keys or model
+        # secrets (git-ignored sandboxes get copied/backed up). Warn loudly;
+        # removal itself is a principal-ordered profile operation with backup.
+        try:
+            _cand_block = self.config.get("candidate", {}) if isinstance(self.config, dict) else {}
+            _secret_keys = [k for k in ("gemini_api_key", "gemini_model", "colab_api_key") if k in _cand_block]
+            if _secret_keys:
+                print(f"[SECURITY] WARNING: {self.config_path.name} candidate block contains secrets-capable keys {_secret_keys}. "
+                      f"Move them to gemini_credentials.json / colab_credentials.json or environment; profiles/ must stay secret-free.", flush=True)
+        except Exception:
+            pass
 
         # 7. Universal Startup Profile & Resume Comprehension
         self.cognitive_profile: Dict[str, Any] = self._ensure_cognitive_profile_analyzed()

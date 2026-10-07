@@ -13,6 +13,17 @@
 #   Runs as a background process in Antigravity 2.0 alongside the main career agent.
 # Rationale: Eliminates IPC timeout failures. Makes AG Brain truly autonomous.
 # Preventative Notes: Never hardcode candidate data. Always load from ProfileContext.
+#
+# [ENTRY #002]
+# Term: [SECRETS_OUT_OF_PROFILES]
+# Timestamp: 2026-10-07 16:00:00 +05:30
+# Issue / Context: build_client read GEMINI key/model from candidate_config.json,
+#   making per-profile files secret carriers.
+# Changes Made: Secrets resolve ONLY from GEMINI_API_KEY/GEMINI_MODEL env or
+#   global gemini_credentials.json (api_keys/model/fallback_models); profile is
+#   never consulted. Fatal message updated to name both sources.
+# Rationale: Single secure secrets source; matches test_colab_connection policy.
+# Preventative Notes: Never re-add cfg candidate key/model reads here.
 # ================================================================================
 
 import os, sys, json, time, argparse, traceback
@@ -41,12 +52,26 @@ def log(msg):
 
 
 def build_client(cfg):
+    # SECURITY: secrets resolve ONLY from gemini_credentials.json (global,
+    # git-ignored) or environment. candidate_config.json is never consulted.
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not api_key:
-        api_key = cfg.get("candidate", {}).get("gemini_api_key", "").strip()
     model = os.environ.get("GEMINI_MODEL", "").strip()
-    if not model:
-        model = cfg.get("candidate", {}).get("gemini_model", "").strip()
+    if not api_key or not model:
+        try:
+            creds_path = BASE_DIR / "gemini_credentials.json"
+            if creds_path.exists():
+                creds = json.loads(creds_path.read_text(encoding="utf-8"))
+                keys = creds.get("api_keys", []) or []
+                if not api_key and keys:
+                    api_key = str(keys[0]).strip()
+                if not api_key and creds.get("api_key", "").strip():
+                    api_key = str(creds.get("api_key", "")).strip()
+                if not model and str(creds.get("model", "")).strip():
+                    model = str(creds.get("model", "")).strip()
+                if not model and (creds.get("fallback_models", []) or []):
+                    model = str(creds.get("fallback_models", [])[0]).strip()
+        except Exception as e:
+            log(f"gemini_credentials.json read failed: {e}")
     if not api_key or not model:
         return None, None
     if HAS_GENAI_NEW:
@@ -130,7 +155,7 @@ def run(profile_dir="profiles/TARGET_PROFILE", poll=2.0):
     log(f"=== IPC AUTO-RESOLVER STARTED | {name} | poll={poll}s ===")
     client, model = build_client(cfg)
     if not client:
-        log("FATAL: No Gemini client. Set GEMINI_API_KEY + GEMINI_MODEL in environment.")
+        log("FATAL: No Gemini client. Set GEMINI_API_KEY + GEMINI_MODEL in environment or configure gemini_credentials.json.")
         sys.exit(1)
     log(f"Gemini ready | model={model} | watching {ipc_path}")
 

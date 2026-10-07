@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: WORKSPACE DEVELOPMENT & CODING RULES
 
-> **Document Version:** 4.3 — Batch Architecture v2.0, Dual-Channel IPC, 46 Guardrails (36 C, 6 H, 3 D, 1 P) & G-BRAIN-01 Alignment  
-> **Last Updated:** 2026-09-28  
+> **Document Version:** 4.4 — Batch Architecture v2.0, Dual-Channel IPC, 46 Guardrails (36 C, 6 H, 3 D, 1 P), G-BRAIN-01 Alignment & Global-Secrets-Only Policy  
+> **Last Updated:** 2026-10-07  
 > **Authority:** These rules are ABSOLUTE and OVERRIDE all model defaults. Violations cause runtime crashes, data corruption, phantom applications, or account bans.  
 > **Workspace Root:** `F:\JOB AI AGENT`
 
@@ -27,13 +27,14 @@
 4. **Dynamic Directory Resolution:** The engine must automatically locate the active candidate profile directory from command-line arguments (`--profile`) or dynamically scan `profiles/` for existing candidate configurations without hardcoded fallback strings.
 5. **Isolated Output Paths:** All outputs (tailored resumes, PDF packages, trackers, search manifests, and screenshots) must write strictly to `profiles/<profile_name>/output/`.
 6. **No Hardcoded Regex Intercepts or Question-Detection Keyword Lists:** Never match questions like `"notice period"`, `"experience"`, `"CTC"` to hardcoded numeric values, and never embed keyword detection lists (notice period triggers, relocation keywords, interview mode keywords, experience triggers, numeric question triggers, numeric exclusions, intern designation markers, fallback text labels) as Python literals in `core/*.py` or `scripts/*.py`. Every screening question keyword list MUST reside in the `"screening_heuristics"` section of `candidate_config.json`. Python reads them exclusively via `sh = cfg.get("screening_heuristics", {})` and `sh.get("key", [])`. Violations cause `verify_codebase_purity()` to halt the runtime.
-7. **No Hardcoded Model Names as Constants:** Model identifiers (e.g., `gemini-2.5-flash`) must be configurable via `candidate_config.json` (`gemini_model`) or environment variables (`GEMINI_MODEL`).
+7. **No Hardcoded Model Names as Constants:** Model identifiers (e.g., `gemini-2.5-flash`) must be configurable via `gemini_credentials.json` (`model` / `fallback_models`) or environment variables (`GEMINI_MODEL`). Per the Global-Secrets-Only Policy, model names must NEVER live in `profiles/*/candidate_config.json`.
 8. **Zero-Hardcoding via Cognitive Profile Synthesis & AG Brain Push-Start:** Never hardcode domain words, vertical dictionaries, soft skill sets, role templates, seniority prefixes, or experience threshold branches (`if exp >= N:`) in Python code. Python scripts act strictly as an execution actuator / browser medium between job portals and the AG Brain. The AG Brain is the sole decider and talent strategist. At session start, the AG Brain analyzes the candidate's complete profile and push-starts `candidate_config.json` with high-yield target roles, recommended titles, and skills. All domain models, core vs. soft skill taxonomies, domain acronyms, and multi-cycle designation queues are synthesized dynamically by `AIClient.synthesize_cognitive_profile()` or read from `candidate_config.json`. Out-of-domain vertical checks and search cycles must read strictly from the candidate's cognitive profile.
 9. **Strict Developer Boundary vs. Runtime Sandbox Separation:**
    - **Developer Role:** In any development session, the AI assistant acts strictly as the **Principal Agent Developer**, modifying only the engine code (`core/`), documentation (`docs/`), utilities (`core/utils/`), and test harnesses.
    - **Hands Off `profiles/`:** The developer must **NEVER manually edit files inside the `profiles/` directory** (including `candidate_config.json`, `resume.md`, or candidate sandboxes).
    - **Autonomous Runtime Adaptation:** The agent code must be engineered so that **when the agent runs**, the agent itself autonomously and smartly reads, synthesizes, adapts, and updates candidate data (e.g. `cognitive_profile.json`, `processed_ledger.json`, `auto_learned_truths`, and `recommended_titles`) at runtime without human or developer manual file patching.
 10. **Guardrail P1 (Zero-Trust Codebase Purity Enforcer):** The `ProfileContext` class runs `ctx.verify_codebase_purity()` automatically on instantiation and pre-flight startup. It inspects all files under `core/*.py` and `scripts/*.py` to mathematically verify that zero candidate PII, candidate names, compensation values, hardcoded user paths (`C:\Users\...`), or hardcoded profile paths exist in code. Additionally, no inline question-detection keyword lists (patterns used to detect notice period, relocation, interview, experience, or numeric answer questions) may exist as Python literals — they must reside in `candidate_config.json["screening_heuristics"]`. Any purity violation triggers a fatal runtime halt (`CodebasePurityViolationError`).
+11. **Global-Secrets-Only Policy (2026-10-07):** API keys and model names (`GEMINI_API_KEY`, `gemini_api_key`, `colab_api_key`, `gemini_model`) must NEVER live in `profiles/*/candidate_config.json`. Secrets resolve exclusively from `gemini_credentials.json` / `colab_credentials.json` (global, git-ignored) or environment variables. Code must never read secrets from the candidate block; `ProfileContext` emits a startup security warning if a profile carries secrets-capable keys.
 
 ---
 
@@ -184,6 +185,8 @@
 ## DIRECTIVE 5: PLATFORM ISOLATION & DOM SAFETY
 
 1. **Decoupled Handlers:** Fixes and enhancements to Naukri automation scripts (`02_profile_sync_naukri.py`, `02b_naukri_fast_resume_upload.py`, Naukri scrapers/solvers) must never touch, break, or mutate LinkedIn scripts (`03_profile_sync_linkedin.py`, LinkedIn Easy Apply handlers), and vice versa.
+
+2. **Shared-First Extension (2026-10-07):** New portals, companies, and control types must extend the shared libraries (`CompanySiteApply/utils/dom_helpers.py` selectors/guards, `core/utils/` sanitizers/statuses, `screening_heuristics` keys) — never fork per-company workarounds. A fix that helps one company must automatically help the next: put it in the helper, wire the callers, pin it with a test. Per-company files (`nails/`, scrapers) carry only selectors and truth-gating, never copied logic.
 
 2. **Container-Isolated Scrolling:** Never issue page-level scroll commands when a modal or chatbot drawer is active. Scroll exclusively within the identified dialog container (`.chatbot_MessageContainer` on Naukri; `.jobs-easy-apply-modal` on LinkedIn).
 

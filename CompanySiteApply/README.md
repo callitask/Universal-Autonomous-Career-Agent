@@ -1,7 +1,7 @@
 # CompanySiteApply: Enterprise ATS Form Filling Subsystem
 
-> **Document Version:** 2.0 — Modular Fingers & Nails Architecture, CompanyScraper Integration & Parser Doctor Contracts  
-> **Last Updated:** 2026-09-21  
+> **Document Version:** 2.1 — Modular Fingers & Nails Architecture, CompanyScraper Integration, Parser Doctor Contracts & Demographic-Defaults Purge  
+> **Last Updated:** 2026-10-07  
 > **Execution Mode:** On-Demand / Human-Gated only (Decoupled from background daemons)
 
 A decoupled, modular multi-fingered automation subsystem for applying directly to company career sites and enterprise Applicant Tracking Systems (ATSs).
@@ -93,7 +93,7 @@ CompanySiteApply/
 
 ## 3. Data Classification & Codebase Hygiene
 
-*   **Tier B Literals (Removed 2026-09-23):** Former hardcoded fallbacks in `oracle_cloud_finger.py` (`"560100"`, `"Bangalore"`) and hardcoded profile paths in `cli_scraper.py` / finger `search_roots` were purged. All values now resolve via `utils/config_resolver.py` from `--config` / `--profile` / `candidate_data`, with `profiles/default_user` as the only blueprint fallback. Empty config values are skipped, never defaulted. `verify_codebase_purity()` now scans `CompanySiteApply/` and `tests/` and passes green.
+*   **Tier B Literals (Removed 2026-09-23; extended 2026-10-07):** Former hardcoded fallbacks in `oracle_cloud_finger.py` (`"560100"`, `"Bangalore"`) and hardcoded profile paths in `cli_scraper.py` / finger `search_roots` were purged. 2026-10-07 extension: all demographic and form defaults removed — salutation/country/degree/major/month/year/ethnicity/gender in `oracle_cloud_finger.py`, location/stack defaults in `CompanyScraper/base_scraper.py`, and fixed answers/assumed stacks plus `options[0]` fallback in `nails/oracle/jpmc_nail.py`. All values now resolve via `utils/config_resolver.py` from `--config` / `--profile` / `candidate_data`, with `profiles/default_user` as the only blueprint fallback. Empty config values are skipped, never defaulted. `verify_codebase_purity()` now scans `CompanySiteApply/` and `tests/` and passes green.
 *   **Tier C Samples (`inspections/`):** All JSON files in `CompanySiteApply/inspections/` are historical DOM capture dumps for reverse-engineering. They are non-executable reference samples, **gitignored and untracked** (`CompanySiteApply/inspections/` in `.gitignore`) because captures may embed PII. Re-capture locally via `cli.py inspect`; never commit them.
 *   **Shared libs:** `utils/config_resolver.py` (dynamic config), `core/utils/sanitize.py` (CSV/prompt/filename), `core/utils/url_filters.py` (CTC/WFH params), `core/utils/apply_status.py` (verified statuses). Company-direct apply stays on-demand/human-gated; Naukri (`02_*`, `naukri_scraper`, `ChatbotResolver`) and LinkedIn (`03_*`, `linkedin_scraper`, `LinkedInApplyHandler`) remain platform-isolated.
 

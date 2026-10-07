@@ -168,3 +168,21 @@ all semantic job fit evaluations. Keyword lists in config are advisory context f
 - **What happened**: Owner watched full Naukri pages with zero log lines and concluded the scraper was dead after 5 hours. Live DOM probe proved 20/20 cards extract fine — the ledger `continue` was simply silent, so a saturated inventory looked identical to dead selectors. Single supervised cycle reproduced the healthy path end to end.
 - **Correct behavior**: Per-page ledger-skip count with explicit "(retrieval healthy)" marker (logging only, zero behavior change).
 - **Never repeat**: Every silent skip path must narrate itself. When a user reports "finds nothing", first split saturation vs breakage with a live DOM count before touching any code.
+
+## [2026-10-07] SECRETS CARRIED IN LIVE PROFILE CONFIGS
+- **File**: `profiles/<live>/candidate_config.json` (`candidate.gemini_api_key`, `candidate.gemini_model`); readers in `core/ai_client.py` and `core/ipc_auto_resolver.py`
+- **What happened**: API key and model lived in a per-profile runtime file that gets copied and backed up, making every copy a secret carrier. Code treated the profile as a secrets source, contradicting the global-secrets-only policy in `test_colab_connection.py`.
+- **Correct behavior**: Secrets resolve ONLY from `gemini_credentials.json` / `colab_credentials.json` or environment. Profiles scrubbed with timestamped backups; code paths removed; `ProfileContext` warns on secrets-capable profile keys.
+- **Never repeat**: Never add `*_api_key` or model-secret keys to any profile schema. New secrets go in the global git-ignored credential file or env first.
+
+## [2026-10-07] RESIDUAL SCREENING LITERALS AFTER CLAIMED MIGRATION
+- **File**: `core/ai_client.py` → `_heuristic_screening_answer()` and `_best_option_match()`
+- **What happened**: Header claimed full extraction to `screening_heuristics`, but ~20 literal lists (general-exp, zero-equivalents, CTC scale/current/expected, disability, age, auth, sponsorship, military, passport, education, boolean-positive, proficiency tiers) remained inline.
+- **Correct behavior**: All lists migrated to 21 new `screening_heuristics` keys in the `default_user` blueprint and ARCHITECTURE_REFERENCE schema; Python reads via `sh.get()` with blueprint-mirroring fallbacks for old profiles.
+- **Never repeat**: After a heuristics migration, grep `for k in [` and `in [` in `ai_client.py` — a clean migration leaves zero question-domain literals.
+
+## [2026-10-07] ASSUMED ATS DEFAULTS IN COMPANY_SITE_APPLY
+- **File**: `CompanySiteApply/CompanyScraper/base_scraper.py`, `fingers/oracle_cloud_finger.py`, `nails/oracle/jpmc_nail.py`
+- **What happened**: Assumed stack (`Java/...`), city (`Bangalore`), salutation/country/degree/major/dates (`Mr./India/...`), demographics (`Asian/Male`), fixed Yes/No screening answers, and `options[0]` fallback shipped as defaults.
+- **Correct behavior**: Config-driven with empty-skip; human-gated operator fills unknowns; JPMC `_match_choice` returns None (H1); screening gated on candidate truth.
+- **Never repeat**: Never invent identity or stack in ATS adapters. Unknown fields stay blank for the operator.

@@ -16,6 +16,12 @@
 # Changes: Replaced static denylist with dynamic profiles/ scan (allow default_user only). Added stdlib-ast symbol extraction (functions/classes/imports/calls, signatures+docstrings only, never full trees). Added PageRank over call/import graph with BM25 weighting and summaries.json budget entry point. tree-sitter left as optional future, not required.
 # Rationale: Dynamic exclusion survives new profiles. AST signatures give grammar awareness at low token cost. PageRank surfaces core engine over scratch. Summaries let new AI load <50KB first, full chunks on demand.
 # Preventative: Never hardcode profile folder names. Never store full AST trees. Keep rebuild <30s. Keep stdlib-only unless owner approves new wheels.
+#
+# Serial: 003 | Term: Venv and build-artifact exclusion | Timestamp: 2026-10-07
+# Issue: --check always reported stale when a local .venv existed (4300+ unindexed site-packages files); prune list also missed .pytest_cache.
+# Changes: Excluded .venv/venv/node_modules/dist/build/*.egg-info in both is_allowed_path and scan prune lists.
+# Rationale: Local environments and build artifacts are never knowledge; freshness gate must pass with a venv present.
+# Preventative: When adding a new local-artifact directory, add it in both places.
 """
 
 import os
@@ -98,7 +104,10 @@ def is_allowed_path(rel_path: str, repo: str) -> bool:
     parts = norm.split("/")
     
     # Exclusions
-    if any(p in [".git", "__pycache__", ".pytest_cache", ".vscode", "output", "logs", "knowledge"] for p in parts):
+    if any(p in [".git", "__pycache__", ".pytest_cache", ".vscode", "output", "logs", "knowledge",
+                 ".venv", "venv", "node_modules", "dist", "build"] for p in parts):
+        return False
+    if ".egg-info" in norm:
         return False
     if norm.endswith(".log") or norm.endswith(".pyc") or norm.endswith(".tmp"):
         return False
@@ -134,7 +143,10 @@ def scan_repository_files(root: Path, repo_name: str) -> List[Tuple[Path, str]]:
         # Prune ignored directories in-place (dynamic live-profile exclusion, no hardcoded names)
         pruned = []
         for d in dirnames:
-            if d in [".git", "__pycache__", "output", "logs", "scratch", "knowledge"]:
+            if d in [".git", "__pycache__", ".pytest_cache", "output", "logs", "scratch", "knowledge",
+                     ".venv", "venv", "node_modules", "dist", "build"]:
+                continue
+            if d.endswith(".egg-info"):
                 continue
             if repo_name == "Repo_A" and d in live_names and Path(dirpath).resolve() == (REPO_A_ROOT / "profiles").resolve():
                 continue

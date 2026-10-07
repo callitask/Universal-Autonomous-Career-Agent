@@ -1,6 +1,6 @@
 ﻿# Advanced Agent — Complete Verification, Documentation & Dynamic Knowledge-Graph Brief
-> **Version:** 2.1 — Sibling Sophron at F:\Sophron, domain-split knowledge, model-agnostic intelligence
-> **Last Updated:** 2026-09-22
+> **Version:** 2.2 — Sibling Sophron at F:\Sophron, domain-split knowledge, model-agnostic intelligence, global-secrets-only policy
+> **Last Updated:** 2026-10-07
 > **Status:** VERIFICATION-FIRST. This is NOT a blind implementation order. Prove understanding first. A naive fix will corrupt the system.
 
 > You are a higher-capability agent. A prior read-only audit made claims about this workspace.
@@ -88,7 +88,7 @@ If any gate fails, return `UNDERSTANDING INCOMPLETE` with gaps â€” do not p
 Verdict each with `file:line` evidence: `[PASS]` / `[WARN]` / `[FAIL]` / `[CRITICAL]` / `[UNKNOWN]`. Prior claim loses on conflict. Deleted reports are out of scope.
 
 **Q1 License:** Is any MIT grant real? Confirm correct end-state is personal proprietary only. Fix must align `README` + `LICENSE` + `COPYRIGHT.md` with zero public-license language.
-**Q2 Guardrail counts:** Count `### C/H/D/P` in `WORKSPACE_RULES.md` yourself (â‰ˆ33C+6H+3D+1P=43?). Are all `18`/`15` claims stale? Are C24/C25/C26/C32/C34 real in code?
+**Q2 Guardrail counts:** Count `### C/H/D/P` in `WORKSPACE_RULES.md` yourself (36C+6H+3D+1P=46). Are all `18`/`15`/`43` claims stale? Are C24-C37 and G-BRAIN-01 real in code?
 **Q3 G-BRAIN-01 vs C6/C28:** Does running code enforce GATE 11 (no Python semantic gating; `is_title_allowed` dead-commented; no active highlights-list code) while C6/C28 + `ARCH` Stage-1 still mandate Python `negative_keywords` matching? Which side is live? Do not delete either side until live behavior is proven.
 **Q4 IPC dual-channel:** Verify writers/readers/cleanup for `batch_question/batch_answer.json` (120s) vs `pending_question.json` (tailoring/chatbot). Which docs still claim single-file?
 **Q5 Task taxonomy:** grep all `task_type`. Map `BATCH_JOB_EVALUATION` vs `JOB_CARD_EVALUATION` vs `JOB_EVALUATION` vs `JOB_FULL_EVALUATION` (real or invented?) vs `QUESTIONNAIRE` vs `SCREENING_QUESTION` vs `PROFILE_SYNTHESIS`/`RESUME_TAILORING`/`STARVATION_EXPANSION`. Propose canonical map only after tracing every producer/consumer.
@@ -100,7 +100,7 @@ Verdict each with `file:line` evidence: `[PASS]` / `[WARN]` / `[FAIL]` / `[CRITI
 **Q11 PII/zero-hardcoding:** distinguish (a) doc exemplars vs (b) code defaults (`oracle_cloud_finger.py` PIN/city fallbacks?) vs (c) captured `inspections/*.json` live data. Which trip `verify_codebase_purity()`? Justify each scrub â€” healing knowledge must survive.
 **Q12 Deployment guides:** verify every stale line in `REFERENCE_DEPLOYMENT_GUIDE` v3.1 2026-09-09 + `UNIVERSAL_AGENT_SETUP` (`30-min`, counts, missing Batch/SearchState/watcher/C24-C34). Update/version-bump or archive?
 **Q13 Profiles/Sophron/prompt staleness:** `rahul_sharma/` example non-existent? Actual live folders? `Sophron/README` `21/14` vs measured `55/63`, `master_agent/` vs `Sophron/` paths, omitted `sophron_write_guard.py`/`sync_brain.py`, interaction-file counts, stale CLI paths; `PROMPT_v2` v3.0 pre-Batch.
-**Q14 Version drift:** `ACTIVE_CONSTRAINT_BLOCK` v1.1 vs GATE 11 date; unversioned `PLATFORM_KNOWLEDGE`/`COMPANY_ATS`/`ORACLE`/`PLAYBOOK`; `ARCH` `/jobs?k` vs slug; undocumented `ag_brain_batch_skipped` + `top_target_companies`; C34 `options[0]` vs H1 tension; duplicate `DIRECTIVE 8` heading.
+**Q14 Version drift:** `ACTIVE_CONSTRAINT_BLOCK` version vs GATE 11 date; unversioned `PLATFORM_KNOWLEDGE`/`COMPANY_ATS`/`ORACLE`/`PLAYBOOK`; `ARCH` `/jobs?k` vs slug; undocumented `ag_brain_batch_skipped` + `top_target_companies`; C34 `options[0]`-retry vs H1 no-blind-fallback tension (resolved 2026-10-07: JPMC nail returns None); secrets in profiles (banned 2026-10-07: global credentials/env only); duplicate `DIRECTIVE 8` heading.
 **Q15 Graph/vector truth (replaces old Q15 â€” now BUILD, not just rename):** prior check found zero `faiss|chromadb|qdrant|pinecone|sentence_transformer|embedding|cosine|sklearn` in `Sophron/`; `graph_memory_engine.py` = JSON traversal, `transcript_learner.py` = regex counting, `persona_loader.py` = file scan, `graph_index.json` = plain adjacency. Confirm. Then per Section 5, BUILD the missing dynamic system (do not merely rename docs).
 **Q16 Profiles boundary:** verify auto-discovery exclusion, sandboxing, pre-flight banner, purity forbidden-strings, `.gitignore` blocks. List any `.py`/doc embedding a live profile literal. Reference `default_user` only.
 

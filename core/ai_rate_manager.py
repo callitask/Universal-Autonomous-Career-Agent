@@ -1,3 +1,31 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS:
+# Before analyzing, refactoring, editing, or debugging this file, read this AI Context.
+# APPEND-ONLY GOVERNANCE: never delete prior entries; append chronologically with
+# serial number, term, timestamp, issue/context, changes, rationale, preventative notes.
+# Candidate-Agnostic / Zero-PII invariant applies.
+#
+# [ENTRY #001]
+# Term: [SMART_RATE_MANAGER_INIT]
+# Timestamp: 2026-09-22 12:00:00 +05:30
+# Issue / Context: Rapid-fire Gemini calls and 429/503 bursts needed global pacing
+#   (3.5s floor) and per-model 120s bans.
+# Changes Made: SmartRateManager with enforce_pacing(), get_available_model(),
+#   report_failure(); module-level GLOBAL_RATE_MANAGER singleton.
+# Rationale: Single choke point for API pacing and model health.
+# Preventative Notes: Never bypass enforce_pacing() before an SDK call.
+#
+# [ENTRY #002]
+# Term: [GOVERNANCE_HEADER_BACKFILL]
+# Timestamp: 2026-10-07 15:50:00 +05:30
+# Issue / Context: File shipped without the mandatory AI CONTEXT header required
+#   by Directive 8 C25 for every core/ and scripts/ Python file.
+# Changes Made: Backfilled append-only header documenting prior behavior; no logic change.
+# Rationale: Governance parity across the engine; future edits append ENTRY #003+.
+# Preventative Notes: Never add logic in a governance-header commit.
+# ================================================================================
 import time
 from typing import List
 

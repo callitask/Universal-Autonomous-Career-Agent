@@ -69,13 +69,36 @@ class NewPlatformFinger(BaseATSFinger):
         return {"success": True}
 
     def advance_step(self, page: Any) -> Tuple[bool, str]:
-        # Target the Next/Submit button
-        return True, "Advanced"
+        # Click Next/Submit, then verify via the shared guard (never assume success).
+        import time
+        before_url = getattr(page, "url", "")
+        page.locator("button:has-text('Next'), button[type='submit']").first.click()
+        time.sleep(2.0)
+        advanced, errors = DOMHelpers.verify_step_advanced(page, before_url)
+        if advanced:
+            return True, "Advanced"
+        return False, f"Step did not advance: {'; '.join(errors)}"
 
     def is_complete(self, page: Any) -> Tuple[bool, str]:
         # Check confirmation message or URL
         return False, "In progress"
 ```
+
+### Shared helpers (use these; do not reimplement per finger)
+`CompanySiteApply/utils/dom_helpers.py` is the single library for control discovery
+and step safety. New fingers/nails must build on it so future platforms inherit
+fixes automatically:
+- `extract_form_schema(page)` — native + ARIA + `oj-*` + `data-automation-id`
+  scan (plain tags/roles only, never hashed classes). Opt-in multi-frame via
+  `extract_schema_all_frames(page)`.
+- `find_field_by_label(page, label_pattern)` — requisition-proof field location
+  (exact ID -> name attribute -> label proximity). Company nails use this tier.
+- `collect_form_errors(page)` + `verify_step_advanced(page, before_url)` —
+  every `advance_step` must verify through this guard and return
+  `(False, errors)` for the human-gated operator on failure. Never auto-retry
+  a submission.
+- `resolve_resume_file(candidate_data)` — shared resume-path resolution with
+  operator-prompt fallback when unresolvable.
 
 ### Step 3: Register the Finger in `CompanySiteApply/fingers/__init__.py`
 Import the new finger and add it to `FINGER_REGISTRY`:

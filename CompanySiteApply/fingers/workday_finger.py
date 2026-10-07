@@ -8,7 +8,15 @@
 #               and integrated Parser Doctor (LineWrapHealer + EducationHealer).
 # Rationale: Workday is the primary platform where line-wrap sentence truncation and college
 #            inversions occur during resume parsing.
+
 # Preventative Notes: Always check data-automation-id attributes for reliable DOM targeting.
+# [ENTRY #002]
+# Term: [ADVANCE_STEP_GUARD]
+# Timestamp: 2026-10-07 17:10:00 +05:30
+# Issue / Context: advance_step assumed success after click+sleep; validation failures hung the flow.
+# Changes Made: Delegates to DOMHelpers.verify_step_advanced; returns (False, errors) for the operator on failure.
+# Rationale: Shared guard; human-gated flow never auto-retries submission.
+# Preventative Notes: Never return advance success without the shared guard.
 # ==============================================================================
 
 import re
@@ -142,12 +150,16 @@ class WorkdayFinger(BaseATSFinger):
             "button:has-text('Submit')"
         ]
 
+        before_url = getattr(page, "url", "")
         for sel in next_button_selectors:
             loc = page.locator(sel)
             if loc.count() > 0 and loc.first.is_visible() and not loc.first.is_disabled():
                 loc.first.click()
                 time.sleep(2.5)
-                return True, "Clicked Workday next button"
+                advanced, errors = DOMHelpers.verify_step_advanced(page, before_url)
+                if advanced:
+                    return True, "Clicked Workday next button"
+                return False, f"Workday step did not advance: {'; '.join(errors)}"
 
         return False, "Could not locate visible Workday next button"
 

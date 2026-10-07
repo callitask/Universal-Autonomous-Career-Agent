@@ -1,3 +1,27 @@
+# ================================================================================
+# AI CONTEXT & CHANGE LOG
+# ================================================================================
+# MANDATORY READING FOR AI AGENTS & DEVELOPERS (Directive 8 C25, append-only).
+#
+# [ENTRY #001]
+# Term: [COLAB_DIAGNOSTIC_INIT]
+# Timestamp: 2026-09-23 12:00:00 +05:30
+# Issue / Context: Colab GPU gateway (OpenAI-compatible) needed a standalone
+#   connectivity diagnostic with finite 120s timeout.
+# Changes Made: Created diagnostic reading exclusively from global
+#   colab_credentials.json (git-ignored); masked key display; auto-discovery.
+# Rationale: Reference implementation for the global-secrets-only policy.
+# Preventative Notes: Never read credentials from candidate configs here.
+#
+# [ENTRY #002]
+# Term: [GOVERNANCE_HEADER_BACKFILL]
+# Timestamp: 2026-10-07 15:50:00 +05:30
+# Issue / Context: File carried only a docstring, missing the mandatory AI
+#   CONTEXT header required for scripts/ Python files.
+# Changes Made: Backfilled append-only header; preserved docstring below; no logic change.
+# Rationale: Governance parity; future edits append ENTRY #003+.
+# Preventative Notes: Never add logic in a governance-header commit.
+# ================================================================================
 """
 Colab GPU Gateway Connection Diagnostic
 ========================================

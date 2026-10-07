@@ -1,0 +1,494 @@
+{
+    "_comment": "Universal Career Agent Configuration — Template for onboarding candidates. Fill ALL bracketed fields before running.",
+    "candidate": {
+        "full_name": "[FIRSTNAME LASTNAME]",
+        "email": "[CANDIDATE.EMAIL@EXAMPLE.COM]",
+        "phone": "+91-[10_DIGIT_PHONE]",
+        "location": "[CITY, STATE, COUNTRY]",
+        "pincode": "[PINCODE]",
+        "postal_code": "[PINCODE]",
+        "zip_code": "[PINCODE]",
+        "total_experience_years": 0,
+        "current_ctc_lpa": 0,
+        "expected_ctc_lpa": 0,
+        "notice_period_days": 0,
+        "resume_filename": "Target_Resume.pdf",
+        "cdp_url": "http://127.0.0.1:9222",
+        "linkedin_profile_url": "https://www.linkedin.com/in/[YOUR-LINKEDIN-HANDLE]",
+        "browser_context": "default"
+    },
+    "target_jobs": {
+        "_comment": "Search criteria. For Campus / Fresher profiles, set experience_years to 0 and job_types to include [Job, Internship].",
+        "keywords": [
+            "[TARGET KEYWORD / ROLE 1]",
+            "[TARGET KEYWORD / ROLE 2]",
+            "[TARGET KEYWORD / ROLE 3]"
+        ],
+        "locations": [
+            "[PREFERRED CITY 1]",
+            "[PREFERRED CITY 2]"
+        ],
+        "platforms": [
+            "Naukri",
+            "LinkedIn"
+        ],
+        "job_types": [
+            "Job",
+            "Internship"
+        ],
+        "work_mode": "hybrid",
+        "direct_employers_only": false,
+        "salary_filter_bracket": "3to6",
+        "job_age_days": 3,
+        "negative_keywords": [
+            "telecalling",
+            "bpo",
+            "sales",
+            "data entry"
+        ],
+        "naukri_filters": {
+            "_comment": "Optional dynamic portal URL query parameters (e.g. functionAreaIdGid: '6', industryTypeIdGid: '104')",
+            "functionAreaIdGid": ""
+        },
+        "facet_filters": {
+            "_comment": "Optional UI facet names to enforce on portal DOM (e.g. Department, Industry)",
+            "Department": []
+        }
+    },
+    "taxonomy_skills": {
+        "Domain Skills": [
+            "[DOMAIN SKILL 1]",
+            "[DOMAIN SKILL 2]",
+            "[DOMAIN SKILL 3]"
+        ],
+        "Technical Skills": [
+            "[TECH STACK / LANGUAGE 1]",
+            "[FRAMEWORK / TOOL 2]",
+            "[DATABASE / CLOUD 3]"
+        ]
+    },
+    "demographics": {
+        "gender": "[YOUR GENDER or Decline to specify]",
+        "veteran": "No",
+        "disability": "No",
+        "race": "Decline to specify",
+        "ethnicity": "Decline to specify",
+        "hispanic": "No"
+    },
+    "ats_answers": {
+        "_comment": "Ground-truth answers for ChatbotResolver and LinkedIn Easy Apply modal questions.",
+        "notice_period": "[N] Days",
+        "current_ctc_lakhs": 0,
+        "expected_ctc_lakhs": 0,
+        "requires_sponsorship": false,
+        "pincode": "[PINCODE]",
+        "relocate": "Yes",
+        "night_shift": "Yes",
+        "flexible": "Yes",
+        "graduate": "Yes",
+        "bachelor": "Yes",
+        "degree": "Yes",
+        "immediate_joiner": "Yes",
+        "serving_notice": "No",
+        "legally_authorized": "Yes",
+        "skill_years_experience": {
+            "[KEY SKILL 1]": 0,
+            "[KEY SKILL 2]": 0
+        }
+    },
+    "auto_learned_truths": {
+        "current location": "[YOUR CITY]",
+        "preferred location": "[YOUR CITY]",
+        "highest qualification": "[HIGHEST QUALIFICATION]",
+        "qualification": "[DEGREE / SPECIALIZATION]",
+        "degree": "[DEGREE NAME]",
+        "college": "[COLLEGE / UNIVERSITY NAME]",
+        "current employer": "[CURRENT EMPLOYER or None / Student]",
+        "notice period": "[N] Days",
+        "serving notice": "No",
+        "immediate joiner": "Yes",
+        "How many years of experience do you have in Project Planning?": "1 year of practical exposure through internship at example_company_or_internship and [DEGREE NAME] coursework at [COLLEGE / UNIVERSITY NAME] covering Project Planning."
+    },
+    "profile_content": {
+        "_comment": "Used by 02_profile_sync_naukri.py and 03_profile_sync_linkedin.py to synchronize live profiles.",
+        "naukri_headline": "[YOUR PROFESSIONAL HEADLINE - MAX 250 CHARS]",
+        "linkedin_about": "[YOUR PROFESSIONAL SUMMARY / ABOUT TEXT]",
+        "employment": {
+            "example_company_or_internship": {
+                "description": "[BULLET POINTS OR SUMMARY OF RESPONSIBILITIES FOR PROFILE SYNC]"
+            }
+        }
+    },
+    "screening_heuristics": {
+        "_comment": "Keyword lists that classify recruiter screening question types. Editing these lists changes detection behaviour without touching any Python code. Add/remove triggers freely.",
+        "standard_screening_patterns": [
+            "notice period",
+            "last working day",
+            "lwd",
+            "serving notice",
+            "joining time",
+            "when can you start",
+            "how soon can you join",
+            "relocate",
+            "relocation",
+            "residing",
+            "living in",
+            "ready to relocate",
+            "work from office",
+            "office 5 days",
+            "total experience",
+            "total years",
+            "overall experience",
+            "overall years",
+            "relevant experience",
+            "years of experience",
+            "how many years",
+            "experience do you have",
+            "hands-on experience",
+            "experience in months",
+            "months of experience",
+            "current ctc",
+            "current salary",
+            "fixed ctc",
+            "annual salary",
+            "expected ctc",
+            "expected salary",
+            "hike on the current",
+            "hike",
+            "virtual interview",
+            "in person",
+            "f2f",
+            "face to face",
+            "face 2 face",
+            "available for drive",
+            "fluent comms",
+            "fluent communication",
+            "communication skills",
+            "comms skills",
+            "english communication",
+            "proficient in english"
+        ],
+        "notice_period_keywords": [
+            "notice period",
+            "last working day",
+            "lwd",
+            "official notice",
+            "serving notice",
+            "when can you start",
+            "how soon can you join",
+            "joining time"
+        ],
+        "notice_numeric_detect_keywords": [
+            "in days",
+            "(days)",
+            "number of days",
+            "how many days",
+            "enter days"
+        ],
+        "notice_numeric_exclusion_keywords": [
+            "lwd",
+            "last working day",
+            "serving",
+            "explain",
+            "detail"
+        ],
+        "notice_option_match_keywords": [
+            "negotiate",
+            "early release",
+            "buyout"
+        ],
+        "relocation_keywords": [
+            "relocate",
+            "relocation",
+            "residing",
+            "living in",
+            "ready to relocate",
+            "comfortable with work from office",
+            "going to office"
+        ],
+        "interview_keywords": [
+            "interview",
+            "f2f",
+            "face to face",
+            "face 2 face",
+            "in person",
+            "virtual interview",
+            "drive"
+        ],
+        "interview_virtual_keywords": [
+            "virtual",
+            "online",
+            "teams",
+            "zoom",
+            "telephonic",
+            "video"
+        ],
+        "interview_f2f_keywords": [
+            "f2f",
+            "face to face",
+            "face 2 face",
+            "in person",
+            "in-person",
+            "walk-in",
+            "office"
+        ],
+        "interview_virtual_options": [
+            "virtual",
+            "remote",
+            "online"
+        ],
+        "communication_keywords": [
+            "fluent comms",
+            "fluent communication",
+            "communication skills",
+            "comms skills",
+            "english communication",
+            "written and verbal",
+            "good communication",
+            "verbal and written",
+            "proficient in english",
+            "fluency in english",
+            "speak english",
+            "english fluency"
+        ],
+        "communication_positive_options": [
+            "fluent",
+            "good",
+            "excellent",
+            "proficient",
+            "yes"
+        ],
+        "total_experience_keywords": [
+            "total experience",
+            "total years",
+            "overall experience",
+            "overall years",
+            "relevant experience",
+            "professional experience",
+            "work experience"
+        ],
+        "months_format_keywords": [
+            "in months",
+            "(months)",
+            "(in months)",
+            "number of months",
+            "months of experience",
+            "months experience"
+        ],
+        "skill_experience_keywords": [
+            "years of experience",
+            "how many years",
+            "experience do you have",
+            "hands-on experience",
+            "experience in months",
+            "months of experience",
+            "describe your experience",
+            "explain your experience",
+            "tell us about your experience",
+            "experience in ",
+            "experience with "
+        ],
+        "numeric_question_triggers": [
+            "how many years",
+            "years of experience",
+            "experience in years",
+            "number of years",
+            "how long",
+            "in numbers",
+            "in digits",
+            "enter digits",
+            "enter numbers"
+        ],
+        "numeric_question_exclusions": [
+            "describe",
+            "explain",
+            "detail",
+            "tell us",
+            "write about",
+            "elaborate"
+        ],
+        "intern_designation_markers": [
+            "intern",
+            "trainee",
+            "apprentice",
+            "graduate trainee"
+        ],
+        "fallback_text_label": "experience",
+        "ctc_question_keywords": [
+            "ctc",
+            "salary",
+            "compensation",
+            "package",
+            "lpa",
+            "inr",
+            "lakh",
+            "lac",
+            "per annum"
+        ],
+        "ctc_current_markers": [
+            "current",
+            "present"
+        ],
+        "ctc_expected_markers": [
+            "expected",
+            "expectation",
+            "desired"
+        ],
+        "general_experience_keywords": [
+            "relevant years",
+            "years of work experience",
+            "total experience",
+            "overall experience"
+        ],
+        "zero_equivalent_option_markers": [
+            "no prior",
+            "no experience",
+            "none",
+            "fresher"
+        ],
+        "sub_one_year_option_markers": [
+            "< 1",
+            "<1",
+            "< 1 year",
+            "<1 year",
+            "< 1 yr",
+            "0-1",
+            "0 to 1",
+            "6 month",
+            "fresher",
+            "intern"
+        ],
+        "ctc_full_inr_scale_keywords": [
+            "inr",
+            "rupees",
+            "rs.",
+            "rs ",
+            "exact",
+            "annual ctc",
+            "annual salary"
+        ],
+        "ctc_current_keywords": [
+            "current ctc",
+            "current salary",
+            "fixed ctc",
+            "annual salary"
+        ],
+        "ctc_expected_keywords": [
+            "expected ctc",
+            "expected salary",
+            "hike"
+        ],
+        "disability_keys": [
+            "disability",
+            "pwd",
+            "specially abled",
+            "differently abled",
+            "handicap",
+            "impairment",
+            "physically challenged",
+            "disability percentage",
+            "type of disability",
+            "kind of disability",
+            "health condition",
+            "medical condition"
+        ],
+        "no_disability_markers": [
+            "don't have",
+            "do not have",
+            "no disability",
+            "none",
+            "0%",
+            "not applicable",
+            "na",
+            "n/a"
+        ],
+        "age_verification_keywords": [
+            "18 years",
+            "at least 18",
+            "age of majority",
+            "legal age"
+        ],
+        "work_auth_keywords": [
+            "authorized to work",
+            "legally authorized",
+            "right to work",
+            "work permit",
+            "work authorization"
+        ],
+        "sponsorship_keywords": [
+            "require sponsorship",
+            "sponsorship for an employment",
+            "visa sponsorship",
+            "require visa"
+        ],
+        "military_keywords": [
+            "uniformed forces",
+            "military status",
+            "military service",
+            "defense forces"
+        ],
+        "passport_keywords": [
+            "passport",
+            "citizenship"
+        ],
+        "passport_foreign_markers": [
+            "other than",
+            "foreign",
+            "different country"
+        ],
+        "education_10p2_keywords": [
+            "high school diploma",
+            "10+2",
+            "hsc or ged"
+        ],
+        "boolean_positive_keywords": [
+            "available",
+            "interview",
+            "comfortable",
+            "virtual",
+            "open to",
+            "flexible"
+        ],
+        "zero_target_equivalents": [
+            "0",
+            "0.0",
+            "zero",
+            "none",
+            "no experience",
+            "fresher",
+            "no",
+            "nil",
+            "n/a",
+            "na",
+            "no relevant"
+        ],
+        "zero_option_equivalents": [
+            "no experience",
+            "none",
+            "0",
+            "0 years",
+            "0-1 year",
+            "fresher",
+            "nil",
+            "n/a",
+            "na",
+            "no"
+        ],
+        "proficiency_lowest_tier": [
+            "beginner",
+            "basic",
+            "novice",
+            "entry",
+            "elementary",
+            "foundational",
+            "learning"
+        ],
+        "zero_option_contains_phrases": [
+            "no experience",
+            "not experienced",
+            "none of the above",
+            "zero experience",
+            "no relevant"
+        ]
+    }
+}

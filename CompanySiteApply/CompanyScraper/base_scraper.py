@@ -14,12 +14,22 @@
 # Issue / Context: Default literal "http://localhost:9222" bypassed env/config.
 # Changes Made: cdp_url defaults to None, resolves via CDP_URL env.
 # Rationale: Zero hardcoding; custom ports need no code edits.
+
 # Preventative Notes: Never restore a literal CDP default here.
+#
+# [ENTRY #003]
+# Term: [CONFIG_DRIVEN_SCORING]
+# Timestamp: 2026-10-07 16:10:00 +05:30
+# Issue / Context: score_job assumed a tech stack fallback and a default city.
+# Changes Made: Empty skills matrix scores 0 skill component; location bonus is token-based from candidate location only (skip when unknown).
+# Rationale: No assumed identity; unknown data contributes nothing, never fiction.
+# Preventative Notes: Never restore stack or city literals here.
 # ==============================================================================
 
 import abc
 import json
 import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -92,11 +102,12 @@ class BaseCompanyScraper(abc.ABC):
                 score += 0.4
                 break
                 
-        # 3. Core skills overlap
-        core_skills = candidate.get("skills_matrix", [])
+        # 3. Core skills overlap (config-driven only; no assumed stack)
+        core_skills = candidate.get("skills_matrix", []) or []
         if not core_skills:
-            # Fallback to general skills
-            core_skills = ["Java", "Spring Boot", "Microservices", "Kafka", "Distributed Systems"]
+            # No assumed tech stack: without candidate skills there is nothing
+            # truthful to score, so the skill component contributes 0.
+            core_skills = []
             
         matched_skills = 0
         for skill in core_skills:
@@ -107,11 +118,13 @@ class BaseCompanyScraper(abc.ABC):
             skill_ratio = matched_skills / min(len(core_skills), 15)
             score += skill_ratio * 0.4
             
-        # 4. Location match bonus
-        preferred_loc = candidate.get("location", "Bangalore").lower()
-        job_loc = job_details.get("location", "").lower()
-        if preferred_loc in job_loc or "bengaluru" in job_loc:
-            score += 0.2
+        # 4. Location match bonus (config-driven only; no assumed city)
+        preferred_loc = str(candidate.get("location", "") or "").lower().strip()
+        job_loc = str(job_details.get("location", "") or "").lower()
+        if preferred_loc and job_loc:
+            pref_tokens = [t for t in re.split(r"[^a-z0-9]+", preferred_loc) if t]
+            if any(t and t in job_loc for t in pref_tokens):
+                score += 0.2
             
         return max(0.0, min(1.0, round(score, 2)))
 

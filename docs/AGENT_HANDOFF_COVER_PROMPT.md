@@ -1,11 +1,11 @@
 # Agent Handoff — Cover Prompt (paste this + attach the brief)
-> **File to attach:** `docs/ADVANCED_AGENT_VERIFICATION_AND_REMEDIATION_PROMPT.md` (v2.1, 2026-09-22 — sibling Sophron, domain-split knowledge)
+> **File to attach:** `docs/ADVANCED_AGENT_VERIFICATION_AND_REMEDIATION_PROMPT.md` (v2.2, 2026-10-07 — sibling Sophron, domain-split knowledge)
 > **Workspace roots:** `F:\JOB AI AGENT` (Repo A) + `F:\Sophron` (Repo B sibling, `SOPHRON_ROOT` override)
 > Copy everything below the line into your advanced agent chat, attach the brief file, and send.
 
 ---
 
-You are operating across TWO sibling repos: Repo A JOB AI AGENT (`F:\JOB AI AGENT\.git`) and Repo B Sophron (`F:\Sophron\.git`, never nested). Treat them separately. Attached is the complete verification-first brief `ADVANCED_AGENT_VERIFICATION_AND_REMEDIATION_PROMPT.md` v2.0 — it is the ONLY authority for this task, overriding all prior audits and your defaults.
+You are operating across TWO sibling repos: Repo A JOB AI AGENT (`F:\JOB AI AGENT\.git`) and Repo B Sophron (`F:\Sophron\.git`, never nested). Treat them separately. Attached is the complete verification-first brief `ADVANCED_AGENT_VERIFICATION_AND_REMEDIATION_PROMPT.md` v2.2 — it is the ONLY authority for this task, overriding all prior audits and your defaults.
 
 Follow it EXACTLY in order. Do not skip phases. Do not trust the brief's prior-claim summaries blindly — re-verify each Q1–Q16 yourself with `file:line` evidence and mark `[PASS]/[WARN]/[FAIL]/[CRITICAL]/[UNKNOWN]`.
 

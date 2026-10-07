@@ -30,7 +30,24 @@
 # Changes Made: search_roots now via config_resolver.resolve_search_roots
 #   (blueprint default_user only); pincode/city default to "" (skip when missing).
 # Rationale: Candidate-agnostic; purity scanner stays green.
+
+
 # Preventative Notes: Never add profile names or PIN/city literals here.
+# [ENTRY #006]
+# Term: [ADVANCE_STEP_GUARD]
+# Timestamp: 2026-10-07 17:10:00 +05:30
+# Issue / Context: advance_step computed new_url but never compared it; error check was banner-only.
+# Changes Made: Delegates to DOMHelpers.verify_step_advanced (URL-change + shared error selectors + completion markers).
+# Rationale: Single guard implementation across all fingers.
+# Preventative Notes: Never bypass the shared guard with finger-local banner checks.
+#
+# [ENTRY #005]
+# Term: [DEMOGRAPHIC_DEFAULTS_PURGE]
+# Timestamp: 2026-10-07 16:10:00 +05:30
+# Issue / Context: Salutation/country/degree/major/month/year/ethnicity/gender carried assumed defaults.
+# Changes Made: All resolve from candidate/education/work data with empty-skip; human-gated operator fills unknowns. No assumed identity.
+# Rationale: Human-gated flow must leave unknowns blank, never invent.
+# Preventative Notes: Never restore demographic or country literals here.
 # ==============================================================================
 
 import os
@@ -505,9 +522,10 @@ class OracleCloudFinger(BaseATSFinger):
                     cover_letter_input.set_input_files(cl_file)
                     time.sleep(1.0)
 
-        # 2. Title Selection
-        title = cand.get("salutation") or cand.get("title") or "Mr."
-        self.smart_select_pill(page, title)
+        # 2. Title Selection (config-driven; skip when unknown — human-gated flow)
+        title = str(cand.get("salutation") or cand.get("title") or "").strip()
+        if title:
+            self.smart_select_pill(page, title)
 
         # 3. Address fields
         addr1 = cand.get("address_line_1") or cand.get("address") or ""
@@ -730,15 +748,15 @@ class OracleCloudFinger(BaseATSFinger):
         """
         Heals open Education dialog: selects Degree, Country, End Date Month/Year, Area of Study, and clicks SAVE.
         """
-        target_degree = edu_data.get("degree") or "Bachelor's Degree"
-        target_country = edu_data.get("country") or "India"
-        target_major = edu_data.get("major") or "Computer Science & Engineering"
-        target_month = edu_data.get("end_month") or edu_data.get("graduated_month") or "July"
-        target_year = str(edu_data.get("end_year") or edu_data.get("graduated_year") or "2015")
+        target_degree = str(edu_data.get("degree") or "").strip()
+        target_country = str(edu_data.get("country") or "").strip()
+        target_major = str(edu_data.get("major") or "").strip()
+        target_month = str(edu_data.get("end_month") or edu_data.get("graduated_month") or "").strip()
+        target_year = str(edu_data.get("end_year") or edu_data.get("graduated_year") or "").strip()
 
-        # 1. Degree
+        # 1. Degree (skip when unknown — operator fills in human-gated flow)
         degree_input = page.locator("[id^='contentItemId']").first
-        if degree_input.count() > 0:
+        if degree_input.count() > 0 and target_degree:
             degree_input.fill(target_degree[:6])  # e.g. "Bachel"
             time.sleep(1.0)
             degree_input.press("ArrowDown")
@@ -746,9 +764,9 @@ class OracleCloudFinger(BaseATSFinger):
             degree_input.press("Enter")
             time.sleep(0.3)
 
-        # 2. Country
+        # 2. Country (skip when unknown)
         country_input = page.locator("[id^='countryCode']").first
-        if country_input.count() > 0 and country_input.input_value() != target_country:
+        if country_input.count() > 0 and target_country and country_input.input_value() != target_country:
             c_toggle = page.locator("[id^='countryCode'][id$='-toggle-button']").first
             if c_toggle.count() > 0 and c_toggle.is_visible():
                 c_toggle.click()
@@ -759,9 +777,9 @@ class OracleCloudFinger(BaseATSFinger):
                 time.sleep(0.3)
             page.keyboard.press("Escape")
 
-        # 3. End Date Month
+        # 3. End Date Month (skip when unknown)
         month_input = page.locator("[id^='month-endDate']").first
-        if month_input.count() > 0 and month_input.input_value().strip().lower() != target_month.lower():
+        if month_input.count() > 0 and target_month and month_input.input_value().strip().lower() != target_month.lower():
             m_toggle = page.locator("[id^='month-endDate'][id$='-toggle-button']").first
             if m_toggle.count() > 0 and m_toggle.is_visible():
                 m_toggle.click()
@@ -777,14 +795,14 @@ class OracleCloudFinger(BaseATSFinger):
             }''', target_month)
             time.sleep(0.4)
 
-        # 4. End Date Year
+        # 4. End Date Year (skip when unknown)
         year_input = page.locator("[id^='year-endDate']").first
-        if year_input.count() > 0 and year_input.input_value() != target_year:
+        if year_input.count() > 0 and target_year and year_input.input_value() != target_year:
             year_input.fill(target_year)
 
-        # 5. Area of Study
+        # 5. Area of Study (skip when unknown)
         study_input = page.locator("[id^='areaOfStudy']").first
-        if study_input.count() > 0 and not study_input.input_value():
+        if study_input.count() > 0 and not study_input.input_value() and target_major:
             study_input.fill(target_major)
 
         # Click SAVE
@@ -805,13 +823,13 @@ class OracleCloudFinger(BaseATSFinger):
         - Formats Achievements into clean bullet points
         - Clicks SAVE
         """
-        target_country = exp_data.get("country") or "India"
+        target_country = str(exp_data.get("country") or "").strip()
         target_city = exp_data.get("city") or exp_data.get("location") or ""
         bullets = exp_data.get("bullets") or exp_data.get("responsibilities") or exp_data.get("description") or []
 
-        # 1. Employer Country
+        # 1. Employer Country (skip when unknown — operator fills in human-gated flow)
         country_row = page.locator(".input-row:has-text('Employer Country'):visible").first
-        if country_row.count() > 0:
+        if country_row.count() > 0 and target_country:
             c_input = country_row.locator("input[name='countryCode'], [id^='countryCode']").first
             current_c = c_input.input_value() if c_input.count() > 0 else ""
             if current_c != target_country:
@@ -878,10 +896,10 @@ class OracleCloudFinger(BaseATSFinger):
 
         employer = work_item.get("employer") or work_item.get("company") or ""
         title = work_item.get("title") or work_item.get("role") or ""
-        start_month = work_item.get("start_month") or "January"
+        start_month = str(work_item.get("start_month") or "").strip()
         start_year = str(work_item.get("start_year") or "")
         is_current = work_item.get("is_current", False)
-        country = work_item.get("country") or "India"
+        country = str(work_item.get("country") or "").strip()
         state = work_item.get("state") or ""
         city = work_item.get("city") or work_item.get("location") or ""
         responsibilities = work_item.get("responsibilities") or work_item.get("description") or ""
@@ -937,14 +955,18 @@ class OracleCloudFinger(BaseATSFinger):
         if active_nail:
             active_nail.handle_custom_fields(page, 4, candidate_data)
 
-        # 2. General Demographics fallback (Ethnicity, Gender)
+        # 2. General Demographics fallback (skip when unknown — operator fills)
         eth_loc = page.locator("input[id*='ETHNICITY']:visible, input[name*='ETHNICITY']:visible").first
         if eth_loc.count() > 0 and not eth_loc.input_value().strip():
-            self.select_cx_dropdown_field(page, "Ethnicity", cand.get("ethnicity", "Asian"))
+            _eth = str(cand.get("ethnicity", "") or "").strip()
+            if _eth:
+                self.select_cx_dropdown_field(page, "Ethnicity", _eth)
 
         gender_loc = page.locator("input[id*='GENDER']:visible, input[name*='GENDER']:visible").first
         if gender_loc.count() > 0 and not gender_loc.input_value().strip():
-            self.select_cx_dropdown_field(page, "Gender", cand.get("gender", "Male"))
+            _gen = str(cand.get("gender", "") or "").strip()
+            if _gen:
+                self.select_cx_dropdown_field(page, "Gender", _gen)
 
         # 3. E-Signature Full Name
         sig_loc = page.locator("input[name='fullName'], #fullName-5, input[id*='fullName']").first
@@ -1051,16 +1073,17 @@ class OracleCloudFinger(BaseATSFinger):
 
         # Wait for navigation or AJAX update
         time.sleep(2.5)
-        new_url = page.url
 
-        # Check for inline error banners
-        error_msg = ""
-        error_loc = page.locator(".app-dialog--error, .oj-message-detail, .oj-form-control-error")
-        if error_loc.count() > 0 and error_loc.first.is_visible():
-            error_msg = error_loc.first.inner_text().strip()
-            return False, f"Validation error on page: {error_msg}"
+        # Shared step-transition guard: URL must change (or completion marker
+        # appear) with zero inline validation errors.
+        advanced, errors = DOMHelpers.verify_step_advanced(
+            page, initial_url,
+            ok_markers=["application submitted", "thank you for your job application",
+                        "thank you for applying", "your application has been received"])
+        if not advanced:
+            return False, f"Validation error on page: {'; '.join(errors)}"
 
-        return True, f"Advanced from {initial_url} to {new_url}"
+        return True, f"Advanced from {initial_url} to {page.url}"
 
     def is_complete(self, page: Any) -> Tuple[bool, str]:
         """

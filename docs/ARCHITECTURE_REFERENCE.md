@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: ARCHITECTURE REFERENCE
 
-> **Document Version:** 5.3 — Multi-Key Round-Robin Gemini Rotation, SmartRateManager, Gemini Inline Batch Engine  
-> **Last Updated:** 2026-09-23  
+> **Document Version:** 5.4 — Multi-Key Round-Robin Gemini Rotation, SmartRateManager, Gemini Inline Batch Engine, Global-Secrets-Only Policy  
+> **Last Updated:** 2026-10-07  
 > **Purpose:** Comprehensive technical reference for the complete pipeline — how every module works, data flows, inter-process communication, DOM interaction patterns, multi-bullet regex isolation, two-tier early highlights gating, card-level experience band gating (Guardrail C24), and the chatbot reverse-engineering protocol. Upload this alongside `WORKSPACE_RULES.md` to ground the AI's understanding of the system before any coding session.
 
 ---
@@ -136,6 +136,7 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
 
 **Multi-Key Round-Robin Architecture (v2.0):**
 - `gemini_credentials.json` stores an array of API keys: `{"api_keys": ["key1", "key2", ...], "model": "...", "fallback_models": [...], "engine_enabled": true}`.
+- API keys and model names resolve EXCLUSIVELY from `gemini_credentials.json` or `GEMINI_API_KEY` / `GEMINI_MODEL` environment variables. `profiles/*/candidate_config.json` is never a secrets carrier (2026-10-07 policy).
 - At init, `AIClient.__init__` instantiates a `list` of `genai.Client` objects (`self._gemini_clients`), one per key.
 - `self.gemini_client` is a `@property` (NOT a static attribute) — it returns `self._gemini_clients[self._current_client_idx]`. **Never assign to `self.gemini_client` directly — it has no setter.**
 - `self._rotate_gemini_client()` is called inside the retry loop of `_call_gemini_with_fallback()`. Every failed or completed attempt cycles to the next key, distributing quota across all 7 accounts.
@@ -177,7 +178,7 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
   - Explanatory notes are automatically appended to `reasoning` (e.g., `[Naukri Portal Verified: Keyskills & Exp Match (+10%), Early Applicant, Location Match]`).
   - Active portal flags are injected into both the Gemini LLM prompt and the Antigravity 2.0 IPC prompt (`pending_question.json`) for factual arbitration.
 - **Autonomous Cognitive Profile Synthesis:** At runtime, `AIClient.synthesize_cognitive_profile()` inspects the active candidate's `resume.md` and configuration, derives their domain (e.g. Finance & Accounting, Software Engineering, etc.), core vs. generic soft skills, domain acronyms, out-of-domain incompatible verticals, and multi-cycle designation queues (Cycle 1 core, Cycle 2 seniority/lateral, Cycle 3 specialized/functional) stored in `profiles/<profile>/output/cognitive_profile.json`.
-- **Zero-Hardcoding Contract & Guardrail P1:** Zero vertical dictionaries, domain words, soft skill sets, or question-detection keyword lists exist in Python source code. All evaluation gates in `evaluate_job_match()`, `arbitrate_card_fit()`, and `_heuristic_screening_answer()` read dynamically from `cognitive_profile.json` and `candidate_config.json`. Specifically, all screening question keyword lists (notice period, relocation, interview mode, communication, experience, numeric detection, numeric exclusion, intern designation markers, and fallback text label) are stored in the `screening_heuristics` section of `candidate_config.json` — **never** as Python literals. See Section 4.1 for the complete `screening_heuristics` schema.
+- **Zero-Hardcoding Contract & Guardrail P1:** Zero vertical dictionaries, domain words, soft skill sets, or question-detection keyword lists exist in Python source code. All evaluation gates in `evaluate_job_match()`, `arbitrate_card_fit()`, and `_heuristic_screening_answer()` read dynamically from `cognitive_profile.json` and `candidate_config.json`. Specifically, all screening question keyword lists (notice period, relocation, interview mode, communication, total/general experience, skill/role experience, numeric detection, numeric exclusion, ctc scale/current/expected, disability, age, work authorization, sponsorship, military, passport, education, boolean-positive, zero-equivalents, proficiency tiers, intern designation markers, and fallback text label) are stored in the `screening_heuristics` section of `candidate_config.json` — **never** as Python literals. See Section 4.1 for the complete `screening_heuristics` schema.
 - **Two-Stage Cognitive Qualification Engine:** Stage 1 Deterministic Gatekeeper enforces C6 absolute negative keywords, domain root-stem token gating (excluding hierarchy stopwords), an **Incompatible Industry/Vertical Hard Gate** (rejecting verticals flagged incompatible by the cognitive profile), and an experience band filter (>3yr gap auto-rejects). Stage 2 Precision scoring enforces a strict 60% qualification bar and requires $\ge 2$ distinct **CORE functional domain skills** (excluding soft skills like "analytical" or "problem solving").
 - **Tier 2 Stage 1 Gatekeeper Line-by-Line Job Highlights Gating:** In `evaluate_job_match()`, the engine isolates the `Job Highlights:` section if present. Unlike the general JD body, highlight bullets represent hard qualification criteria and minimum candidate eligibility filters set by the recruiter. The Gatekeeper scans each highlight line-by-line:
   - Any negative keyword match on word boundaries (`\b{kw}\b`) immediately drops the role (`score = 0`, rejection logged).
@@ -492,7 +493,30 @@ os.replace(tmp_path, config_path)  # Atomic on all OSes
     "numeric_question_triggers": ["how many years", "years of experience", "experience in years", "number of years", "how long", "in numbers", "in digits", "enter digits", "enter numbers"],
     "numeric_question_exclusions": ["describe", "explain", "detail", "tell us", "write about", "elaborate"],
     "intern_designation_markers": ["intern", "trainee", "apprentice", "graduate trainee"],
-    "fallback_text_label": "experience"
+    "fallback_text_label": "experience",
+    "ctc_question_keywords": ["ctc", "salary", "compensation", "package", "lpa", "inr", "lakh", "lac", "per annum"],
+    "ctc_current_markers": ["current", "present"],
+    "ctc_expected_markers": ["expected", "expectation", "desired"],
+    "general_experience_keywords": ["relevant years", "years of work experience", "total experience", "overall experience"],
+    "zero_equivalent_option_markers": ["no prior", "no experience", "none", "fresher"],
+    "sub_one_year_option_markers": ["< 1", "<1", "< 1 year", "<1 year", "< 1 yr", "0-1", "0 to 1", "6 month", "fresher", "intern"],
+    "ctc_full_inr_scale_keywords": ["inr", "rupees", "rs.", "rs ", "exact", "annual ctc", "annual salary"],
+    "ctc_current_keywords": ["current ctc", "current salary", "fixed ctc", "annual salary"],
+    "ctc_expected_keywords": ["expected ctc", "expected salary", "hike"],
+    "disability_keys": ["disability", "pwd", "specially abled", "differently abled", "handicap", "impairment", "physically challenged", "disability percentage", "type of disability", "kind of disability", "health condition", "medical condition"],
+    "no_disability_markers": ["don't have", "do not have", "no disability", "none", "0%", "not applicable", "na", "n/a"],
+    "age_verification_keywords": ["18 years", "at least 18", "age of majority", "legal age"],
+    "work_auth_keywords": ["authorized to work", "legally authorized", "right to work", "work permit", "work authorization"],
+    "sponsorship_keywords": ["require sponsorship", "sponsorship for an employment", "visa sponsorship", "require visa"],
+    "military_keywords": ["uniformed forces", "military status", "military service", "defense forces"],
+    "passport_keywords": ["passport", "citizenship"],
+    "passport_foreign_markers": ["other than", "foreign", "different country"],
+    "education_10p2_keywords": ["high school diploma", "10+2", "hsc or ged"],
+    "boolean_positive_keywords": ["available", "interview", "comfortable", "virtual", "open to", "flexible"],
+    "zero_target_equivalents": ["0", "0.0", "zero", "none", "no experience", "fresher", "no", "nil", "n/a", "na", "no relevant"],
+    "zero_option_equivalents": ["no experience", "none", "0", "0 years", "0-1 year", "fresher", "nil", "n/a", "na", "no"],
+    "zero_option_contains_phrases": ["no experience", "not experienced", "none of the above", "zero experience", "no relevant"],
+    "proficiency_lowest_tier": ["beginner", "basic", "novice", "entry", "elementary", "foundational", "learning"]
   }
 }
 ```

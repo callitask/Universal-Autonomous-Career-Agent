@@ -6,7 +6,15 @@
 # Issue / Context: Pluggable ATS finger for Greenhouse job boards.
 # Changes Made: Implemented GreenhouseFinger for boards.greenhouse.io / embedded Greenhouse forms.
 # Rationale: Greenhouse is widely used by high-growth tech companies and enterprise startups.
+
 # Preventative Notes: Scopes to #application_form to prevent header navigation interference.
+# [ENTRY #002]
+# Term: [ADVANCE_STEP_GUARD]
+# Timestamp: 2026-10-07 17:10:00 +05:30
+# Issue / Context: Submit assumed success after click+sleep.
+# Changes Made: Delegates to DOMHelpers.verify_step_advanced with thank-you marker; URL change carries confirmation pages.
+# Rationale: Shared guard; ok_markers limited to thank-you text to avoid body-text false positives.
+# Preventative Notes: Never widen ok_markers to generic words like confirmation.
 # ==============================================================================
 
 import time
@@ -73,9 +81,14 @@ class GreenhouseFinger(BaseATSFinger):
     def advance_step(self, page: Any) -> Tuple[bool, str]:
         submit_btn = page.locator("#submit_app, input[type='submit'][value*='Submit'], button:has-text('Submit Application')")
         if submit_btn.count() > 0 and submit_btn.first.is_visible():
+            before_url = getattr(page, "url", "")
             submit_btn.first.click()
             time.sleep(2.0)
-            return True, "Clicked Greenhouse submit button"
+            advanced, errors = DOMHelpers.verify_step_advanced(
+                page, before_url, ok_markers=["thank you for applying"])
+            if advanced:
+                return True, "Clicked Greenhouse submit button"
+            return False, f"Greenhouse submit did not advance: {'; '.join(errors)}"
         return False, "Submit button not found"
 
     def is_complete(self, page: Any) -> Tuple[bool, str]:

@@ -3,10 +3,18 @@
 # ==============================================================================
 
 # 1. CRITICAL: SENSITIVE CANDIDATE DATA & DYNAMIC PROFILES DIRECTORY
-# Completely block the profiles directory to prevent PII/Resume leaks.
-# All dynamic candidate inputs and runtime outputs live in profiles/ and must NEVER be pushed to git.
-profiles/
+# Block live candidate sandboxes to prevent PII/Resume leaks.
+# EXCEPTION (2026-10-07): profiles/default_user/ is the canonical tracked schema
+# blueprint (candidate_config.json, resume.md, cover_letter_template.md, README.md).
+# All other profiles/*/ remain ignored. Never add a live profile to version control.
+# NOTE: bare `profiles/` (without *) would block negation, so contents are ignored
+# per-child to let the default_user exception take effect.
 profiles/*
+!profiles/default_user/
+!profiles/.gitkeep
+!profiles/README.md
+# Blueprint runtime skeleton stays untracked even under the tracked blueprint.
+profiles/default_user/output/
 
 
 # 2. Python Environment & Cache

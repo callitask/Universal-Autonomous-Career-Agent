@@ -6,7 +6,15 @@
 # Issue / Context: Generic adaptive ATS finger for bespoke and uncatalogued corporate career forms.
 # Changes Made: Implemented GenericAdaptiveFinger to safely inspect, fill, and advance bespoke portals.
 # Rationale: Ensures the system gracefully handles unknown custom React/Vue/Angular career forms.
+
 # Preventative Notes: Respects HoneypotGuard and skips decoy inputs; prompts for ambiguous fields.
+# [ENTRY #002]
+# Term: [UPLOAD_AND_ADVANCE_GUARD]
+# Timestamp: 2026-10-07 17:10:00 +05:30
+# Issue / Context: Generic fallback stalled on resume attachment; advance assumed success after click+sleep.
+# Changes Made: _upload_resume_if_present via shared resolver (+operator prompt); advance_step verifies via DOMHelpers.verify_step_advanced.
+# Rationale: Fallback path must meet the same bar as platform fingers.
+# Preventative Notes: Never return advance success without the shared guard.
 # ==============================================================================
 
 import time
@@ -49,6 +57,12 @@ class GenericAdaptiveFinger(BaseATSFinger):
         # Also run parser doctor on any existing filled textareas
         ReviewVerifier.audit_and_heal_experience_descriptions(page)
 
+        # Resume attachment (mirror of the Oracle Section-1 pattern, shared resolver)
+        uploaded = self._upload_resume_if_present(
+            page, candidate_data, prompt_user_callback)
+        if uploaded:
+            filled_count += 1
+
         for inp in schema.get("inputs", []):
             if inp.get("is_honeypot") or inp.get("disabled") or inp.get("readOnly"):
                 continue
@@ -78,6 +92,29 @@ class GenericAdaptiveFinger(BaseATSFinger):
 
         return {"success": True, "filled_count": filled_count}
 
+    def _upload_resume_if_present(self, page: Any, candidate_data: Dict[str, Any],
+                                  prompt_user_callback: Optional[Callable[[str, Optional[List[str]]], str]] = None) -> bool:
+        """Attaches the tailored resume when the step exposes a file input."""
+        try:
+            file_loc = page.locator("input[type='file']").first
+            if file_loc.count() == 0:
+                return False
+        except Exception:
+            return False
+        res_file = DOMHelpers.resolve_resume_file(candidate_data)
+        if not res_file and prompt_user_callback:
+            res_file = prompt_user_callback("Resume file path for upload:", None)
+        if res_file:
+            try:
+                import os
+                if os.path.exists(res_file):
+                    file_loc.set_input_files(res_file)
+                    time.sleep(1.0)
+                    return True
+            except Exception:
+                return False
+        return False
+
     def advance_step(self, page: Any) -> Tuple[bool, str]:
         buttons = [
             "button[type='submit']",
@@ -87,12 +124,16 @@ class GenericAdaptiveFinger(BaseATSFinger):
             "button:has-text('Submit')",
             "button:has-text('Apply')"
         ]
+        before_url = getattr(page, "url", "")
         for sel in buttons:
             loc = page.locator(sel)
             if loc.count() > 0 and loc.first.is_visible() and not loc.first.is_disabled():
                 loc.first.click()
                 time.sleep(2.0)
-                return True, f"Clicked button: {sel}"
+                advanced, errors = DOMHelpers.verify_step_advanced(page, before_url)
+                if advanced:
+                    return True, f"Clicked button: {sel}"
+                return False, f"Step did not advance after '{sel}': {'; '.join(errors)}"
         return False, "Could not identify visible submit or next button"
 
     def is_complete(self, page: Any) -> Tuple[bool, str]:
