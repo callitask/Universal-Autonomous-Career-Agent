@@ -7,7 +7,7 @@ This guide contains the official 3-step prompt sequence to initialize Gemini Web
 ## Step 1: Upload `docs/WORKSPACE_RULES.md`
 **Prompt to accompany upload:**
 ```text
-I am uploading the WORKSPACE RULES document for my Universal Autonomous Career Agent project. This document contains 9 mandatory directives and 46 known bug prevention guardrails (36 C + 6 H + 3 D + 1 P, incl. C15-C37, Batch Architecture v2.0, SearchStateManager rotation, dual-channel IPC, C24 experience gating, C32 navigation timeouts, C34 option-constrained resolution, C35-C37 validation/expansion, global-secrets-only policy, and G-BRAIN-01 actuator discipline) that govern ALL code you write in this session.
+I am uploading the WORKSPACE RULES document for my Universal Autonomous Career Agent project. This document contains 10 mandatory directives and 46 known bug prevention guardrails (36 C + 6 H + 3 D + 1 P, incl. C15-C37, Batch Architecture v2.0, SearchStateManager rotation, dual-channel IPC, C24 experience gating, C32 navigation timeouts, C34 option-constrained resolution, C35-C37 validation/expansion, global-secrets-only policy, Directive 10 page-loop protocol, and G-BRAIN-01 actuator discipline) that govern ALL code you write in this session.
 
 CRITICAL INSTRUCTIONS:
 1. Read the entire document thoroughly — every directive, every appendix, every bug guardrail.
@@ -29,7 +29,7 @@ CRITICAL INSTRUCTIONS:
       * C14: Profile form empirical target protocol (verified IDs and classes for resume headline, key skills, and employment).
 
 4. After reading, confirm you understand by listing:
-   - The 9 directive names (including Directive 2 developer boundaries, secrets policy, and Guardrail P1)
+   - The 10 directive names (including Directive 2 developer boundaries, secrets policy, Guardrail P1, and the Directive 10 page-loop protocol)
    - The bug guardrail IDs (P1, C1-C4, C6, C9-C14, H1-H6, D1-D3) and what each prevents
    - The canonical CSV tracker header schema
    - The method signature, borderline IPC gating window (40-65%), and hybrid MatchResult contract for evaluate_job_match()
@@ -80,13 +80,13 @@ Do NOT write any code yet. Just confirm your understanding.
 **Prompt to accompany upload:**
 ```text
 I am uploading the current production codebase files for the Universal Autonomous Career Agent. You now have:
-1. [PASS] WORKSPACE_RULES.md (9 directives + 46 bug guardrails) — loaded
+1. [PASS] WORKSPACE_RULES.md (10 directives + 46 bug guardrails) — loaded
 2. [PASS] ARCHITECTURE_REFERENCE.md (complete technical blueprint) — loaded
 3. [PASS] Production source code files — attached above
 
 WORKING PROTOCOL FOR THIS SESSION:
 1. You are operating strictly as the Principal Agent Developer.
-2. Every code change you produce must comply with ALL 9 directives in WORKSPACE_RULES.md.
+2. Every code change you produce must comply with ALL 10 directives in WORKSPACE_RULES.md.
 3. Never manually touch or modify files inside the profiles/ folder. All runtime sandbox adaptation must be performed autonomously by the running agent code.
 4. Every file you output must be 100% complete — no truncation, no placeholder comments.
 5. Before modifying any function, verify it doesn't break callers listed in APPENDIX B of the rules.

@@ -143,25 +143,16 @@ class WorkdayFinger(BaseATSFinger):
         """
         Advances to the next Workday step via bottom navigation buttons.
         """
-        next_button_selectors = [
-            "[data-automation-id='bottom-navigation-next-button']",
-            "button:has-text('Save and Continue')",
-            "button:has-text('Next')",
-            "button:has-text('Submit')"
-        ]
-
         before_url = getattr(page, "url", "")
-        for sel in next_button_selectors:
-            loc = page.locator(sel)
-            if loc.count() > 0 and loc.first.is_visible() and not loc.first.is_disabled():
-                loc.first.click()
-                time.sleep(2.5)
-                advanced, errors = DOMHelpers.verify_step_advanced(page, before_url)
-                if advanced:
-                    return True, "Clicked Workday next button"
-                return False, f"Workday step did not advance: {'; '.join(errors)}"
-
-        return False, "Could not locate visible Workday next button"
+        clicked, which = DOMHelpers.safe_click_button(
+            page, ['save and continue', 'next', 'submit', 'apply'])
+        if not clicked:
+            return False, f"Could not locate visible Workday next button ({which})"
+        time.sleep(2.5)
+        advanced, errors = DOMHelpers.verify_step_advanced(page, before_url)
+        if advanced:
+            return True, f"Clicked Workday next button ({which})"
+        return False, f"Workday step did not advance: {'; '.join(errors)}"
 
     def is_complete(self, page: Any) -> Tuple[bool, str]:
         """

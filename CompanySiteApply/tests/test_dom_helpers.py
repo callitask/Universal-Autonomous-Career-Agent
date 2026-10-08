@@ -11,6 +11,16 @@
 # Rationale: Future fingers/nails inherit these helpers; tests pin the contracts.
 # Preventative Notes: Uses synthetic dummy data; zero candidate PII. Never add
 #   live profile names, keys, or URLs here.
+#
+# [ENTRY #002]
+# Term: [COMBO_MATCHER_TESTS]
+# Timestamp: 2026-10-07 18:30:00 +05:30
+# Issue / Context: City/State combos failed on official-spelling drift
+#   (Bangalore vs Bengaluru, Karnataka) under exact-only matching.
+# Changes Made: Tests for match_option_score/pick_best_option plus alias
+#   expansion through location_aliases().
+# Rationale: Name drift must resolve by score, never by hardcoded city.
+# Preventative Notes: Never hardcode additional city names into expectations.
 # ==============================================================================
 
 import os
@@ -146,6 +156,64 @@ class TestDOMHelpers(unittest.TestCase):
             self.assertIsNone(
                 DOMHelpers.resolve_resume_file(
                     {}, resume_path=os.path.join(tmp, "nope.pdf")))
+
+    def test_match_option_score_exact_and_drift(self):
+        self.assertEqual(
+            DOMHelpers.match_option_score('Karnataka', 'Karnataka'), 100)
+        self.assertGreaterEqual(
+            DOMHelpers.match_option_score('Bengaluru', 'Bengaluru, Karnataka'),
+            70)
+        # Official respellings share no token: score 0 is WHY aliases exist.
+        self.assertEqual(
+            DOMHelpers.match_option_score('Bangalore', 'Bengaluru, Karnataka'),
+            0)
+        self.assertEqual(DOMHelpers.match_option_score('Bangalore', 'Chennai'), 0)
+        self.assertEqual(DOMHelpers.match_option_score('', 'Chennai'), 0)
+
+    def test_pick_best_option_threshold_and_order(self):
+        opts = ['Chennai, Tamil Nadu', 'Bengaluru, Karnataka', 'Pune, Maharashtra']
+        aliases = DOMHelpers.location_aliases().get('Bangalore', [])
+        self.assertEqual(
+            DOMHelpers.pick_best_option(['Bangalore'] + aliases, opts),
+            'Bengaluru, Karnataka')
+        self.assertIsNone(DOMHelpers.pick_best_option(['Nowhere'], opts))
+        self.assertIsNone(DOMHelpers.pick_best_option([], opts))
+
+    def test_location_aliases_from_heuristics(self):
+        aliases = DOMHelpers.location_aliases()
+        self.assertIn('Bangalore', aliases)
+        self.assertIn('Bengaluru, Karnataka', aliases['Bangalore'])
+
+    def test_combo_guards_exclude_clear_controls(self):
+        import inspect
+        src = inspect.getsource(DOMHelpers.select_jet_combo)
+        self.assertIn('clear|close|remove|dismiss', src)
+        self.assertIn('^[x×]$', src)
+
+    def test_safe_click_button_contract(self):
+        self.assertIn('cancel', DOMHelpers.FORBIDDEN_BUTTON_TOKENS)
+        self.assertIn('discard', DOMHelpers.FORBIDDEN_BUTTON_TOKENS)
+
+        class ScriptedPage:
+            def __init__(self, script_result):
+                self._result = script_result
+                self.seen_args = None
+
+            def evaluate(self, _script, args):
+                self.seen_args = args
+                return self._result
+
+        page = ScriptedPage('Next')
+        ok, detail = DOMHelpers.safe_click_button(page, ['next', 'submit'])
+        self.assertTrue(ok)
+        self.assertIn('next', detail.lower())
+        allow, _scope, forbidden = page.seen_args
+        self.assertIn('next', allow)
+        self.assertIn('cancel', forbidden)
+        ok, _ = DOMHelpers.safe_click_button(ScriptedPage(None), ['next'])
+        self.assertFalse(ok)
+        ok, _ = DOMHelpers.safe_click_button(ScriptedPage('Next'), [])
+        self.assertFalse(ok)
 
 
 if __name__ == "__main__":

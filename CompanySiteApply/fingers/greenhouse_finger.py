@@ -79,17 +79,17 @@ class GreenhouseFinger(BaseATSFinger):
         return {"success": True, "filled_count": filled}
 
     def advance_step(self, page: Any) -> Tuple[bool, str]:
-        submit_btn = page.locator("#submit_app, input[type='submit'][value*='Submit'], button:has-text('Submit Application')")
-        if submit_btn.count() > 0 and submit_btn.first.is_visible():
-            before_url = getattr(page, "url", "")
-            submit_btn.first.click()
-            time.sleep(2.0)
-            advanced, errors = DOMHelpers.verify_step_advanced(
-                page, before_url, ok_markers=["thank you for applying"])
-            if advanced:
-                return True, "Clicked Greenhouse submit button"
-            return False, f"Greenhouse submit did not advance: {'; '.join(errors)}"
-        return False, "Submit button not found"
+        before_url = getattr(page, "url", "")
+        clicked, which = DOMHelpers.safe_click_button(
+            page, ['submit application', 'submit'])
+        if not clicked:
+            return False, f"Submit button not found ({which})"
+        time.sleep(2.0)
+        advanced, errors = DOMHelpers.verify_step_advanced(
+            page, before_url, ok_markers=["thank you for applying"])
+        if advanced:
+            return True, f"Clicked Greenhouse submit button ({which})"
+        return False, f"Greenhouse submit did not advance: {'; '.join(errors)}"
 
     def is_complete(self, page: Any) -> Tuple[bool, str]:
         if "confirmation" in page.url:

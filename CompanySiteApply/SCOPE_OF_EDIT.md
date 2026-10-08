@@ -87,7 +87,9 @@ class NewPlatformFinger(BaseATSFinger):
 ### Shared helpers (use these; do not reimplement per finger)
 `CompanySiteApply/utils/dom_helpers.py` is the single library for control discovery
 and step safety. New fingers/nails must build on it so future platforms inherit
-fixes automatically:
+fixes automatically. Mandatory preload before any new-portal work:
+`docs/COMPANY_PORTAL_PAGELOOP_PROTOCOL.md` (universal page loop, session
+triage, JPMC case study, failure log) alongside this file:
 - `extract_form_schema(page)` — native + ARIA + `oj-*` + `data-automation-id`
   scan (plain tags/roles only, never hashed classes). Opt-in multi-frame via
   `extract_schema_all_frames(page)`.

@@ -116,25 +116,16 @@ class GenericAdaptiveFinger(BaseATSFinger):
         return False
 
     def advance_step(self, page: Any) -> Tuple[bool, str]:
-        buttons = [
-            "button[type='submit']",
-            "input[type='submit']",
-            "button:has-text('Next')",
-            "button:has-text('Continue')",
-            "button:has-text('Submit')",
-            "button:has-text('Apply')"
-        ]
         before_url = getattr(page, "url", "")
-        for sel in buttons:
-            loc = page.locator(sel)
-            if loc.count() > 0 and loc.first.is_visible() and not loc.first.is_disabled():
-                loc.first.click()
-                time.sleep(2.0)
-                advanced, errors = DOMHelpers.verify_step_advanced(page, before_url)
-                if advanced:
-                    return True, f"Clicked button: {sel}"
-                return False, f"Step did not advance after '{sel}': {'; '.join(errors)}"
-        return False, "Could not identify visible submit or next button"
+        clicked, which = DOMHelpers.safe_click_button(
+            page, ['submit', 'next', 'continue', 'apply'])
+        if not clicked:
+            return False, f"Could not identify visible submit or next button ({which})"
+        time.sleep(2.0)
+        advanced, errors = DOMHelpers.verify_step_advanced(page, before_url)
+        if advanced:
+            return True, f"Clicked button ({which})"
+        return False, f"Step did not advance after ({which}): {'; '.join(errors)}"
 
     def is_complete(self, page: Any) -> Tuple[bool, str]:
         text_loc = page.locator(":has-text('Application Submitted'), :has-text('Thank you for applying')")

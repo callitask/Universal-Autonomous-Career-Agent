@@ -186,3 +186,9 @@ all semantic job fit evaluations. Keyword lists in config are advisory context f
 - **What happened**: Assumed stack (`Java/...`), city (`Bangalore`), salutation/country/degree/major/dates (`Mr./India/...`), demographics (`Asian/Male`), fixed Yes/No screening answers, and `options[0]` fallback shipped as defaults.
 - **Correct behavior**: Config-driven with empty-skip; human-gated operator fills unknowns; JPMC `_match_choice` returns None (H1); screening gated on candidate truth.
 - **Never repeat**: Never invent identity or stack in ATS adapters. Unknown fields stay blank for the operator.
+
+## [2026-10-07] ADVANCING PAST RED FIELDS + SESSION-STATE ASSUMPTIONS ON LIVE PORTALS
+- **File**: Supervised JPMC CX_1001 run (scripts, then `select_jet_combo`/`verify_step_advanced` hardening)
+- **What happened**: Scripts verified page-advance (URL change) but never per-field persistence, carrying red/invalid fields and wiped values across sections. Separately assumed a fresh session: values die on re-render, Back-navigation, and relogin (email wiped by terms modal; city/pills wiped by navigation; only server-persisted profile fields survive).
+- **Correct behavior**: Standing Directive 10 page loop — triage the session first (fresh/partial/intact), then per page: discover live, verify state, fill/correct/upload, re-verify (max 3 passes, residuals to retry/AI/operator), advance only when clean. `docs/COMPANY_PORTAL_PAGELOOP_PROTOCOL.md` is the mandatory preload for all future portal work.
+- **Never repeat**: Never treat "clicked" or "page changed" as "correct". Every fill ends in DOM read-back proof; every session starts with a state audit.

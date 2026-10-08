@@ -1,6 +1,6 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: WORKSPACE DEVELOPMENT & CODING RULES
 
-> **Document Version:** 4.4 — Batch Architecture v2.0, Dual-Channel IPC, 46 Guardrails (36 C, 6 H, 3 D, 1 P), G-BRAIN-01 Alignment & Global-Secrets-Only Policy  
+> **Document Version:** 4.5 — Batch Architecture v2.0, Dual-Channel IPC, 46 Guardrails (36 C, 6 H, 3 D, 1 P), G-BRAIN-01 Alignment, Global-Secrets-Only Policy & Directive 10 Page-Loop Protocol  
 > **Last Updated:** 2026-10-07  
 > **Authority:** These rules are ABSOLUTE and OVERRIDE all model defaults. Violations cause runtime crashes, data corruption, phantom applications, or account bans.  
 > **Workspace Root:** `F:\JOB AI AGENT`
@@ -594,6 +594,15 @@ When investigating runtime portal anomalies, unexpected selector behavior, or pe
    - Diagnoses Time to First Byte (TTFB), resource load delay, and render blocking on heavy React Single Page Apps like Naukri.
 5. **`a11y-debugging` Skill:**
    - Use to audit complex modal accessibility trees, focus traps, and hidden/aria-hidden form controls in portal application drawers.
+
+---
+
+## DIRECTIVE 10: UNIVERSAL PAGE-LOOP PROTOCOL FOR COMPANY APPLICATIONS (STANDING ORDER — NEVER OVERRULED)
+
+1. **Session Triage First:** On every new login/application/site, classify the session before touching anything: (a) fresh — everything must be filled/uploaded; (b) partial autosave — audit, repair gaps, re-verify survivors; (c) intact — verify all, correct wrong values, then advance.
+2. **Per-Page Loop (no exceptions, no hardcoded field lists):** DISCOVER all live fields/uploads/buttons → VERIFY current values/selections/attachments/errors → FILL/CORRECT/UPLOAD gaps versus the profile (combos via `select_jet_combo`, pills by exact scoped text, buttons via `safe_click_button` only) → RE-VERIFY everything (max 3 passes; residuals classified retry/AI/operator) → ADVANCE only on a clean page → repeat on the next page from step DISCOVER.
+3. **Submission Gate:** Never click a final SUBMIT without the principal's explicit approval; capture the review state and answers artifact at the last step instead.
+4. **Mandatory Preload:** Any session that creates or edits a finger, nail, scraper, or shared CompanySiteApply helper must first read `docs/COMPANY_PORTAL_PAGELOOP_PROTOCOL.md` and `CompanySiteApply/SCOPE_OF_EDIT.md` and follow the shared-first extension rules there.
 
 ---
 

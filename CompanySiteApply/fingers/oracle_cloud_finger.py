@@ -33,6 +33,22 @@
 
 
 # Preventative Notes: Never add profile names or PIN/city literals here.
+#
+# [ENTRY #007]
+# Term: [COMBO_DELEGATION_AND_AI_TIEBREAK]
+# Timestamp: 2026-10-07 19:00:00 +05:30
+# Issue / Context: Finger-local combo code duplicated exact-only matching and returned success without verification.
+# Changes Made: _select_cx_combobox/select_cx_dropdown_field/Section-1 city delegate to DOMHelpers.select_jet_combo; _ai_pick_option tie-breaker (exact-list-only, None on doubt).
+# Rationale: One combo implementation for all future fingers.
+# Preventative Notes: Never reintroduce finger-local combo matching.
+#
+# [ENTRY #008]
+# Term: [AI_ALIAS_WIRING]
+# Timestamp: 2026-10-07 19:30:00 +05:30
+# Issue / Context: No brain path for alternate spellings of the same place.
+# Changes Made: _ai_alias_options (JSON-array alternates, exact-list never required of it) wired as ai_aliases at all three select_jet_combo call sites.
+# Rationale: Brain proposes spellings; page options decide truth; read-back confirms.
+# Preventative Notes: Never let the brain invent a value outside visible options.
 # [ENTRY #006]
 # Term: [ADVANCE_STEP_GUARD]
 # Timestamp: 2026-10-07 17:10:00 +05:30
@@ -280,114 +296,132 @@ class OracleCloudFinger(BaseATSFinger):
             "healed_education": healed_reports
         }
 
+    @staticmethod
+    def _blank_ai_context():
+        """Context-free AI access: never auto-discover (and never touch) a
+        live profile when the brain is needed for pure option mapping."""
+        import types
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent.parent
+        return types.SimpleNamespace(config={}, base_path=root)
+
+    @staticmethod
+    def _ai_pick_option(field_label: str, want: str,
+                        options: List[str]) -> Optional[str]:
+        """
+        AI tie-breaker for ambiguous dropdown options: asks the configured
+        brain to map the candidate value to exactly one visible option.
+        Returns the exact option text or None (caller defers to operator).
+        Never invents an option outside the visible list.
+        """
+        opts = [str(o) for o in (options or []) if str(o).strip()][:25]
+        if not opts or not str(want).strip():
+            return None
+        try:
+            from core.ai_client import AIClient
+            ai = AIClient(OracleCloudFinger._blank_ai_context())
+            prompt = (
+                f"Field '{field_label}'. The candidate value is "
+                f"'{want}'. Visible portal options: {opts}. "
+                "Reply with EXACTLY one option verbatim from the list that "
+                "means the same place/value, or the single word NONE.")
+            raw = ai.generate_text(prompt, default_fallback='NONE')
+            choice = (raw or '').strip().strip('"').strip("'")
+            for o in opts:
+                if o.strip().lower() == choice.lower():
+                    return o
+            return None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _ai_alias_options(field_label: str, want: str,
+                          options: List[str]) -> List[str]:
+        """
+        Human-flow step 2: the exact answer is absent from the filtered
+        options, so the brain proposes alternate spellings of the SAME
+        place/value (e.g. Bangalore -> Bengaluru). Each alternate is typed
+        and re-matched. Returns a list of bare name strings, possibly empty.
+        Never invents places; bounded to visible-option context.
+        """
+        sample = [str(o) for o in (options or []) if str(o).strip()][:25]
+        if not str(want).strip():
+            return []
+        try:
+            import json
+            from core.ai_client import AIClient
+            ai = AIClient(OracleCloudFinger._blank_ai_context())
+            prompt = (
+                f"Field '{field_label}'. The candidate's place/value is "
+                f"'{want}'. These are "
+                f"some visible portal options: {sample}. "
+                "List OTHER official/alternate spellings or names for the "
+                "SAME place that might appear in the full dropdown "
+                "(e.g. Bangalore is officially Bengaluru). "
+                "Reply with a JSON array of strings only, e.g. "
+                "[\"Bengaluru\", \"Bengaluru, Karnataka\"]. "
+                "Empty array if none.")
+            raw = ai.generate_text(prompt, default_fallback='[]')
+            start, end = raw.find('['), raw.rfind(']')
+            if start == -1 or end <= start:
+                return []
+            vals = json.loads(raw[start:end + 1])
+            return [str(v).strip() for v in vals
+                    if isinstance(v, str) and str(v).strip()][:6]
+        except Exception:
+            return []
+
     def _select_cx_combobox(self, page: Any, selector_or_id: str, value: str) -> bool:
         """
-        Interacts with Oracle JET / CX custom combobox components (.cx-select-input).
-        Handles dropdown opening, searching, and exact gridcell item selection.
+        JET/CX combobox via the shared routine (trusted open, fuzzy+alias+AI
+        pick, read-back verification). Kept for caller compatibility.
         """
+        name = selector_or_id
         try:
-            # Locate input or toggle arrow
-            input_loc = page.locator(selector_or_id)
-            if input_loc.count() == 0:
-                return False
-
-            # Click arrow or input to reveal listbox
-            input_id = input_loc.first.get_attribute("id") or ""
-            arrow = page.locator(f"#{input_id} ~ .icon-dropdown-arrow, [aria-label*='drop-down list for {value}']")
-            if arrow.count() > 0 and arrow.first.is_visible():
-                arrow.first.click()
-            else:
-                input_loc.first.click()
-            time.sleep(0.4)
-
-            # Try exact match in listbox or options
-            opt = page.locator(f"[role='gridcell']:has-text('{value}'), [role='option']:has-text('{value}'), .cx-select-list-item:has-text('{value}'), .cx-select__list-item:has-text('{value}')")
-            if opt.count() > 0:
-                count = opt.count()
-                for i in range(count):
-                    text = opt.nth(i).inner_text().strip()
-                    if text.lower() == value.lower() or text == value:
-                        opt.nth(i).click(force=True)
-                        time.sleep(0.3)
-                        return True
-                opt.first.click(force=True)
-                time.sleep(0.3)
-                return True
-
-            # Fallback to direct evaluate click
-            clicked = page.evaluate('''(targetText) => {
-                const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"]'));
-                const found = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
-                if (found) {
-                    found.click();
-                    return true;
-                }
-                return false;
-            }''', value)
-            if clicked:
-                time.sleep(0.3)
-                return True
-
-            # If not immediately visible, type into input to filter
-            if input_loc.first.is_editable():
-                input_loc.first.fill(value)
-                time.sleep(0.4)
-                filtered_opt = page.locator(f"[role='gridcell']:has-text('{value}'), [role='option']:has-text('{value}'), .cx-select__list-item:has-text('{value}')")
-                if filtered_opt.count() > 0:
-                    filtered_opt.first.click(force=True)
-                    time.sleep(0.3)
-                    return True
-
-            return False
+            if selector_or_id.startswith('#'):
+                el = page.locator(selector_or_id).first
+                if el.count() > 0:
+                    name = el.get_attribute('name') or selector_or_id
         except Exception:
-            return False
-
+            pass
+        ok, detail = DOMHelpers.select_jet_combo(
+            page, name, [value],
+            ai_resolver=lambda opts: OracleCloudFinger._ai_pick_option(
+                name, value, opts),
+            ai_aliases=lambda label, want, opts: OracleCloudFinger._ai_alias_options(
+                label, want, opts),
+            field_label=name)
+        print(f"[OracleCloudFinger] Combo '{name}': {ok} ({detail})",
+              flush=True)
+        return ok
     @staticmethod
     def select_cx_dropdown_field(page: Any, field_label_or_text: str, option_text: str) -> bool:
         """
-        Dynamically interacts with an Oracle Cloud HCM / CX select dropdown:
-        Locates the field container by label, clicks the toggle arrow, selects option_text,
-        and uses evaluate click fallback for rock-solid reliability across screen sizes.
+        Label-anchored CX select via the shared routine (trusted open,
+        fuzzy+alias+AI pick, read-back verification).
         """
         try:
-            row = page.locator(f".input-row:has-text('{field_label_or_text}'), .app-form-item:has-text('{field_label_or_text}')").first
-            if row.count() == 0:
+            field = DOMHelpers.find_field_by_label(page, field_label_or_text)
+            name = None
+            if field is not None:
+                try:
+                    name = field.get_attribute('name')
+                except Exception:
+                    name = None
+            if not name:
                 return False
-
-            inp = row.locator("input").first
-            if inp.count() > 0 and inp.input_value().strip().lower() == option_text.strip().lower():
-                return True  # Already set correctly
-
-            row.scroll_into_view_if_needed()
-            toggle = row.locator("button.icon-dropdown-arrow, button[class*='dropdown']").first
-            if toggle.count() > 0 and toggle.is_visible():
-                toggle.click()
-            elif inp.count() > 0:
-                inp.click()
-            time.sleep(0.4)
-
-            # Locate option by text
-            opt = page.locator(f".cx-select__list-item:text-is('{option_text}'), [role='gridcell']:text-is('{option_text}'), [role='option']:text-is('{option_text}'), .cx-select-list-item:text-is('{option_text}')").first
-            if opt.count() > 0 and opt.is_visible():
-                opt.click(force=True)
-                time.sleep(0.3)
-                return True
-
-            # JavaScript evaluate click fallback
-            clicked = page.evaluate('''(targetText) => {
-                const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"]'));
-                const found = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
-                if (found) {
-                    found.click();
-                    return true;
-                }
-                return false;
-            }''', option_text)
-            time.sleep(0.3)
-            return bool(clicked)
+            ok, detail = DOMHelpers.select_jet_combo(
+                page, name, [option_text],
+                ai_resolver=lambda opts: OracleCloudFinger._ai_pick_option(
+                    field_label_or_text, option_text, opts),
+                ai_aliases=lambda label, want, opts: OracleCloudFinger._ai_alias_options(
+                    label, want, opts),
+                field_label=field_label_or_text)
+            print(f"[OracleCloudFinger] Dropdown '{field_label_or_text}': "
+                  f"{ok} ({detail})", flush=True)
+            return ok
         except Exception:
             return False
-
     @staticmethod
     def smart_select_pill(page: Any, target_text: str, container_locator: Any = None) -> bool:
         """
@@ -538,23 +572,19 @@ class OracleCloudFinger(BaseATSFinger):
         if pincode:
             DOMHelpers.set_input_value_native(page, "input[name='postalCode'], [id^='postalCode']", pincode)
 
-        # 4. City Combobox - Handles Official Indian Gazetteer spelling (e.g. Bengaluru, Karnataka)
+        # 4. City Combobox — shared JET routine (trusted open, gazetteer
+        # aliases from platform_heuristics, read-back verification)
         city_val = str(cand.get("location") or cand.get("city") or "").strip()
-        city_input = page.locator("input[name='city'], [id^='city-']").first
-        if city_input.count() > 0 and not city_input.input_value() and city_val:
-            # Try official gazetteer match
-            gazetteer_city = "Bengaluru, Karnataka" if "bangalore" in city_val.lower() or "bengaluru" in city_val.lower() else city_val
-            city_toggle = page.locator("[id^='city-'][id$='-toggle-button']").first
-            if city_toggle.count() > 0 and city_toggle.is_visible():
-                city_toggle.click()
-                time.sleep(0.4)
-            city_input.fill(gazetteer_city.split(",")[0][:4])
-            time.sleep(0.4)
-            city_opt = page.locator(f"[role='gridcell']:has-text('{gazetteer_city}'), [role='option']:has-text('{gazetteer_city}')").first
-            if city_opt.count() > 0 and city_opt.is_visible():
-                city_opt.click()
-                time.sleep(0.3)
-            page.keyboard.press("Escape")
+        if city_val:
+            _ok, _detail = DOMHelpers.select_jet_combo(
+                page, 'city', [city_val],
+                ai_resolver=lambda opts: OracleCloudFinger._ai_pick_option(
+                    'City', city_val, opts),
+                ai_aliases=lambda label, want, opts: OracleCloudFinger._ai_alias_options(
+                    label, want, opts),
+                field_label='City')
+            print(f"[OracleCloudFinger] City combo: {_ok} ({_detail})",
+                  flush=True)
 
         # 5. Preferred Location
         pref_toggle = page.locator("[id^='preferredLocations'][id$='-toggle-button']").first
@@ -584,7 +614,7 @@ class OracleCloudFinger(BaseATSFinger):
         candidate configuration, ensuring zero hardcoding of answers.
         """
         from core.ai_client import AIClient
-        ai = AIClient()
+        ai = AIClient(OracleCloudFinger._blank_ai_context())
 
         # 1. Handle all Pill Questions
         pill_groups = page.evaluate('''() => { 
@@ -1050,26 +1080,11 @@ class OracleCloudFinger(BaseATSFinger):
         """
         initial_url = page.url
 
-        # Oracle Cloud Next button selectors
-        next_button_selectors = [
-            "button[type='submit']",
-            "button.apply-flow-pagination__button.theme-color-1",
-            "button:has-text('NEXT')",
-            "button:has-text('Next')",
-            "button:has-text('SUBMIT')",
-            "button:has-text('Submit')"
-        ]
-
-        clicked = False
-        for sel in next_button_selectors:
-            locator = page.locator(sel)
-            if locator.count() > 0 and locator.first.is_visible() and not locator.first.is_disabled():
-                locator.first.click()
-                clicked = True
-                break
-
+        # Allowlisted wizard buttons only (never clear/back/discard).
+        clicked, which = DOMHelpers.safe_click_button(
+            page, ['next', 'submit'])
         if not clicked:
-            return False, "Next button not found or is disabled"
+            return False, f"Next button not found or is disabled ({which})"
 
         # Wait for navigation or AJAX update
         time.sleep(2.5)

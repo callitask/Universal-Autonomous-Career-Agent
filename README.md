@@ -86,7 +86,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   └── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
 ├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)
 ├── docs/                              # Technical blueprints, DOM catalogs & rules
-│   ├── WORKSPACE_RULES.md             # 9 directives & 46 bug prevention guardrails (36 C, 6 H, 3 D, 1 P)
+│   ├── WORKSPACE_RULES.md             # 10 directives & 46 bug prevention guardrails (36 C, 6 H, 3 D, 1 P)
 │   ├── ARCHITECTURE_REFERENCE.md      # Full architecture, DOM schemas & IPC contracts
 │   ├── REFERENCE_DEPLOYMENT_GUIDE.md  # 5-minute candidate onboarding & verification guide
 │   └── GEMINI_WEB_AI_PROMPTS.md       # Onboarding prompts for Gemini Web AI
