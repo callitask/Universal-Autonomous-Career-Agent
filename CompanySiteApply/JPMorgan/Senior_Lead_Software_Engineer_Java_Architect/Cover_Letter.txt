@@ -1,0 +1,12 @@
+Dear Hiring Manager,
+
+I am writing to express my strong interest in the Senior Lead Software Engineer (Java) & Architect position at JPMorgan Chase. With over 10 years of experience designing and implementing highly available, scalable enterprise architectures, I am deeply aligned with JPMC's engineering mission to build resilient, distributed financial systems.
+
+In my recent role at Infosys, I architected and implemented robust enterprise integration solutions using Java, Spring Boot, Apache Kafka, and IBM MQ. These event-driven architectures successfully supported over 10 million daily transactions with 99.99% delivery success—a scale and reliability threshold I know is critical for JPMC's core banking and trading platforms. Furthermore, I directed a cross-functional engineering team of 20 members through four consecutive major releases, ensuring strict adherence to CI/CD pipelines, code quality, and IT governance standards.
+
+I have extensive hands-on expertise in transitioning legacy monolithic applications to modern, microservices-ready architectures, cutting system downtime by 50% and vastly improving scalability. My deep proficiency in Core Java, RESTful API design, and distributed systems architecture enables me to lead technical strategies that directly translate into business value and system resilience.
+
+I am drawn to JPMC's culture of technological excellence and am eager to bring my architectural vision and technical leadership to your engineering organization. Thank you for your time and consideration. I look forward to discussing how my background in high-throughput Java engineering can contribute to JPMC's continued innovation.
+
+Sincerely,
+Udaysagar Kandpal

@@ -192,3 +192,71 @@ all semantic job fit evaluations. Keyword lists in config are advisory context f
 - **What happened**: Scripts verified page-advance (URL change) but never per-field persistence, carrying red/invalid fields and wiped values across sections. Separately assumed a fresh session: values die on re-render, Back-navigation, and relogin (email wiped by terms modal; city/pills wiped by navigation; only server-persisted profile fields survive).
 - **Correct behavior**: Standing Directive 10 page loop — triage the session first (fresh/partial/intact), then per page: discover live, verify state, fill/correct/upload, re-verify (max 3 passes, residuals to retry/AI/operator), advance only when clean. `docs/COMPANY_PORTAL_PAGELOOP_PROTOCOL.md` is the mandatory preload for all future portal work.
 - **Never repeat**: Never treat "clicked" or "page changed" as "correct". Every fill ends in DOM read-back proof; every session starts with a state audit.
+## [2026-10-07] TITLE PILL SKIPPED + NO PRE-ADVANCE GATE ON LIVE PORTALS
+- **File**: Supervised JPMC CX_1001 Section-1 run
+- **What happened**: Title Mr. was fixed, then a re-render wiped it and later scripts never re-asserted it — user caught it visually. Pill selection was verified with aria-pressed/class matching while these pills are role=radio with aria-checked. Separately, probe scripts kept passing [arg] lists to (x)=> JS functions taking scalars (TypeError), wasting live runs.
+- **Correct behavior**: Immediately before every NEXT: re-assert all critical pills/fields and re-read invalid flags (double-gate), then advance. Verify radio pills ONLY via aria-checked. Pass scalars to scalar JS params; keep a checklist that survives across scripts in one run.
+- **Never repeat**: Never assume an earlier fix survived a re-render. The gate before NEXT re-proves everything.
+
+## [2026-10-08] MISSING .input-row--invalid IN ERROR SELECTORS + REQUIRED FIELDS ALLOWING ADVANCE
+- **File**: Supervised JPMC CX_1001 Section-2 run
+- **What happened**: Advanced past Section 2 while leaving a required multi-select combobox empty. The error checker missed it because the container used `.input-row--invalid`, which wasn't in the error selector list. Furthermore, the portal allowed advancing to Section 3 despite the missing required field.
+- **Correct behavior**: Error selectors MUST include `.input-row--invalid`, `[aria-invalid="true"]`, and check for texts like "This information is required". Even if the NEXT button is enabled, perform a strict local validation of all fields marked required before clicking.
+- **Never repeat**: Never trust the NEXT button's enabled state as proof of page validity. Always verify required fields are populated and use comprehensive DOM error selectors.
+
+## [2026-10-08] ASSUMING PRE-FILLED DATA IS CORRECT + SKIPPING SECTION VALIDATION
+- **File**: Supervised JPMC CX_1001 Section-3 run
+- **What happened**: I saw that the Education and Experience tiles had no red errors and their titles looked roughly correct, so I assumed the pre-filled data (like "December 2015" for graduation month) was correct. I skipped opening and verifying each work experience tile against the config/resume.
+- **Correct behavior**: "ALWAYS read current values/selections BEFORE editing; VERIFY every pre-filled value". Every tile must be opened, its fields read, and cross-referenced with the source of truth (`candidate_config.json` / `resume.md`) before advancing.
+- **Never repeat**: Never trust ATS pre-filled data. A green/no-error state just means the data fits the schema, not that it is truthful to the candidate.
+
+## [2026-10-08] COMBOBOX JS SYNTAX CORRUPTION + CACHE LOOP EARLY BREAK + RADIO GROUP MULTI-SELECT OVERWRITE
+- **File**: `CompanySiteApply/utils/dom_helpers.py`, `core/ai_client.py`, `CompanySiteApply/fingers/oracle_cloud_finger.py`
+- **What happened**: 
+  1. `DOMHelpers.select_jet_combo` had corrupted JS string concatenation in `page.evaluate()` (`querySelector('[name="' + nm + '"]')`), evaluating to an invalid CSS selector `[name= + nm + ]`. This caused `_read()` to return `'missing'` on every poll, triggering a destructive last-resort typing fallback that clicked the clear-X reset button and wiped City/Country.
+  2. In `ai_client.py` -> `answer_screening_question`, when checking `ats.items()`, if `matched_opt` was `None` for a matched question substring (e.g. `'primary area of expertise'` returning `'Software Engineering'`), the loop executed `break` instead of `continue`. This stopped evaluation before reaching more specific keys (like `'area of expertise'`), causing a fall-through to heuristics.
+  3. `_heuristic_screening_answer` matched generic English words (`development`, `native`) from `domain_tokens` against tech stacks and returned multiple options joined by `|||`. Looping and clicking each pill in a single-choice radio group (`SingleSelectPills`) caused subsequent clicks to uncheck previous ones, leaving the wrong option (`UI/Frontend development`) selected.
+  4. In `oracle_cloud_finger.py`, multi-combobox selector passed `f"#{combo_id}"` with IDs starting with digits (`#300052930132102-48`), throwing CSS selector syntax errors in Playwright, and passed `options=[]` which bypassed cached truth.
+- **Correct behavior**:
+  1. Always use JS backtick template literals `` `[name="${nm}"]` `` in `page.evaluate()`.
+  2. Use `continue` instead of `break` in `ats.items()` when a key's value doesn't match available options so subsequent specific keys are checked.
+  3. Skill matching must be restricted to explicit skills (no generic `domain_tokens` matching), and single-choice controls (`RADIO`, `single choice`, `select one`) must strictly return only the single best match.
+  4. Pass attribute selectors `[id='...']` for DOM elements with numeric-prefixed IDs.
+- **Never repeat**: Never join multiple answers with `|||` for single-choice/radio questions. Never use `break` prematurely in candidate cache dictionary scans. Always use safe attribute selectors `[id='...']` for dynamic IDs.
+
+## [2026-10-08] COMBOBOX RESET BUTTON FOCUS + IGNORING RED ERROR LABELS ON ADVANCE
+- **File**: `CompanySiteApply/fingers/oracle_cloud_finger.py`, `CompanySiteApply/utils/dom_helpers.py`
+- **What happened**: When selecting City / State in Oracle Cloud HCM comboboxes, tabbing or clicking away caused browser focus to land on the adjacent clear/reset button (`[id$='-reset-button']`, `.icon-clear`, `button[aria-label*='Clear']`), wiping the committed value and turning the field red with "The City field is required." / "The State field is required." The agent then clicked NEXT despite red error messages being visible on the DOM.
+- **Correct behavior**:
+  1. Never click any button containing `clear`, `close`, `remove`, `reset`, `delete` unless verified.
+  2. Avoid keyboard `Tab` across combobox fields when an adjacent reset button exists. Commit via explicit item click + blur/escape.
+  3. Strict Pre-Advance Red Error Gate: NEVER click NEXT or advance if ANY red error exists (`.cx-messages__message--error`, `.cx-form-control__error-message`, `.app-form-item__error`, `.oj-form-control-error-message`, `[role='alert']`, `*:has-text('is required')`). All red errors must be resolved and confirmed 0 before advancing.
+- **Never repeat**: Never advance past red validation errors. Never let focus or generic button clicks hit clear/reset buttons.
+
+## [2026-10-08] LINKEDIN URL TRUNCATION BY ORACLE HCM RESUME AUTO-PARSER
+- **File**: Oracle HCM Section 4 (`siteLink-1`)
+- **What happened**: Oracle HCM auto-parsed a previous resume header and extracted a truncated LinkedIn URL (`https://linkedin.com/in/udaykan` missing `dpal`). Because the automation did not inspect or validate link fields against `candidate_config.json`, the corrupted URL remained on Section 4.
+- **Correct behavior**: Always inspect all link inputs (`input[id*='siteLink']`, `input[aria-label*='Link']`, `input[placeholder*='linkedin']`). If the value is truncated or missing, explicitly override with the candidate's canonical `linkedin_profile_url` (`https://www.linkedin.com/in/udaykandpal`).
+- **Never repeat**: Never trust auto-parsed URLs in candidate links. Always verify full URL string completeness against config.
+
+## [2026-10-08] COVER LETTER REMOVAL BEFORE RE-UPLOAD + NO TABLES / CLEAN EXECUTIVE BUSINESS FORMAT
+- **File**: `core/generate_professional_cover_letter.py`, `docs/templates/PROFESSIONAL_COVER_LETTER_TEMPLATE.md`
+- **What happened**: When generating a cover letter, an obsolete cover letter remained on the portal because it wasn't removed first. Furthermore, early drafts used HTML tables and decorative boxy card containers, which are inappropriate for Tier-1 corporate and banking cover letters.
+- **Correct behavior**:
+  1. If a cover letter is already attached (`REMOVE COVER LETTER`), click remove first, then upload the fresh PDF.
+  2. Professional executive cover letters must NOT contain `<table>` metadata blocks or flashy callout container cards. They must follow standard clean business typography (standard date line, recipient block, Re: line, salutation, body paragraphs, and clean indented bullet points without boxes or tables).
+- **Never repeat**: Never upload a cover letter without deleting the previous one first. Never put tables or flashy cards/boxes in professional cover letters.
+
+## [2026-10-08] PREFERRED LOCATIONS COMBOBOX PILL SELECTION & CLEAR-X RESISTANCE
+- **File**: `CompanySiteApply/fingers/oracle_cloud_finger.py`, Section 1
+- **What happened**: The multi-select combobox for `preferredLocations` was not reliably populated because clicking the small toggle button failed to open the listbox, or navigating past it clicked the adjacent clear-X button.
+- **Correct behavior**: Always click `input[name='preferredLocations']` directly to open `[id^='preferredLocations'][id$='-listbox']`, select the target list item (`.cx-select__list-item`) to form a verified pill (e.g. `33437-Embassy Tech Village - Parcel`), and never click any button with `aria-label*='Remove value'` or clear-X icons.
+- **Never repeat**: Never click toggle buttons when input click opens the listbox. Never click generic buttons adjacent to comboboxes.
+
+## [2026-10-08] ORACLE HCM SECTION 3 INLINE FORM HEALING LOCK
+- **File**: `CompanySiteApply/fingers/oracle_cloud_finger.py`, `heal_all_experience_tiles.py`
+- **What happened**: Section 3 tile editing in Oracle HCM CX is rendered INLINE (`.apply-flow__content-form`, `.standard-apply-flow-profile-item`), not in `.app-dialog`. While editing, parent tiles are hidden (`profile-item-list--disabled { display: none }`).
+- **Correct behavior**: Iterate through all tiles dynamically. Open tile, set Country (`India`) via combobox dropdown click, fill City (`Bengaluru`/`Noida`/`Delhi`), click Internal Candidate (`No`), format achievements into authentic `• ` bullet points from `resume.md`, click SAVE, and wait for `input[id^='employerName']:visible` to become hidden (form closed) before touching the next tile. This proven logic is frozen and must never be altered.
+- **Never repeat**: Never look for `.app-dialog` on Oracle HCM inline experience tiles. Never scroll or click subsequent tiles while an inline form is still open.
+
+

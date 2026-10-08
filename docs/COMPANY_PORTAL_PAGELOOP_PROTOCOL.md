@@ -108,11 +108,17 @@ with real keystrokes, ArrowDown + Enter, native-setter + event chain.
     two source files mid-session (recovered from git). Fix: file tools or
     explicit read-then-write scripts only.
 
+12. Conditional dynamic questions appearing after selections (e.g., sub-specialization after primary expertise). Fix: Re-scan entire form for new fields after filling any major combobox or pill group.
+13. Required fields (like `[aria-required="true"]`) missing validation errors but allowing page advance (non-blocking). Fix: `FORM_ERROR_SELECTORS` hardened with `.input-row--invalid`, and strict local assertion of required attributes before clicking Next.
+14. Trusting ATS pre-filled data without deep verification (e.g., ATS guessing "December" for a graduation year, or missing employer cities). Fix: Always open every "completed" tile, read all fields, and cross-reference with `candidate_config.json` before accepting.
+15. Submitting generic cover letters because the agent blindly pulled the static `Cover letter` string from `candidate_config.json`'s `screening_heuristics`. Fix: The agent must ALWAYS dynamically generate a role-specific Cover Letter based on the actual Job Description and save it to the application tracking folder before filling the form.
+
 ---
 
 ## 5. Standing Rules for Future Portal Work (binds all sessions)
 
 - Preload this file + `SCOPE_OF_EDIT.md` before any new finger/nail/scraper.
+- **Application Tracking & Tailoring:** Before applying, the agent MUST create a folder at `CompanySiteApply/<Company_Name>/<Role_Name>/`. It must generate a dynamically tailored Cover Letter (and tailored Resume notes) optimized for that specific JD and save them there alongside a `Tailoring_Audit.md` file. Never paste generic cover letters.
 - Shared-first: portal-wide fixes go in `dom_helpers.py`/shared libs with
   regression tests; per-company files carry selectors + truth-gating only.
 - No hardcoded field lists, city names, IDs, model names, or profile paths.

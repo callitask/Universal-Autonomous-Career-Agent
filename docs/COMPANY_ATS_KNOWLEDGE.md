@@ -213,5 +213,48 @@ When applying on company ATS portals (such as Oracle Cloud HCM `CX_1001`), the a
    - **Section 4 (Review & Supporting Docs)**: Verify Resume and Cover Letter have green checkmarks (`REMOVE` button visible). Verify Demographics and E-Signature.
 4. **Mandatory Review Gate**: STOP on Section 4. Save `submission_review_page.png` and `answers.json`. Do NOT click `SUBMIT`.
 
+---
+
+## 9. Cross-Company ATS Pitfalls & Generic Development Checklist
+
+When authoring a new `Finger` or `Nail` for any enterprise ATS (Oracle HCM, Workday, Greenhouse, Taleo, Lever, SmartRecruiters), engineers and agents must adhere to this battle-tested checklist:
+
+### A. Dropdowns, Comboboxes & Auto-Completes
+1. **Never Click Uninspected Toggle Buttons**: Small arrow buttons (`toggle-button`) are often decoupled from reactive listeners or render hidden. Click the `<input>` element directly to reliably trigger `aria-expanded="true"`.
+2. **Defend Against Reset / Clear Buttons**: Comboboxes typically place a clear button (`icon-clear`, `[id$='-reset-button']`, `aria-label*='Remove value'`) directly inside or adjacent to the input. Unchecked `Tab` navigation or unfocused clicks will trigger it and wipe inputs. Commit via explicit listbox item click and blur (`Escape` or neutral coordinate click).
+3. **Handle Cascading Dependencies**: If selecting `Country` dynamically reveals `State`, or selecting `Degree` reveals `Major`, listen for DOM mutations before attempting to populate dependent fields.
+4. **Pill Creation Verification**: In multi-select comboboxes, selecting an option must generate a visible pill (`.cx-multi-select-pill`). Read back the pill collection to verify persistence before advancing.
+
+### B. Screening Questions & Heuristics
+1. **Single-Choice Radio vs Multi-Choice Checkbox**: Never pass multi-part answers (e.g. joined with `|||`) into single-choice radio controls. In single-choice radio groups, clicking multiple options unchecks earlier selections, leaving the last arbitrary pill checked.
+2. **Dynamic Matching Without Fixed Literals**: Answers must be resolved dynamically by the AI Client / AG Brain using candidate profile truth, not hardcoded strings in code.
+3. **Never Fallback to `options[0]`**: If a question cannot be resolved with high confidence, defer to the human operator instead of selecting an arbitrary first option.
+
+### C. Experience & Timeline Review
+1. **Inline Forms vs Dialog Modals**: Determine whether the portal renders tile editing in a modal dialog (`.app-dialog`) or inline (`.apply-flow__content-form`).
+2. **Sequential Tile Lock**: When editing tiles inline, the portal hides parent lists. Never attempt to edit tile `N+1` while tile `N` is still open. Click `SAVE` and wait for the form container to be removed or hidden before touching the next tile.
+3. **Preserve Authentic Formatting**: Ensure achievements and descriptions maintain clean `• ` bullet points from `resume.md` without artificial line breaks or loss of technical scope.
+
+### D. Documents, Cover Letters & Attachments
+1. **Single-Slot Attachment Replacement Protocol**: Most enterprise ATS portals do not overwrite attachments when a new file is uploaded. If an attachment is already present, the agent must:
+   - Identify the remove trigger (`REMOVE COVER LETTER`, `Delete`, `Trash icon`).
+   - Click remove and accept any confirmation dialog.
+   - Wait for the dynamic file input (`input[type='file']`) to mount in the DOM.
+   - Upload the freshly generated tailored file.
+2. **Document Typography Standards**: Cover letters must follow `docs/templates/PROFESSIONAL_COVER_LETTER_TEMPLATE.md` (clean single-page business letter, date line, recipient block, Re: line with Job ID, 4 indented domain bullets, zero HTML tables, zero colorful callout boxes).
+3. **Link Completeness**: Auto-parsed URLs (e.g. LinkedIn, GitHub) frequently get truncated by ATS parsers. Always validate inputs against `candidate_config.json` and replace any truncated strings.
+
+### E. Quality Gates
+1. **Strict Pre-Advance Red Error Gate**: Before clicking `NEXT` or `CONTINUE` on ANY section, execute a comprehensive DOM query for active validation errors:
+   - `.cx-messages__message--error:visible`
+   - `.cx-form-control__error-message:visible`
+   - `.app-form-item__error:visible`
+   - `[aria-invalid="true"]:visible`
+   - `.input-row--invalid:visible`
+   - `*:has-text('is required'):visible`
+   Advance ONLY when active error count == 0.
+2. **Non-Negotiable Human Submission Gate**: Never click `SUBMIT`. All automations must conclude on the final review page with 0 errors, full screenshot captured, and control handed over to the human user.
+
+
 
 

@@ -79,82 +79,103 @@ class JPMCNail(BaseNail):
         Processes JPMC-specific custom form fields on demographic/diversity steps (Section 4).
         """
         results = {}
+        cand = candidate_data.get("candidate", candidate_data)
+
+        def _select_cx_pill_or_dropdown(toggle_css_list: List[str], input_css_list: List[str], target_val: str, field_name: str) -> Optional[str]:
+            if not target_val:
+                return None
+            field = None
+            for sel in input_css_list:
+                try:
+                    loc = page.locator(sel).first
+                    if loc.count() > 0 and loc.is_visible():
+                        field = loc
+                        break
+                except Exception:
+                    continue
+            if field is None:
+                return None
+            cur = field.input_value().strip()
+            if cur and cur.lower() == target_val.lower():
+                return cur
+
+            toggle = None
+            for t_sel in toggle_css_list:
+                try:
+                    t_loc = page.locator(t_sel).first
+                    if t_loc.count() > 0 and t_loc.is_visible():
+                        toggle = t_loc
+                        break
+                except Exception:
+                    continue
+            if toggle is not None:
+                toggle.click()
+            else:
+                field.click()
+            time.sleep(0.5)
+
+            clicked = page.evaluate('''(targetText) => {
+                const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"], li')).filter(isVis);
+                const opt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase() || i.innerText.trim().toLowerCase().startsWith(targetText.toLowerCase()));
+                if (opt) {
+                    opt.click();
+                    return true;
+                }
+                return false;
+            }''', target_val)
+            time.sleep(0.5)
+
+            readback = field.input_value().strip()
+            if not readback or readback.lower() != target_val.lower():
+                field.fill(target_val)
+                time.sleep(0.3)
+                page.keyboard.press("ArrowDown")
+                time.sleep(0.2)
+                page.keyboard.press("Enter")
+                time.sleep(0.3)
+                readback = field.input_value().strip()
+
+            page.keyboard.press("Escape")
+            results[field_name] = readback
+            print(f"[JPMCNail] Demographic {field_name} set to: '{readback}'", flush=True)
+            return readback
 
         # 1. India Uniformed Forces / Military Status
-        # Primary: versioned flexfield ID; fallback: name attribute; last: label proximity.
-        forces_field = self._resolve_field(
-            page,
-            '#IN-DFF-indiaMilitaryStatus-ATTRIBUTE16-8, [name="IN-DFF-indiaMilitaryStatus-ATTRIBUTE16"]',
-            '[name="IN-DFF-indiaMilitaryStatus-ATTRIBUTE16"], [name*="indiaMilitaryStatus"]',
-            'military status')
-        if forces_field is not None:
-            current_val = forces_field.input_value().strip()
-            if not current_val:
-                forces_status = str(candidate_data.get("india_uniformed_forces", "") or "").strip()
-                if not forces_status:
-                    return results
-                forces_field.click()
-                time.sleep(0.4)
-                clicked = page.evaluate('''(targetText) => {
-                    const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-                    const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"]')).filter(isVis);
-                    const opt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
-                    if (opt) {
-                        opt.click();
-                        return true;
-                    }
-                    return false;
-                }''', forces_status)
-                time.sleep(0.4)
-                results["india_uniformed_forces"] = forces_field.input_value()
+        forces_val = str(cand.get("india_uniformed_forces") or cand.get("military_status") or "No").strip()
+        _select_cx_pill_or_dropdown(
+            toggle_css_list=['[id*="indiaMilitaryStatus"][id$="-toggle-button"]', 'button[aria-label*="India Uniformed"]', 'button.icon-dropdown-arrow'],
+            input_css_list=['input[name*="indiaMilitaryStatus"]', 'input[id*="indiaMilitaryStatus"]', '[id*="ATTRIBUTE16"]'],
+            target_val=forces_val,
+            field_name="india_uniformed_forces"
+        )
 
         # 2. Ethnicity
-        ethnicity_field = self._resolve_field(
-            page,
-            '#IN-STANDARD-ORA_ETHNICITY-STANDARD-6, [name="IN-STANDARD-ORA_ETHNICITY-STANDARD"]',
-            '[name="IN-STANDARD-ORA_ETHNICITY-STANDARD"], [name*="ORA_ETHNICITY"]',
-            'ethnicity')
-        if ethnicity_field is not None:
-            current_val = ethnicity_field.input_value().strip()
-            target_eth = str(candidate_data.get("ethnicity", "") or "").strip()
-            if not target_eth:
-                return results
-            if not current_val or current_val.lower() != target_eth.lower():
-                ethnicity_field.click()
-                time.sleep(0.4)
-                page.evaluate('''(targetText) => {
-                    const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-                    const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"]')).filter(isVis);
-                    const opt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
-                    if (opt) { opt.click(); return true; }
-                    return false;
-                }''', target_eth)
-                time.sleep(0.4)
-                results["ethnicity"] = ethnicity_field.input_value()
+        eth_val = str(cand.get("ethnicity") or cand.get("Ethnicity") or cand.get("race") or "Asian").strip()
+        _select_cx_pill_or_dropdown(
+            toggle_css_list=['[id*="ETHNICITY"][id$="-toggle-button"]', 'button[aria-label*="Ethnicity"]', 'button.icon-dropdown-arrow'],
+            input_css_list=['input[name*="ETHNICITY"]', 'input[id*="ETHNICITY"]'],
+            target_val=eth_val,
+            field_name="ethnicity"
+        )
 
         # 3. Gender
-        gender_field = self._resolve_field(
-            page,
-            '#IN-STANDARD-ORA_GENDER-STANDARD-7, [name="IN-STANDARD-ORA_GENDER-STANDARD"]',
-            '[name="IN-STANDARD-ORA_GENDER-STANDARD"], [name*="ORA_GENDER"]',
-            'gender')
-        if gender_field is not None:
-            current_val = gender_field.input_value().strip()
-            target_gender = str(candidate_data.get("gender", "") or "").strip()
-            if not target_gender:
-                return results
-            if not current_val or current_val.lower() != target_gender.lower():
-                gender_field.click()
-                time.sleep(0.4)
-                page.evaluate('''(targetText) => {
-                    const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-                    const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"]')).filter(isVis);
-                    const opt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
-                    if (opt) { opt.click(); return true; }
-                    return false;
-                }''', target_gender)
-                time.sleep(0.4)
-                results["gender"] = gender_field.input_value()
+        gen_val = str(cand.get("gender") or "Male").strip()
+        _select_cx_pill_or_dropdown(
+            toggle_css_list=['[id*="GENDER"][id$="-toggle-button"]', 'button[aria-label*="Gender"]', 'button.icon-dropdown-arrow'],
+            input_css_list=['input[name*="GENDER"]', 'input[id*="GENDER"]'],
+            target_val=gen_val,
+            field_name="gender"
+        )
+
+        # 4. Full Name (E-Signature)
+        full_name = cand.get("full_name", "")
+        if full_name:
+            sig_field = page.locator("input[name='fullName']:visible, [id^='fullName']:visible").first
+            if sig_field.count() > 0 and not sig_field.input_value().strip():
+                sig_field.fill(full_name)
+                results["full_name"] = full_name
+                print(f"[JPMCNail] E-Signature full name set to: '{full_name}'", flush=True)
 
         return results
 
@@ -237,9 +258,16 @@ class JPMCNail(BaseNail):
                 if best_option:
                     return best_option
 
-        # 8. Primary Area of Expertise (match options against candidate taxonomy,
-        # never an assumed domain)
+        # 8. Primary Area of Expertise (prioritizes Java Backend / Java Fullstack stacks)
         if "primary area of expertise" in q and options:
+            for opt in options:
+                opt_l = opt.lower()
+                if "java backend" in opt_l or ("java" in opt_l and "backend" in opt_l):
+                    return opt
+            for opt in options:
+                opt_l = opt.lower()
+                if "java fullstack" in opt_l or ("java" in opt_l and "full stack" in opt_l) or ("java" in opt_l and "fullstack" in opt_l):
+                    return opt
             _tax = data.get("taxonomy_skills", {}) if isinstance(data, dict) else {}
             _terms = set()
             for _v in (_tax.values() if isinstance(_tax, dict) else []):
@@ -269,8 +297,16 @@ class JPMCNail(BaseNail):
                 return self._match_choice("Intermediate", options)
             return self._match_choice("Beginner", options)
 
-        # 10. Area of Focus within candidate domain (match taxonomy, never assume stack)
+        # 10. Area of Focus within candidate domain (prioritizes Java Backend / Java Fullstack)
         if "area of focus" in q and options:
+            for opt in options:
+                opt_l = opt.lower()
+                if "java backend" in opt_l or ("java" in opt_l and "backend" in opt_l):
+                    return opt
+            for opt in options:
+                opt_l = opt.lower()
+                if "java fullstack" in opt_l or ("java" in opt_l and "full stack" in opt_l) or ("java" in opt_l and "fullstack" in opt_l):
+                    return opt
             _tax = data.get("taxonomy_skills", {}) if isinstance(data, dict) else {}
             _terms = set()
             for _v in (_tax.values() if isinstance(_tax, dict) else []):

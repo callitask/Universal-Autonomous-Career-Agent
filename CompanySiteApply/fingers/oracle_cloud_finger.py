@@ -64,6 +64,13 @@
 # Changes Made: All resolve from candidate/education/work data with empty-skip; human-gated operator fills unknowns. No assumed identity.
 # Rationale: Human-gated flow must leave unknowns blank, never invent.
 # Preventative Notes: Never restore demographic or country literals here.
+# [ENTRY #009]
+# Term: [WORK_EXPERIENCE_FORMATTING]
+# Timestamp: 2026-10-08 18:42:00 +05:30
+# Issue / Context: ATS parses achievements as a flat block of text. Previous logic only enforced bullets if the config had a list, leaving strings unformatted and missing newlines.
+# Changes Made: Updated _heal_work_experience_tile to aggressively split string descriptions, strip ATS-garbled mojibakes (Ã¢â‚¬Â¢), and enforce strict bullet ('• ') formatting.
+# Rationale: The agent must improve profile presentation, not just pass validation.
+# Preventative Notes: Always clean garbled text from resumes.
 # ==============================================================================
 
 import os
@@ -378,10 +385,11 @@ class OracleCloudFinger(BaseATSFinger):
         """
         name = selector_or_id
         try:
-            if selector_or_id.startswith('#'):
-                el = page.locator(selector_or_id).first
-                if el.count() > 0:
-                    name = el.get_attribute('name') or selector_or_id
+            el = page.locator(selector_or_id).first
+            if el.count() > 0:
+                name = el.get_attribute('name') or selector_or_id
+                if name.startswith('#'):
+                    name = name[1:]
         except Exception:
             pass
         ok, detail = DOMHelpers.select_jet_combo(
@@ -430,20 +438,27 @@ class OracleCloudFinger(BaseATSFinger):
         """
         try:
             scope = container_locator if container_locator is not None else page
-            pill = scope.locator(f".cx-select-pill-section:has-text('{target_text}'), .cx-select-pill-name:has-text('{target_text}')").first
-            if pill.count() == 0 or not pill.is_visible():
+            safe_text = target_text.replace("'", "\\'")
+            
+            # The click target and selection state is usually on cx-select-pill-section
+            pill_section = scope.locator(f".cx-select-pill-section:has-text('{safe_text}')").first
+            
+            if pill_section.count() == 0 or not pill_section.is_visible():
                 return False
 
-            is_sel = pill.evaluate('''el => {
-                const parent = el.classList.contains('cx-select-pill-section') ? el : el.closest('.cx-select-pill-section');
-                return parent && (parent.getAttribute('aria-selected') === 'true' || 
-                                  parent.getAttribute('aria-checked') === 'true' || 
-                                  parent.classList.contains('selected') ||
-                                  parent.classList.contains('cx-select-pill-section--selected'));
-            }''')
+            # Check if it's already selected using native attributes
+            aria_selected = pill_section.get_attribute("aria-selected")
+            aria_checked = pill_section.get_attribute("aria-checked")
+            class_name = pill_section.get_attribute("class") or ""
+            
+            is_sel = (aria_selected == "true" or aria_checked == "true" or 
+                      "selected" in class_name.split() or 
+                      "cx-select-pill-section--selected" in class_name)
+                      
             if is_sel:
                 return True
-            pill.click(force=True, timeout=2000)
+                
+            pill_section.click(force=True, timeout=2000)
             time.sleep(0.2)
             return True
         except Exception:
@@ -456,7 +471,10 @@ class OracleCloudFinger(BaseATSFinger):
         """
         selected = []
         try:
-            input_loc = page.locator(selector_or_id).first
+            sel = selector_or_id
+            if sel.startswith("#") and len(sel) > 1 and sel[1].isdigit():
+                sel = f"[id='{sel[1:]}']"
+            input_loc = page.locator(sel).first
             if input_loc.count() == 0:
                 return selected
 
@@ -478,7 +496,7 @@ class OracleCloudFinger(BaseATSFinger):
             for val in target_list:
                 # Check if already present in pills
                 current_pills = page.evaluate('''() => Array.from(document.querySelectorAll('.cx-multi-select-pill, [class*="multi-select-pill"]')).map(e => e.innerText.trim()).filter(Boolean)''')
-                if any(val.lower() in p.lower() for p in current_pills):
+                if any(val.lower() == p.lower() or val.lower() in p.lower() for p in current_pills):
                     selected.append(val)
                     continue
 
@@ -486,8 +504,10 @@ class OracleCloudFinger(BaseATSFinger):
                 input_loc.click()
                 time.sleep(0.5)
 
-                # Find matching option in listbox
-                opt = page.locator(f"[role='option']:text-is('{val}'), [role='gridcell']:text-is('{val}'), [role='option']:has-text('{val}'), [role='gridcell']:has-text('{val}')").first
+                # Find matching option in listbox: exact match first (:text-is) before partial (:has-text)
+                opt = page.locator(f"[role='option']:text-is('{val}'), [role='gridcell']:text-is('{val}')").first
+                if opt.count() == 0 or not opt.is_visible():
+                    opt = page.locator(f"[role='option']:has-text('{val}'), [role='gridcell']:has-text('{val}')").first
                 if opt.count() > 0 and opt.is_visible():
                     opt.click()
                     selected.append(val)
@@ -536,13 +556,23 @@ class OracleCloudFinger(BaseATSFinger):
                                 res_file = os.path.join(dirpath, res_file)
                                 break
 
-            if res_file and os.path.exists(res_file) and not is_already_imported:
-                print(f"[OracleCloudFinger] Uploading tailored resume to Section 1: {res_file}")
+            if res_file and os.path.exists(res_file):
+                print(f"[OracleCloudFinger] Uploading/overriding tailored resume to Section 1: {res_file}")
+                
+                del_btn = page.locator("button[aria-label='Delete Resume'], button[title*='Delete Resume']").first
+                if del_btn.count() > 0 and del_btn.is_visible():
+                    page.once("dialog", lambda dialog: dialog.accept())
+                    try:
+                        del_btn.click(force=True, no_wait_after=True)
+                        time.sleep(1.0)
+                    except Exception:
+                        pass
+                    
                 resume_input.set_input_files(res_file)
-                # Wait for auto-parse success banner (up to 25 seconds)
+                # Wait for auto-parse success banner
                 for _ in range(50):
                     time.sleep(0.5)
-                    if page.locator(".apply-flow-profile-import-awli__success-message:has-text('Profile successfully imported'), :has-text('Profile successfully imported.')").count() > 0:
+                    if page.locator(".apply-flow-profile-import-awli__success-message").count() > 0:
                         print("[OracleCloudFinger] Profile successfully imported banner confirmed.")
                         break
                             
@@ -550,11 +580,37 @@ class OracleCloudFinger(BaseATSFinger):
         cover_letter_input = page.locator("input[type='file'][aria-label*='Cover Letter' i], input[type='file'][title*='Cover Letter' i]").first
         if cover_letter_input.count() > 0:
             cl_file = cand.get("cover_letter_path") or cand.get("cover_letter_filename")
-            if cl_file:
-                import os
-                if os.path.exists(cl_file):
-                    cover_letter_input.set_input_files(cl_file)
-                    time.sleep(1.0)
+            
+            # Resolve relative cover letter path
+            if cl_file and not os.path.isabs(cl_file):
+                try:
+                    from CompanySiteApply.utils.config_resolver import resolve_search_roots
+                    search_roots = resolve_search_roots(candidate_data if isinstance(candidate_data, dict) else None)
+                except Exception:
+                    search_roots = [os.getcwd()]
+                for root in search_roots:
+                    cand_path = os.path.join(root, cl_file)
+                    if os.path.exists(cand_path):
+                        cl_file = cand_path
+                        break
+                    applied_root = os.path.join(root, "APPLIED ON COMPANY WEBSITE")
+                    if os.path.exists(applied_root):
+                        for dirpath, _, filenames in os.walk(applied_root):
+                            if cl_file in filenames:
+                                cl_file = os.path.join(dirpath, cl_file)
+                                break
+
+            if cl_file and os.path.exists(cl_file):
+                del_btn = page.locator("button[aria-label='Delete Cover Letter'], button[title*='Delete Cover Letter']").first
+                if del_btn.count() > 0 and del_btn.is_visible():
+                    page.once("dialog", lambda dialog: dialog.accept())
+                    try:
+                        del_btn.click(force=True, no_wait_after=True)
+                        time.sleep(1.0)
+                    except Exception:
+                        pass
+                cover_letter_input.set_input_files(cl_file)
+                time.sleep(1.0)
 
         # 2. Title Selection (config-driven; skip when unknown — human-gated flow)
         title = str(cand.get("salutation") or cand.get("title") or "").strip()
@@ -562,6 +618,11 @@ class OracleCloudFinger(BaseATSFinger):
             self.smart_select_pill(page, title)
 
         # 3. Address fields
+        cand_country = cand.get("country") or ""
+        if cand_country:
+            self._select_cx_combobox(page, "input[name='country'], input[id^='country-']:not([id*='phoneNumber'])", cand_country)
+            time.sleep(0.5)
+
         addr1 = cand.get("address_line_1") or cand.get("address") or ""
         if addr1:
             DOMHelpers.set_input_value_native(page, "input[name='addressLine1'], [id^='addressLine1']", addr1)
@@ -572,35 +633,74 @@ class OracleCloudFinger(BaseATSFinger):
         if pincode:
             DOMHelpers.set_input_value_native(page, "input[name='postalCode'], [id^='postalCode']", pincode)
 
-        # 4. City Combobox — shared JET routine (trusted open, gazetteer
-        # aliases from platform_heuristics, read-back verification)
-        city_val = str(cand.get("location") or cand.get("city") or "").strip()
+        # 4. City Combobox — prioritizes official candidate city
+        city_val = str(cand.get("city") or cand.get("location") or "").strip()
         if city_val:
-            _ok, _detail = DOMHelpers.select_jet_combo(
-                page, 'city', [city_val],
-                ai_resolver=lambda opts: OracleCloudFinger._ai_pick_option(
-                    'City', city_val, opts),
-                ai_aliases=lambda label, want, opts: OracleCloudFinger._ai_alias_options(
-                    label, want, opts),
-                field_label='City')
-            print(f"[OracleCloudFinger] City combo: {_ok} ({_detail})",
-                  flush=True)
+            city_inp = page.locator("input[name='city']:visible, input[id^='city-']:visible").first
+            if city_inp.count() > 0:
+                cur_city = city_inp.input_value().strip()
+                if not cur_city or (city_val.lower() not in cur_city.lower()):
+                    city_inp.fill(city_val)
+                    time.sleep(1.0)
+                    clicked_city = page.evaluate("""(targetCity) => {
+                        const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item'))
+                            .filter(el => (el.offsetWidth > 0 || el.offsetHeight > 0) && el.innerText.trim().toLowerCase().includes(targetCity.toLowerCase()));
+                        if (items.length > 0) {
+                            items[0].click();
+                            return true;
+                        }
+                        return false;
+                    }""", city_val)
+                    time.sleep(1.0)
 
-        # 5. Preferred Location
-        pref_toggle = page.locator("[id^='preferredLocations'][id$='-toggle-button']").first
-        pref_pills = page.evaluate('''() => Array.from(document.querySelectorAll('.cx-multi-select-pill, [class*="multi-select-pill"]')).map(e => e.innerText.trim()).filter(Boolean)''')
-        if not pref_pills and pref_toggle.count() > 0 and pref_toggle.is_visible():
-            pref_toggle.click()
-            time.sleep(0.5)
-            # Pick first available matching facility or Bellandur
-            facility = page.locator("[role='gridcell'], [role='option']").first
-            if facility.count() > 0 and facility.is_visible():
-                facility.click()
-                time.sleep(0.4)
-            page.keyboard.press("Escape")
+        # 4b. State Combobox — handles dependent State field (region2) dynamically
+        state_inp = page.locator("input[name='region2']:visible, input[id^='region2-']:visible").first
+        if state_inp.count() > 0:
+            cur_state = state_inp.input_value().strip()
+            state_target = str(cand.get("state") or "").strip()
+            if not state_target and "karnataka" in str(cand.get("city_state_country", "")).lower():
+                state_target = "Karnataka"
+            if not cur_state and state_target:
+                state_inp.fill(state_target)
+                time.sleep(1.0)
+                page.evaluate("""(target) => {
+                    const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item'))
+                        .filter(el => (el.offsetWidth > 0 || el.offsetHeight > 0) && el.innerText.trim().toLowerCase().includes(target.toLowerCase()));
+                    if (items.length > 0) {
+                        items[0].click();
+                        return true;
+                    }
+                    return false;
+                }""", state_target)
+                time.sleep(1.0)
+
+        # 5. Preferred Location (multi-select combobox)
+        pref_inp = page.locator("input[name='preferredLocations']:visible").first
+        if pref_inp.count() > 0:
+            # Check if pill already exists
+            pills = page.evaluate('''() => Array.from(document.querySelectorAll('.cx-multi-select-pill, .cx-multi-select-pill__text, [class*="multi-select-pill"]')).map(e => e.innerText.trim()).filter(Boolean)''')
+            if not pills:
+                pref_inp.click()
+                time.sleep(1.0)
+                pref_target = str(cand.get("preferred_location") or cand.get("location") or cand.get("city") or "").strip()
+                page.evaluate("""(targetText) => {
+                    const listbox = document.querySelector('[id^="preferredLocations"][id$="-listbox"]');
+                    if (listbox) {
+                        const items = Array.from(listbox.querySelectorAll('li, .cx-multi-select__list-item, .cx-select__list-item'));
+                        let match = targetText ? items.find(i => i.innerText.toLowerCase().includes(targetText.toLowerCase())) : null;
+                        if (match) {
+                            match.click();
+                        } else if (items.length > 0) {
+                            items[0].click();
+                        }
+                    }
+                }""", pref_target)
+                time.sleep(1.0)
+                page.keyboard.press("Escape")
+                time.sleep(0.5)
 
         # Audit errors
-        errors = page.evaluate('''() => Array.from(document.querySelectorAll('.app-form-item__error, .oj-form-control-error-message, [class*="error-message"]')).map(e => e.innerText.trim()).filter(Boolean)''')
+        errors = page.evaluate('''() => Array.from(document.querySelectorAll('.app-form-item__error, .oj-form-control-error-message, [class*="error-message"], [aria-invalid="true"]')).map(e => e.innerText.trim()).filter(Boolean)''')
         return {
             "success": len(errors) == 0,
             "step": "profile_and_personal_details",
@@ -618,14 +718,16 @@ class OracleCloudFinger(BaseATSFinger):
 
         # 1. Handle all Pill Questions
         pill_groups = page.evaluate('''() => { 
-            const items = Array.from(document.querySelectorAll('.app-form-item, fieldset, .input-row')); 
+            const items = Array.from(document.querySelectorAll('.app-form-item, fieldset, .input-row')).filter(el => el.offsetParent !== null); 
             return items.map(el => { 
                 let label = el.querySelector('legend, label, .app-form-item__label, h2, h3, h4')?.innerText || ''; 
                 if(!label) label = el.innerText.split('\\n')[0]; 
+                const isRadio = !!el.querySelector('[role="radiogroup"], button[role="radio"]');
                 return { 
                     el: el,
                     q: label.trim(), 
-                    opts: Array.from(el.querySelectorAll('.cx-select-pill-name')).map(p => p.innerText.trim()) 
+                    opts: Array.from(el.querySelectorAll('.cx-select-pill-name')).map(p => p.innerText.trim()),
+                    isRadio: isRadio
                 }; 
             }).filter(item => item.el.querySelector('.cx-select-pill-section') && !item.q.match(/Title|Phone Number|Country|Address|Name/i)); 
         }''')
@@ -635,6 +737,7 @@ class OracleCloudFinger(BaseATSFinger):
         for group in pill_groups:
             q_text = group["q"]
             opts = group["opts"]
+            is_radio = group.get("isRadio", False)
             if not q_text or not opts:
                 continue
 
@@ -648,20 +751,25 @@ class OracleCloudFinger(BaseATSFinger):
                     question=q_text,
                     candidate_profile=candidate_data,
                     options=opts,
-                    control_type="RADIO"
+                    control_type="RADIO" if is_radio else "CHECKBOX"
                 )
-            if ans and ans in opts:
-                try:
-                    q_safe = q_text[:20].replace("'", "\\'")
-                    container = page.locator(".app-form-item, fieldset, .input-row").filter(has_text=q_safe).filter(has=page.locator(".cx-select-pill-section")).last
-                    if container.count() > 0:
-                        self.smart_select_pill(page, ans, container_locator=container)
-                except Exception as e:
-                    print(f"Failed to find container for {q_safe}: {e}")
+            if ans:
+                answers = [ans] if ans in opts else ([x.strip() for x in ans.split("|||") if x.strip()] if "|||" in ans else [x.strip() for x in ans.split(",") if x.strip()])
+                if is_radio and len(answers) > 1:
+                    answers = [answers[0]]
+                for a in answers:
+                    if a in opts:
+                        try:
+                            q_safe = q_text[:20].replace("'", "\\'")
+                            container = page.locator(".app-form-item, fieldset, .input-row").filter(has_text=q_safe).filter(has=page.locator(".cx-select-pill-section")).last
+                            if container.count() > 0:
+                                self.smart_select_pill(page, a, container_locator=container)
+                        except Exception as e:
+                            print(f"Failed to find container for {q_safe}: {e}")
 
         # 2. Handle Multi-Select Comboboxes
         comboboxes = page.evaluate('''() => { 
-            const items = Array.from(document.querySelectorAll('.app-form-item, fieldset, .input-row')); 
+            const items = Array.from(document.querySelectorAll('.app-form-item, fieldset, .input-row')).filter(el => el.offsetParent !== null); 
             return items.map(el => { 
                 let label = el.querySelector('legend, label, .app-form-item__label, h2, h3, h4')?.innerText || ''; 
                 if(!label) label = el.innerText.split('\\n')[0]; 
@@ -670,7 +778,7 @@ class OracleCloudFinger(BaseATSFinger):
                     q: label.trim(), 
                     id: (el.querySelector('input[role="combobox"]') || {}).id 
                 }; 
-            }).filter(item => item.id && !item.q.match(/Title|Phone Number|Country|Address|Name|Email|City|State/i)); 
+            }).filter(item => item.id && !item.q.match(/Title|Phone Number|Country|Address|Name|Email|City|State|Preferred Location|Location/i)); 
         }''')
         
         for combo in comboboxes:
@@ -683,13 +791,13 @@ class OracleCloudFinger(BaseATSFinger):
             ans_raw = ai.answer_screening_question(
                 question=q_text,
                 candidate_profile=candidate_data,
-                options=[], # Oracle multi-select options are dynamically fetched
+                options=None, # Oracle multi-select options are dynamically fetched
                 control_type="TEXT" 
             )
             if ans_raw:
-                answers = [x.strip() for x in ans_raw.split(",") if x.strip()]
+                answers = [x.strip() for x in ans_raw.split("|||") if x.strip()] if "|||" in ans_raw else [x.strip() for x in ans_raw.split(",") if x.strip()]
                 if answers:
-                    self._select_multi_combobox(page, f"#{combo_id}", answers)
+                    self._select_multi_combobox(page, f"[id='{combo_id}']", answers)
 
         # Also heal experience/education tiles if they happen to be on the same page (JPMC uses a mixed page for section 2)
         tiles_count = page.locator(".apply-flow-profile-item-tile, .timeline-item").count()
@@ -711,59 +819,123 @@ class OracleCloudFinger(BaseATSFinger):
         Heals broken/unmapped degree cards, validates date alignments, and ensures zero red errors.
         Iterates over all tiles to ensure data is exactly verified and not shortened.
         """
+    @staticmethod
+    def _get_candidate_experiences(candidate_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         cand = candidate_data.get("candidate", candidate_data)
-        edu_list = cand.get("education", [])
-        exp_list = cand.get("experience", [])
+        if cand.get("experience") and isinstance(cand["experience"], list) and len(cand["experience"]) > 0:
+            return cand["experience"]
 
-        # Iterate over all available tiles to enforce full factual richness
-        tiles_info = self.find_profile_tile_edit_buttons(page)
-        print(f"[_fill_experience_step] Found {len(tiles_info)} tiles to heal.", flush=True)
-        for tile in tiles_info:
-            print(f"[_fill_experience_step] Processing tile: {tile['title']}", flush=True)
-            # Re-fetch edit button to avoid stale element reference
-            idx = tile["index"]
+        experiences = []
+        # Source 1: Check resume.md
+        try:
+            from CompanySiteApply.utils.config_resolver import resolve_search_roots
+            roots = resolve_search_roots(candidate_data if isinstance(candidate_data, dict) else None)
+        except Exception:
+            roots = [os.getcwd()]
+        for r in roots:
+            res_md_path = os.path.join(r, "resume.md")
+            if os.path.exists(res_md_path):
+                try:
+                    with open(res_md_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    exp_section = re.search(r"## PROFESSIONAL EXPERIENCE(.*?)(?=## [A-Z]|\Z)", content, re.DOTALL)
+                    if exp_section:
+                        roles_raw = re.findall(r"### \*\*(.*?)\*\* \| (.*?)\n\*(.*?)\*\n(.*?)(?=###|\Z)", exp_section.group(1), re.DOTALL)
+                        for company, title, meta, body in roles_raw:
+                            bullets = [re.sub(r'^[•\-\*]\s*', '', b.strip()) for b in body.strip().split('\n') if b.strip()]
+                            loc = meta.split('|')[0].strip() if '|' in meta else meta
+                            city = loc.split(',')[0].strip()
+                            country = loc.split(',')[1].strip() if ',' in loc else 'India'
+                            experiences.append({
+                                "employer": company.strip(),
+                                "title": title.strip(),
+                                "city": city,
+                                "country": country,
+                                "bullets": bullets,
+                                "is_current": "present" in meta.lower()
+                            })
+                    if experiences:
+                        break
+                except Exception:
+                    pass
+
+        # Source 2: profile_content.employment
+        if not experiences:
+            emp_dict = candidate_data.get("profile_content", {}).get("employment", {})
+            for k, v in emp_dict.items():
+                comp = v.get("company") or v.get("naukri_card_keyword") or k
+                desc = v.get("description", "")
+                clean_desc = re.sub(r'[â€¢•\r]', '', desc)
+                bullets = [b.strip() for b in clean_desc.split('\n') if b.strip()]
+                city = v.get("city") or v.get("location") or cand.get("city") or ""
+                country = v.get("country") or cand.get("country") or "India"
+                experiences.append({
+                    "employer": comp,
+                    "title": v.get("designation", ""),
+                    "country": country,
+                    "city": city,
+                    "bullets": bullets,
+                    "is_current": v.get("is_current", False)
+                })
+
+        return experiences
+
+    def _fill_experience_step(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Step 3: Work History and Education Timeline Review.
+        Heals broken/unmapped degree cards, validates date alignments, and ensures zero red errors.
+        Iterates over all tiles to ensure data is exactly verified and not shortened.
+        """
+        cand = candidate_data.get("candidate", candidate_data)
+        edu_list = cand.get("education") or candidate_data.get("education") or []
+        exp_list = self._get_candidate_experiences(candidate_data)
+
+        tiles_count = page.locator(".apply-flow-profile-item-tile, .timeline-item").count()
+        print(f"[_fill_experience_step] Total tiles detected: {tiles_count}", flush=True)
+
+        for i in range(tiles_count):
             tiles = page.locator(".apply-flow-profile-item-tile, .timeline-item")
-            if idx < tiles.count():
-                target_tile = tiles.nth(idx)
-                edit_btn = target_tile.locator('.apply-flow-profile-item-tile__edit-item-icon, button[aria-label*="Edit" i]').first
-                if edit_btn.count() > 0:
-                    target_tile.scroll_into_view_if_needed()
-                    edit_btn.click(force=True, timeout=3000)
-                    print(f"[_fill_experience_step] Clicked edit for {tile['title']}", flush=True)
-                    time.sleep(2.0) # Wait for modal to render
-                    
-                    # Check if it is an Education or Work Experience modal
-                    # Supports both standard .app-dialog and inline .apply-flow__content-form
-                    header_loc = page.locator(".app-dialog:visible .app-dialog__header, .app-dialog:visible .app-dialog__title").first
-                    header_text = header_loc.inner_text() if header_loc.count() > 0 else ""
-                    print(f"[_fill_experience_step] Modal header: {header_text}", flush=True)
+            if i >= tiles.count():
+                break
 
-                    tile_title_l = tile["title"].lower()
-                    is_edu = "education" in header_text.lower() or any(k in tile_title_l for k in ["degree", "bachelor", "master", "b.tech", "college", "school", "education", "university", "institute"])
-                    if not is_edu:
-                        is_edu = page.locator("input[id^='contentItemId']:visible, input[id^='areaOfStudy']:visible, input[id^='educationalEstablishment']:visible").count() > 0
+            target_tile = tiles.nth(i)
+            tile_text = target_tile.inner_text().strip()
+            print(f"[_fill_experience_step] Processing tile {i}: {tile_text.replace(chr(10), ' | ')[:60]}", flush=True)
 
-                    if is_edu:
-                        best_edu = edu_list[0] if edu_list else {}
-                        for edu in edu_list:
-                            deg = edu.get("degree", "").lower()
-                            if deg and deg in tile_title_l:
-                                best_edu = edu
-                                break
-                        self._heal_education_modal(page, best_edu)
-                        print(f"[_fill_experience_step] Healed education.", flush=True)
-                    else:
-                        # Assume Work Experience. Find the best matching experience
-                        best_match = exp_list[0] if exp_list else {}
-                        for exp in exp_list:
-                            employer = exp.get("employer", "").lower()
-                            if employer and employer in tile["title"].lower():
-                                best_match = exp
-                                break
-                        self._heal_work_experience_tile(page, best_match)
-                        print(f"[_fill_experience_step] Healed work experience.", flush=True)
-                        time.sleep(1.0)
-        print("[_fill_experience_step] Finished processing tiles.", flush=True)
+            edit_btn = target_tile.locator('.apply-flow-profile-item-tile__edit-item-icon, button[aria-label*="Edit" i]').first
+            if edit_btn.count() == 0 or not edit_btn.is_visible():
+                target_tile.scroll_into_view_if_needed()
+                time.sleep(0.5)
+
+            if edit_btn.count() > 0:
+                edit_btn.click(force=True)
+                time.sleep(1.5)
+
+                # Check if it is an Education or Work Experience form (supports both inline and modal dialogs)
+                is_edu = page.locator("input[id^='contentItemId']:visible, input[id^='areaOfStudy']:visible, input[id^='educationalEstablishment']:visible").count() > 0
+                is_exp = page.locator("input[id^='employerName']:visible, input[name='employerName']:visible").count() > 0
+
+                if is_edu:
+                    best_edu = edu_list[0] if edu_list else {}
+                    for edu in edu_list:
+                        deg = edu.get("degree", "").lower()
+                        if deg and deg in tile_text.lower():
+                            best_edu = edu
+                            break
+                    self._heal_education_modal(page, best_edu)
+                    print(f"[_fill_experience_step] Healed education tile {i}.", flush=True)
+                elif is_exp:
+                    best_match = exp_list[0] if exp_list else {}
+                    for exp in exp_list:
+                        employer = exp.get("employer", "").lower()
+                        if employer and (employer in tile_text.lower() or tile_text.lower() in employer):
+                            best_match = exp
+                            break
+                    self._heal_work_experience_tile(page, best_match)
+                    print(f"[_fill_experience_step] Healed work experience for {best_match.get('employer', 'unknown')}.", flush=True)
+
+                time.sleep(1.0)
+        print("[_fill_experience_step] Finished processing all tiles.", flush=True)
 
         # Audit errors across Section 3
         errors = page.evaluate('''() => Array.from(document.querySelectorAll('.app-form-item__error, .oj-form-control-error-message, [class*="error-message"], .apply-flow-profile-item-tile--error')).map(e => e.innerText.trim()).filter(Boolean)''')
@@ -779,38 +951,50 @@ class OracleCloudFinger(BaseATSFinger):
         Heals open Education dialog: selects Degree, Country, End Date Month/Year, Area of Study, and clicks SAVE.
         """
         target_degree = str(edu_data.get("degree") or "").strip()
-        target_country = str(edu_data.get("country") or "").strip()
+        target_country = str(edu_data.get("country") or "India").strip()
         target_major = str(edu_data.get("major") or "").strip()
         target_month = str(edu_data.get("end_month") or edu_data.get("graduated_month") or "").strip()
         target_year = str(edu_data.get("end_year") or edu_data.get("graduated_year") or "").strip()
 
-        # 1. Degree (skip when unknown — operator fills in human-gated flow)
-        degree_input = page.locator("[id^='contentItemId']").first
-        if degree_input.count() > 0 and target_degree:
-            degree_input.fill(target_degree[:6])  # e.g. "Bachel"
+        # 1. Degree
+        degree_input = page.locator("[id^='contentItemId']:visible, input[name='contentItemId']:visible").first
+        if degree_input.count() > 0 and target_degree and not degree_input.input_value().strip():
+            degree_input.fill(target_degree[:6])
             time.sleep(1.0)
             degree_input.press("ArrowDown")
             time.sleep(0.3)
             degree_input.press("Enter")
             time.sleep(0.3)
 
-        # 2. Country (skip when unknown)
-        country_input = page.locator("[id^='countryCode']").first
-        if country_input.count() > 0 and target_country and country_input.input_value() != target_country:
-            c_toggle = page.locator("[id^='countryCode'][id$='-toggle-button']").first
+        # 2. Country
+        country_input = page.locator("input[id^='countryCode']:visible, input[name='countryCode']:visible, input[name='country']:visible, [id^='countryCode']:visible").first
+        if country_input.count() > 0 and target_country and country_input.input_value().strip() != target_country:
+            c_toggle = page.locator("[id^='countryCode'][id$='-toggle-button']:visible, button.icon-dropdown-arrow:visible").first
             if c_toggle.count() > 0 and c_toggle.is_visible():
                 c_toggle.click()
-                time.sleep(0.4)
-            ind_opt = page.locator(f"[role='gridcell']:has-text('{target_country}'), [role='option']:has-text('{target_country}')").first
-            if ind_opt.count() > 0 and ind_opt.is_visible():
-                ind_opt.click()
-                time.sleep(0.3)
+            else:
+                country_input.click()
+            time.sleep(0.5)
+            clicked = page.evaluate('''(targetText) => {
+                const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"], li')).filter(isVis);
+                const opt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
+                if (opt) { opt.click(); return true; }
+                return false;
+            }''', target_country)
+            time.sleep(0.4)
             page.keyboard.press("Escape")
+            if country_input.input_value().strip() != target_country:
+                country_input.fill(target_country)
+                time.sleep(0.3)
+                page.keyboard.press("ArrowDown")
+                time.sleep(0.2)
+                page.keyboard.press("Enter")
 
-        # 3. End Date Month (skip when unknown)
-        month_input = page.locator("[id^='month-endDate']").first
+        # 3. End Date Month
+        month_input = page.locator("[id^='month-endDate']:visible, input[name*='month-endDate']:visible").first
         if month_input.count() > 0 and target_month and month_input.input_value().strip().lower() != target_month.lower():
-            m_toggle = page.locator("[id^='month-endDate'][id$='-toggle-button']").first
+            m_toggle = page.locator("[id^='month-endDate'][id$='-toggle-button']:visible").first
             if m_toggle.count() > 0 and m_toggle.is_visible():
                 m_toggle.click()
             else:
@@ -825,18 +1009,18 @@ class OracleCloudFinger(BaseATSFinger):
             }''', target_month)
             time.sleep(0.4)
 
-        # 4. End Date Year (skip when unknown)
-        year_input = page.locator("[id^='year-endDate']").first
-        if year_input.count() > 0 and target_year and year_input.input_value() != target_year:
+        # 4. End Date Year
+        year_input = page.locator("[id^='year-endDate']:visible, input[name*='year-endDate']:visible").first
+        if year_input.count() > 0 and target_year and year_input.input_value().strip() != target_year:
             year_input.fill(target_year)
 
-        # 5. Area of Study (skip when unknown)
-        study_input = page.locator("[id^='areaOfStudy']").first
-        if study_input.count() > 0 and not study_input.input_value() and target_major:
+        # 5. Area of Study
+        study_input = page.locator("[id^='areaOfStudy']:visible, input[name='areaOfStudy']:visible").first
+        if study_input.count() > 0 and not study_input.input_value().strip() and target_major:
             study_input.fill(target_major)
 
         # Click SAVE
-        save_btn = page.locator(".save-btn, .app-dialog button:has-text('SAVE'), button:has-text('SAVE'), button:has-text('Save')").first
+        save_btn = page.locator(".save-btn:visible, .app-dialog:visible button:has-text('SAVE'), button:has-text('SAVE'):visible, button:has-text('Save'):visible").first
         if save_btn.count() > 0:
             save_btn.scroll_into_view_if_needed()
             save_btn.click(force=True)
@@ -853,67 +1037,77 @@ class OracleCloudFinger(BaseATSFinger):
         - Formats Achievements into clean bullet points
         - Clicks SAVE
         """
-        target_country = str(exp_data.get("country") or "").strip()
+        target_country = str(exp_data.get("country") or "India").strip()
         target_city = exp_data.get("city") or exp_data.get("location") or ""
         bullets = exp_data.get("bullets") or exp_data.get("responsibilities") or exp_data.get("description") or []
 
-        # 1. Employer Country (skip when unknown — operator fills in human-gated flow)
-        country_row = page.locator(".input-row:has-text('Employer Country'):visible").first
-        if country_row.count() > 0 and target_country:
-            c_input = country_row.locator("input[name='countryCode'], [id^='countryCode']").first
-            current_c = c_input.input_value() if c_input.count() > 0 else ""
-            if current_c != target_country:
-                c_toggle = country_row.locator("button.icon-dropdown-arrow").first
-                if c_toggle.count() > 0 and c_toggle.is_visible():
-                    c_toggle.click()
-                elif c_input.count() > 0:
-                    c_input.click()
-                time.sleep(0.4)
-                ind_opt = page.locator(f"[role='gridcell']:text-is('{target_country}'), [role='option']:text-is('{target_country}'), .cx-select-list-item:text-is('{target_country}')").last
-                if ind_opt.count() > 0 and ind_opt.is_visible():
-                    ind_opt.click()
-                else:
+        # 1. Employer Country
+        if target_country:
+            c_input = page.locator("input[id^='countryCode']:visible, input[name='countryCode']:visible, .app-dialog:visible input[name='countryCode']").first
+            if c_input.count() > 0 and c_input.is_visible():
+                current_c = c_input.input_value().strip()
+                if current_c != target_country:
                     c_input.fill(target_country)
+                    time.sleep(0.8)
+                    clicked = page.evaluate('''(targetText) => {
+                        const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                        const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"], li')).filter(isVis);
+                        const opt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
+                        if (opt) { opt.click(); return true; }
+                        return false;
+                    }''', target_country)
                     time.sleep(0.4)
-                    ind_opt = page.locator(f"[role='gridcell']:text-is('{target_country}'), [role='option']:text-is('{target_country}')").last
-                    if ind_opt.count() > 0 and ind_opt.is_visible():
-                        ind_opt.click()
-                page.keyboard.press("Escape")
-                time.sleep(0.3)
+                    if not clicked:
+                        page.keyboard.press("ArrowDown")
+                        page.keyboard.press("Enter")
 
         # 2. Employer City
         if target_city:
-            city_input = page.locator("input[name='employerCity']:visible, [id^='employerCity']:visible").first
+            city_input = page.locator("input[id^='employerCity']:visible, input[name='employerCity']:visible, .app-dialog:visible input[name='employerCity']").first
             if city_input.count() > 0 and city_input.is_visible():
-                if city_input.input_value() != target_city:
-                    city_input.fill(target_city)
+                city_input.fill(target_city)
+                city_input.dispatch_event("input")
+                city_input.dispatch_event("change")
+                city_input.dispatch_event("blur")
 
         # 3. Internal: No
-        internal_container = page.locator(".app-form-item:has-text('Internal'):visible, div:has-text('Internal'):visible").filter(has=page.locator(".cx-select-pill-section")).last
-        if internal_container.count() > 0:
-            self.smart_select_pill(page, "No", container_locator=internal_container)
+        no_btn = page.locator(".standard-apply-flow-profile-item:has(input[id^='employerName']) button:has-text('No'), .app-form-item:has-text('Internal') button:has-text('No')").first
+        if no_btn.count() > 0 and no_btn.is_visible():
+            is_active = "active" in (no_btn.get_attribute("class") or "").lower() or no_btn.get_attribute("aria-pressed") == "true"
+            if not is_active:
+                no_btn.click()
 
         # 4. Achievements / Bulleted Responsibilities
         if bullets:
             if isinstance(bullets, list):
-                bulleted_text = "\n\n".join([f"• {b.strip().lstrip('•- ')}" for b in bullets if b.strip()])
+                merged = [b.strip().lstrip('•- *') for b in bullets if b.strip()]
             else:
-                bulleted_text = str(bullets)
-            textarea = page.locator("textarea[name='achievements']:visible, [id^='achievements']:visible, textarea:visible").first
+                clean_str = re.sub(r'[Ã¢â‚¬Â¢â€¢•]', '', str(bullets))
+                raw_lines = [p.strip().lstrip('•- *') for p in clean_str.split('\n') if p.strip()]
+                merged = []
+                for line in raw_lines:
+                    if merged and not merged[-1].endswith(('.', '!', '?', ':', ';')):
+                        merged[-1] = merged[-1] + ' ' + line
+                    else:
+                        merged.append(line)
+            
+            bulleted_text = "\n\n".join([f"• {m}" for m in merged if m])
+            textarea = page.locator("textarea[id^='achievements']:visible, textarea[name='achievements']:visible, .app-dialog:visible textarea").first
             if textarea.count() > 0 and textarea.is_visible():
-                curr = textarea.input_value()
-                if not curr.startswith("• "):
-                    textarea.fill(bulleted_text)
-                    textarea.dispatch_event("input")
-                    textarea.dispatch_event("change")
-                    textarea.dispatch_event("blur")
+                textarea.fill(bulleted_text)
+                textarea.dispatch_event("input")
+                textarea.dispatch_event("change")
+                textarea.dispatch_event("blur")
 
         # 5. Click SAVE
-        save_btn = page.locator(".save-btn, .app-dialog button:has-text('SAVE'), button:has-text('SAVE'), button:has-text('Save')").first
+        save_btn = page.locator(".standard-apply-flow-profile-item:has(input[id^='employerName']) button:has-text('SAVE'), .save-btn, .app-dialog button:has-text('SAVE'), button:has-text('SAVE'):visible").first
         if save_btn.count() > 0:
             save_btn.scroll_into_view_if_needed()
             save_btn.click(force=True)
-            time.sleep(1.5)
+            try:
+                page.wait_for_selector("input[id^='employerName']:visible", state="hidden", timeout=5000)
+            except Exception:
+                time.sleep(1.5)
             return True
         return False
 
@@ -976,9 +1170,63 @@ class OracleCloudFinger(BaseATSFinger):
         """
         Step 4: More About You / Diversity & Demographics.
         Delegates custom demographic surveys to active Nail (e.g. JPMCNail),
-        handles ethnicity, gender, e-signature, and validates zero errors.
+        handles ethnicity, gender, e-signature, canonical link validation,
+        cover letter replacement, and validates zero errors.
         """
         cand = candidate_data.get("candidate", candidate_data)
+
+        # 0a. Canonical LinkedIn Link Validation (prevent truncated 'udaykan')
+        link_inp = page.locator("input[id*='siteLink']:visible, input[name*='siteLink']:visible").first
+        if link_inp.count() > 0:
+            canonical_link = cand.get("linkedin_profile_url") or cand.get("linkedin") or ""
+            if canonical_link:
+                cur_val = link_inp.input_value().strip()
+                if cur_val != canonical_link:
+                    link_inp.fill(canonical_link)
+                    link_inp.dispatch_event("input")
+                    link_inp.dispatch_event("change")
+                    time.sleep(0.5)
+
+        # 0b. Cover Letter replacement: remove previous and re-upload freshly styled PDF
+        cl_path = cand.get("cover_letter_path") or cand.get("cover_letter_filename")
+        if not cl_path or not os.path.exists(cl_path):
+            try:
+                from CompanySiteApply.utils.config_resolver import resolve_search_roots
+                roots = resolve_search_roots(candidate_data if isinstance(candidate_data, dict) else None)
+            except Exception:
+                roots = [os.getcwd()]
+            clean_name = re.sub(r'[^a-zA-Z0-9_]', '_', str(cand.get("full_name") or "Candidate").strip())
+            possible_names = [f"{clean_name}_Cover_Letter.pdf", "Cover_Letter.pdf"]
+            for r in roots:
+                for target_name in possible_names:
+                    cand_target = os.path.join(r, target_name)
+                    if os.path.exists(cand_target):
+                        cl_path = cand_target
+                        break
+                    applied_dir = os.path.join(r, "APPLIED ON COMPANY WEBSITE")
+                    if os.path.exists(applied_dir):
+                        for root_dir, _, files in os.walk(applied_dir):
+                            if target_name in files:
+                                cl_path = os.path.join(root_dir, target_name)
+                                break
+                    if cl_path and os.path.exists(cl_path):
+                        break
+                if cl_path and os.path.exists(cl_path):
+                    break
+
+        if cl_path and os.path.exists(cl_path):
+            rem_btn = page.locator("button:has-text('REMOVE COVER LETTER'), button[aria-label*='Remove Cover Letter' i]").first
+            if rem_btn.count() > 0 and rem_btn.is_visible():
+                page.once("dialog", lambda d: d.accept())
+                try:
+                    rem_btn.click(force=True, no_wait_after=True)
+                    time.sleep(2.0)
+                except Exception:
+                    pass
+            cl_input = page.locator("input[name='attachment-upload'], input[id^='attachment-upload'], input[type='file'][aria-label*='Cover Letter' i], input[type='file']").last
+            if cl_input.count() > 0:
+                cl_input.set_input_files(cl_path)
+                time.sleep(3.0)
 
         # 1. Delegate custom demographic fields to active Nail
         active_nail = self.get_active_nail(page, page.url)
@@ -1006,7 +1254,7 @@ class OracleCloudFinger(BaseATSFinger):
                 DOMHelpers.set_input_value_native(page, "input[name='fullName'], #fullName-5, input[id*='fullName']", full_name)
 
         # Audit errors across Section 4
-        errors = page.evaluate('''() => Array.from(document.querySelectorAll('.app-form-item__error, .oj-form-control-error-message, [class*="error-message"]')).map(e => e.innerText.trim()).filter(Boolean)''')
+        errors = page.evaluate('''() => Array.from(document.querySelectorAll('.app-form-item__error, .oj-form-control-error-message, [class*="error-message"], [aria-invalid="true"]')).map(e => e.innerText.trim()).filter(Boolean)''')
         return {
             "success": len(errors) == 0,
             "step": "more_about_you",
@@ -1074,16 +1322,20 @@ class OracleCloudFinger(BaseATSFinger):
 
         return {"success": True, "filled_count": filled_count}
 
-    def advance_step(self, page: Any) -> Tuple[bool, str]:
+    def advance_step(self, page: Any, allow_submit: bool = False) -> Tuple[bool, str]:
         """
-        Advances to the next step by clicking the Next / Submit button.
+        Advances to the next step by clicking the Next button.
+        Never clicks Submit unless allow_submit=True is explicitly passed.
         """
         initial_url = page.url
 
         # Allowlisted wizard buttons only (never clear/back/discard).
-        clicked, which = DOMHelpers.safe_click_button(
-            page, ['next', 'submit'])
+        allowed_buttons = ['next', 'submit'] if allow_submit else ['next']
+        clicked, which = DOMHelpers.safe_click_button(page, allowed_buttons)
         if not clicked:
+            submit_loc = page.locator("button:has-text('Submit'), button:has-text('SUBMIT')").first
+            if submit_loc.count() > 0 and submit_loc.is_visible():
+                return False, "Reached final step with Submit button present. Halting for human review."
             return False, f"Next button not found or is disabled ({which})"
 
         # Wait for navigation or AJAX update

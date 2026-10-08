@@ -272,5 +272,86 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
     -> HARD STOP: Do NOT click SUBMIT. Halt for human principal architect review.
 ```
 
+---
+
+## 9. Battle-Tested Production Traps & Remediation Protocols (CX_1002 Learnings)
+
+### Trap 1: Multi-Select Combobox Opening (`preferredLocations`)
+- **Phenomenon:** Clicking the tiny dropdown toggle button (`#preferredLocations-XX-toggle-button`, 10×14px) frequently fails to open the listbox or closes it immediately.
+- **Root Cause:** In Oracle JET `cx-multi-select`, the toggle button is often obscured or misaligned with Knockout event handlers.
+- **Remediation:** Click `input[name='preferredLocations']` directly. This reliably sets `aria-expanded="true"` and mounts `[id^='preferredLocations'][id$='-listbox']`.
+- **Pill Selection:** Find the option in the listbox matching candidate preference (or location) and click `.cx-select__list-item`. Ensure the selection commits as a removable pill (`.cx-multi-select-pill`).
+
+### Trap 2: Adjacent Clear-X Reset Button Accidental Wipes
+- **Phenomenon:** After selecting City, State, or Preferred Location, navigating or focusing away triggers a wipe, leaving the field empty and showing red error: *"The City field is required."*
+- **Root Cause:** Adjacent to every populated combobox is a clear-X reset button (`[id$='-reset-button']`, `.icon-clear`, `button[aria-label*='Remove value']`). Pressing `Tab` or clicking near the field borders focuses and activates this button.
+- **Remediation:** 
+  1. Never use generic `Tab` key traversal across Oracle comboboxes.
+  2. Target dropdown list items strictly with `.cx-select__list-item, .cx-select-list-item`.
+  3. Commit and close overlays using `Escape` or clicking neutral safe coordinates (`body` at x=50, y=50).
+  4. Never click any button containing `aria-label*='Remove value'` or `icon-clear` during form filling.
+
+### Trap 3: Dependent Geographic Fields (`country` -> `region2`)
+- **Phenomenon:** Selecting Country (`India`) dynamically mounts a required `State *` input (`name='region2'`). While selecting City from dropdown often populates State, if State remains empty, advancing to Section 2 is blocked with *"The State field is required."*
+- **Remediation:** Always audit both `city` and `region2`. If `region2` is empty, type the state (`Karnataka`) and click the corresponding `.cx-select__list-item` in the dropdown.
+
+### Trap 4: Screening Questions — Radio Pills vs Checkboxes
+- **Phenomenon:** If screening answers return multiple options joined by `|||` for a single-choice question, clicking multiple pills toggles earlier choices off and leaves an arbitrary choice selected (e.g. `UI/Frontend` instead of `Java Backend`).
+- **Root Cause:** In single-choice radio groups (`button[role="radio"]`, `SingleSelectPills`), only ONE option can be checked.
+- **Remediation:** 
+  1. Detect control type: single-choice radio groups must strictly select only the single best match.
+  2. Prioritize exact candidate architecture focus (e.g. `Java Backend (Springboot, Hibernate, Microservices)` for backend roles).
+  3. Check existing selection state (`aria-checked="true"`) before clicking to maintain idempotence.
+
+### Trap 5: Section 3 Inline Form Locking & Parent Tile Visibility
+- **Phenomenon:** In CX_1002, experience and education editing is rendered INLINE (`.apply-flow__content-form`, `.standard-apply-flow-profile-item`), NOT in `.app-dialog`. When a form is open, parent tiles are hidden (`profile-item-list--disabled { display: none }`).
+- **Root Cause:** Attempting to click subsequent tiles while a tile form is still open fails because subsequent tiles are not visible.
+- **Remediation:** 
+  1. Process tiles sequentially.
+  2. After clicking `SAVE`, explicitly wait for `input[id^='employerName']:visible` to become 0 (form closed).
+  3. Format achievements into authentic `• ` bullet points mapped from `resume.md`.
+  4. Do not re-edit intact tiles that already have 0 validation errors.
+
+### Trap 6: Supporting Documents & Cover Letter Replacement Flow
+- **Phenomenon:** Oracle Cloud HCM retains previously uploaded attachments across sessions. Uploading a fresh cover letter while an old one exists leaves the obsolete document attached.
+- **Root Cause:** Oracle HCM treats cover letters as single-slot attachments. The old document must be explicitly removed before a new file input mounts.
+- **Remediation:**
+  1. Check for `button:has-text('REMOVE COVER LETTER')`. If visible, click it.
+  2. Oracle mounts a new file input: `<input type="file" id="attachment-upload-XX" name="attachment-upload">`.
+  3. Upload the freshly generated PDF to `input[name='attachment-upload']`.
+  4. Wait for the upload binding to render the document title button and `REMOVE COVER LETTER` button.
+
+### Trap 7: LinkedIn URL Truncation Defense
+- **Phenomenon:** The resume auto-parser frequently truncates candidate URLs in `siteLink-1` (e.g. `https://linkedin.com/in/udaykan` missing `dpal`).
+- **Remediation:** Inspect `input[name*='siteLink']` on Section 4. Cross-reference against candidate config `linkedin_profile_url`. If truncated or mismatched, explicitly overwrite with the canonical URL (`https://www.linkedin.com/in/udaykandpal`).
+
+### Trap 8: Executive Single-Page Cover Letter Standard
+- **Phenomenon:** Flashy cover letters with HTML tables (`<table>`) or colorful callout boxes look informal and fail automated enterprise parsing.
+- **Remediation:** Adhere strictly to `docs/templates/PROFESSIONAL_COVER_LETTER_TEMPLATE.md`:
+  - Clean executive business typography (A4 portrait, 1 page).
+  - Header: Candidate Name, contact bar with pipe separators.
+  - Standard date line, recipient block, Re: line with Job ID.
+  - Salutation: "Dear Hiring Team,".
+  - Concise opening and transition paragraph.
+  - 4 clean indented bullet points with bold titles (e.g. *Distributed Event-Driven Architecture*, *Enterprise Data Architecture*).
+  - Value alignment synthesis and professional closing sign-off.
+  - **Zero HTML tables, zero boxy card containers.**
+
+### Trap 9: Strict Pre-Advance Red Error Gate
+- **Directive:** NEVER click `NEXT` or `SUBMIT` if any red validation error exists on the page.
+- **Error Selectors:**
+  - `.cx-messages__message--error:visible`
+  - `.cx-form-control__error-message:visible`
+  - `.app-form-item__error:visible`
+  - `.oj-form-control-error-message:visible`
+  - `[aria-invalid="true"]:visible`
+  - `.input-row--invalid:visible`
+- **Verification:** Advance only when clean errors count == 0.
+
+### Trap 10: Non-Negotiable Human Submission Gate
+- **Directive:** The autonomous agent must NEVER click `SUBMIT`.
+- **Protocol:** Populate all fields, verify 0 errors, ensure SUBMIT button is enabled, capture full-page screenshot (`section4_final_verified.png`), and halt with clear instructions for the human operator to perform final review and manual submission.
+
+
 
 

@@ -457,6 +457,14 @@
 #   never Python; no model literal survives in code.
 # Preventative Notes: Never read keys/models from candidate_config.json again.
 #   New screening lists go in screening_heuristics first, Python second.
+#
+# [ENTRY #036]
+# Term: [ATS_ANSWERS_PRECEDENCE_FOR_CONSTRAINED_OPTIONS]
+# Timestamp: 2026-10-08 21:27:00 +05:30
+# Issue / Context: When `answer_screening_question` was called with `options=[]` (empty list) for dynamically fetched multi-selects, `if options:` evaluated to False, causing the cache loops to return the raw cached string (`val`) immediately. This bypassed the heuristic fallback logic entirely.
+# Changes Made: In `answer_screening_question`, changed `if options:` to `if options is not None:` in both `learned.items()` and `ats.items()` loops. An empty list `[]` now properly executes `break` (since `matched_opt` is `None`), falling through to the heuristic resolver.
+# Rationale: Ensures that dynamically fetched UI options that are passed as `[]` don't incorrectly return raw cached lists like "JAVA, SQL".
+# Preventative Notes: Always use `is not None` when checking if `options` was explicitly provided but might be an empty list.
 # ================================================================================
 """
 ================================================================================
@@ -2227,8 +2235,8 @@ Return STRICTLY a JSON object with this exact schema:
                         if num_m:
                             return num_m.group(0)
                         break
-                if options:
-                    matched_opt = self._best_option_match(val, options)
+                if options is not None:
+                    matched_opt = self._best_option_match(val, options) if options else None
                     if matched_opt:
                         return matched_opt
                     # Cached truth is not a valid option for this specific question; route to IPC
@@ -2245,23 +2253,26 @@ Return STRICTLY a JSON object with this exact schema:
                 or (len(q_norm) > 15 and q_norm in k_clean)
             )
             if is_match:
-                val = str(v).strip()
+                if isinstance(v, list):
+                    val = ",".join(str(x) for x in v)
+                else:
+                    val = str(v).strip()
                 # C35: correct known-wrong numerics even when served from cache.
                 val = self._validate_experience_answer(q_clean, val, cand, ats, profile, control_type)
                 val = self._format_ctc_answer(q_clean, val, cand, ats, profile, control_type)
-                if options:
-                    matched_opt = self._best_option_match(val, options)
+                if options is not None:
+                    matched_opt = self._best_option_match(val, options) if options else None
                     if matched_opt:
                         return matched_opt
-                    break
+                    continue
                 return val
 
         # Step 1b: Fast Factual Resolution for Standard Screening Queries
         # If question matches standard closed-ended screening patterns (notice period, relocation,
         # total experience, explicit skills, CTC), resolve deterministically from candidate ground truth
         # without introducing 30s IPC stalls.
-        if self._is_standard_screening_query(q_clean):
-            fast_ans = self._heuristic_screening_answer(q_clean, options=options, control_type=control_type)
+        if self._is_standard_screening_query(q_clean, candidate_profile=profile):
+            fast_ans = self._heuristic_screening_answer(q_clean, options=options, control_type=control_type, candidate_profile=profile)
             # C35: heuristic numerics get the same truth check (e.g. bare
             # "9.8" into whole-number portal fields normalizes to "10").
             fast_ans = self._validate_experience_answer(q_clean, fast_ans, cand, ats, profile, control_type) if fast_ans else fast_ans
@@ -2366,7 +2377,7 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
 
         if not answer:
             # Deterministic Candidate-Grounded Heuristic Resolver (Immediate, Non-blocking)
-            answer = self._heuristic_screening_answer(q_clean, options=options, control_type=control_type)
+            answer = self._heuristic_screening_answer(q_clean, options=options, control_type=control_type, candidate_profile=profile)
             if answer:
                 print(f"[AI BRAIN] Dynamically resolved novel screening question: '{answer}'", flush=True)
 
@@ -2409,7 +2420,7 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
 
         return answer
 
-    def _is_standard_screening_query(self, question: str) -> bool:
+    def _is_standard_screening_query(self, question: str, candidate_profile: Optional[Dict[str, Any]] = None) -> bool:
         """
         Classifies whether a recruiter question is a routine closed-ended screening query
         (notice period, relocation, total experience, CTC, skill years) that maps
@@ -2418,9 +2429,9 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
         if not question:
             return False
         q = question.lower()
-        cfg = getattr(self.profile_context, "config", {}) if self.profile_context else {}
+        cfg = candidate_profile if candidate_profile else (getattr(self.profile_context, "config", {}) if self.profile_context else {})
         patterns = cfg.get("screening_heuristics", {}).get("standard_screening_patterns", [])
-        return any(p in q for p in patterns)
+        return any(p in q for p in patterns) or "expertise" in q or "proficiency" in q or "programming language" in q
 
     def _validate_experience_answer(self, question: str, answer: str,
                                     cand: Optional[Dict[str, Any]] = None,
@@ -2579,7 +2590,8 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
         self,
         question: str,
         options: Optional[List[str]] = None,
-        control_type: Optional[str] = None
+        control_type: Optional[str] = None,
+        candidate_profile: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Deterministic Candidate-Grounded Heuristic Resolver.
@@ -2591,7 +2603,7 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
 
         q_clean = question.strip().lower()
         ctx = self.profile_context
-        cfg = getattr(ctx, "config", {}) if ctx else {}
+        cfg = candidate_profile if candidate_profile else (getattr(ctx, "config", {}) if ctx else {})
         cand = cfg.get("candidate", {})
         ats = cfg.get("ats_answers", {})
         skills_exp = ats.get("skill_years_experience", {})
@@ -2744,7 +2756,7 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                 return exp_val
 
         # 5. Specific Skill / Tool / Role Experience Questions (with Months & Smart Drafting support)
-        if any(k in q_clean for k in sh.get("skill_experience_keywords", [])):
+        if any(k in q_clean for k in sh.get("skill_experience_keywords", [])) or "expertise" in q_clean or "proficiency" in q_clean or "programming language" in q_clean:
             is_months = any(m in q_clean for m in sh.get("months_format_keywords", []))
 
             p_content = cfg.get("profile_content", {})
@@ -2845,9 +2857,27 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
             else:
                 calc_val = 0.0
 
-            if calc_val > 0:
-                if options:
-                    # Check for tier matching (e.g. "At least 5 years of experience")
+            if options:
+                # 1. First, check if the options themselves represent skills (categorical multi-select).
+                matched_skills = []
+                for opt in options:
+                    opt_lower = opt.lower().strip()
+                    if opt_lower in ["none", "n/a", "no experience", "0"]:
+                        continue
+                    if any(s.lower() in opt_lower or opt_lower in s.lower() for s in skills_exp.keys()):
+                        matched_skills.append(opt)
+                if matched_skills:
+                    is_single_choice = (
+                        (control_type and str(control_type).upper() in ["RADIO", "SELECT", "COMBOBOX"])
+                        or any(w in q_clean for w in ["single choice", "select one", "choose one", "pick one", "which one", "single-select"])
+                    )
+                    if is_single_choice:
+                        best_match = max(matched_skills, key=lambda o: sum(1 for s in skills_exp.keys() if s.lower() in o.lower() or o.lower() in s.lower()))
+                        return best_match
+                    return "|||".join(matched_skills)
+                
+                # 2. If options are numeric tiers (e.g. '1-3 years')
+                if calc_val > 0:
                     best_tier = None
                     max_tier_thresh = -1.0
                     for opt in options:
@@ -2861,32 +2891,42 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
                     if best_tier and max_tier_thresh > 0:
                         return best_tier
 
+                    if any(re.search(r'\byes\b', o.lower()) for o in options):
+                        ans = self._best_option_match("Yes", options) or "Yes"
+                        return ans
+
                     for opt in options:
                         opt_l = opt.lower().strip()
-                        if any(k in opt_l for k in sh.get("sub_one_year_option_markers", [])):
+                        if "0" not in opt_l and "no" not in opt_l.lower() and "none" not in opt_l.lower() and "n/a" not in opt_l.lower():
                             return opt
-                    matched = self._best_option_match("1 year", options) or self._best_option_match("1", options)
-                    if matched and not any(z in matched.lower() for z in ["no", "0"]):
+                else:
+                    matched = (
+                        self._best_option_match("No experience", options)
+                        or self._best_option_match("0", options)
+                        or self._best_option_match("Beginner", options)
+                        or self._best_option_match("No", options)
+                        or self._best_option_match("None", options)
+                    )
+                    if matched:
                         return matched
-                    if any(re.search(r'\byes\b', o.lower()) for o in options):
-                        return self._best_option_match("Yes", options) or "Yes"
-                    for opt in options:
-                        if "0" not in opt and "no" not in opt.lower():
-                            return opt
-                    return options[0]
+                # Fallback to the most pessimistic option if nothing else matched
+                return options[-1] if options else ""
 
-                _num_triggers = sh.get("numeric_question_triggers", [])
-                _num_exclusions = sh.get("numeric_question_exclusions", [])
-                is_pure_numeric = (
-                    (control_type and str(control_type).upper() in ["NUMBER", "INTEGER", "NUMERIC"])
-                    or any(k in q_clean for k in _num_triggers)
-                ) and not any(k in q_clean for k in _num_exclusions)
+            _num_triggers = sh.get("numeric_question_triggers", [])
+            _num_exclusions = sh.get("numeric_question_exclusions", [])
+            is_pure_numeric = (
+                (control_type and str(control_type).upper() in ["NUMBER", "INTEGER", "NUMERIC"])
+                or any(k in q_clean for k in _num_triggers)
+            ) and not any(k in q_clean for k in _num_exclusions)
 
-                if is_pure_numeric:
+            if is_pure_numeric:
+                if calc_val > 0:
                     if is_months:
                         return str(int(round(calc_val * 12)))
                     return str(int(calc_val)) if calc_val.is_integer() else str(calc_val)
+                return "0"
 
+            if calc_val > 0:
                 # Smartly draft factual response highlighting candidate's real experience and academic coursework
                 _exp_label = sh.get("fallback_text_label", "experience")
                 clean_topic_display = queried_topic.title() if queried_topic else "this domain"
@@ -2921,23 +2961,6 @@ CRITICAL OPERATIONAL RULES (ZERO ASSUMPTIONS):
 
                 return drafted
             else:
-                if options:
-                    matched = (
-                        self._best_option_match("No experience", options)
-                        or self._best_option_match("0", options)
-                        or self._best_option_match("Beginner", options)
-                    )
-                    if matched:
-                        return matched
-                    return options[0]
-                _num_triggers = sh.get("numeric_question_triggers", [])
-                _num_exclusions = sh.get("numeric_question_exclusions", [])
-                is_pure_numeric = (
-                    (control_type and str(control_type).upper() in ["NUMBER", "INTEGER", "NUMERIC"])
-                    or any(k in q_clean for k in _num_triggers)
-                ) and not any(k in q_clean for k in _num_exclusions)
-                if is_pure_numeric:
-                    return "0"
                 return "No direct prior experience in this specific technology."
 
         # 6. Compensation / CTC

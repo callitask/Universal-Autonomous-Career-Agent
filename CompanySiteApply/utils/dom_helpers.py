@@ -32,6 +32,13 @@
 # Changes Made: select_jet_combo rewritten: per-want fragment typing, filtered-option fuzzy pick, ai_aliases secondary-names pass, click, read-back, type-commit fallback, honest failure.
 # Rationale: Automation must mimic the human filtering flow, not fight the popup.
 # Preventative Notes: Never skip the fragment-filter step; never accept an unverified value.
+# [ENTRY #005]
+# Term: [ERROR_DETECTION_HARDENING]
+# Timestamp: 2026-10-08 18:37:00 +05:30
+# Issue / Context: JPMC Oracle portal allowed advancing past Section 2 even with empty required combobox. Error detection missed .input-row--invalid.
+# Changes Made: Added .input-row--invalid to FORM_ERROR_SELECTORS.
+# Rationale: All ATS portal specific error classes must be centralized in the shared library so future nails/fingers don't miss them.
+# Preventative Notes: Never advance without reading back required fields explicitly, even if error selectors return empty.
 # ==============================================================================
 
 import re
@@ -82,6 +89,7 @@ class DOMHelpers:
         ".field-validation-error",
         ".help-block-error",
         "[data-automation-id*='error']",
+        ".input-row--invalid",
     ]
 
     @staticmethod
@@ -440,9 +448,10 @@ class DOMHelpers:
             try:
                 return page.evaluate(
                     "(nm) => { const i = document.querySelector("
-                    "'[name="' + nm + '"]');"
+                    "`[name=\"${nm}\"]`);"
                     " return i ? (i.value || '') : 'missing'; }", input_name)
-            except Exception:
+            except Exception as e:
+                print('[_read exception]', e)
                 return 'missing'
 
         def _combo_parts():
@@ -453,7 +462,7 @@ class DOMHelpers:
             # never hardcoded. No JET/jQuery/KO involved.
             try:
                 return page.evaluate("""(nm) => {
-                    const input = document.querySelector('[name="' + nm + '"]');
+                    const input = document.querySelector(`[name=\"${nm}\"]`);
                     if (!input) return null;
                     const lb = input.getAttribute('aria-controls') || '';
                     const cont = input.closest(
@@ -584,7 +593,7 @@ class DOMHelpers:
                     try:
                         pt = page.evaluate("""(nm) => {
                             const input = document.querySelector(
-                                '[name="' + nm + '"]');
+                                `[name=\"${nm}\"]`);
                             const lb = input.getAttribute('aria-controls');
                             const cont = input.closest(
                                 '.cx-select-container, .input-row, '
@@ -611,7 +620,7 @@ class DOMHelpers:
                 # first would filter away the answer we need.
                 try:
                     page.evaluate("""(nm) => {
-                        const i = document.querySelector('[name="' + nm + '"]');
+                        const i = document.querySelector(`[name=\"${nm}\"]`);
                         i.scrollIntoView({block: 'center'});
                         i.focus();
                         i.click();
@@ -650,7 +659,7 @@ class DOMHelpers:
                         try:
                             page.evaluate("""(nm) => {
                                 const i = document.querySelector(
-                                    '[name="' + nm + '"]');
+                                    `[name=\"${nm}\"]`);
                                 i.scrollIntoView({block: 'center'});
                                 i.focus();
                             }""", input_name)
@@ -688,7 +697,7 @@ class DOMHelpers:
                         try:
                             page.evaluate("""(nm) => {
                                 const i = document.querySelector(
-                                    '[name="' + nm + '"]');
+                                    `[name=\"${nm}\"]`);
                                 i.scrollIntoView({block: 'center'});
                                 i.focus();
                             }""", input_name)
@@ -729,7 +738,7 @@ class DOMHelpers:
                     try:
                         active = page.evaluate("""(nm) => {
                             const input = document.querySelector(
-                                '[name="' + nm + '"]');
+                                `[name=\"${nm}\"]`);
                             const ad = input.getAttribute('aria-activedescendant');
                             const el = ad ? document.getElementById(ad) : null;
                             const norm = s => (s || '').trim().toLowerCase();
@@ -771,7 +780,7 @@ class DOMHelpers:
                 # combos and a subsequent keypress can wipe the value).
                 try:
                     page.evaluate("""(nm) => {
-                        const i = document.querySelector('[name="' + nm + '"]');
+                        const i = document.querySelector(`[name=\"${nm}\"]`);
                         i.dispatchEvent(new Event('input', {bubbles: true}));
                         i.dispatchEvent(new Event('change', {bubbles: true}));
                         i.dispatchEvent(new Event('blur', {bubbles: true}));
@@ -828,7 +837,7 @@ class DOMHelpers:
                     try:
                         page.evaluate("""(args) => {
                             const [nm, val] = args;
-                            const i = document.querySelector('[name="' + nm + '"]');
+                            const i = document.querySelector(`[name=\"${nm}\"]`);
                             i.scrollIntoView({block: 'center'});
                             i.focus();
                         }""", [input_name, text])
@@ -839,7 +848,7 @@ class DOMHelpers:
                         page.keyboard.type(text, delay=40)
                         _t.sleep(1.0)
                         page.evaluate("""(nm) => {
-                            const i = document.querySelector('[name="' + nm + '"]');
+                            const i = document.querySelector(`[name=\"${nm}\"]`);
                             i.dispatchEvent(new Event('change', {bubbles: true}));
                             i.dispatchEvent(new Event('blur', {bubbles: true}));
                         }""", input_name)
@@ -926,7 +935,10 @@ class DOMHelpers:
                     continue
                 for i in range(min(loc.count(), limit)):
                     try:
-                        txt = (loc.nth(i).inner_text() or "").strip()
+                        el = loc.nth(i)
+                        if not el.is_visible():
+                            continue
+                        txt = (el.inner_text() or "").strip()
                     except Exception:
                         continue
                     if txt and txt not in detected:
