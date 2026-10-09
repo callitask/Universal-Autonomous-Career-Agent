@@ -420,3 +420,16 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
 - **Root Cause:** Oracle JET select components require clicking the specific `div.cx-select__list-item[role="gridcell"]` inside the popup overlay. If matching includes broad `li` or parent elements, or if `.fill()` is called without clicking the gridcell, JET discards the uncommitted input.
 - **Remediation:** Click the row's specific toggle button (`#IN-STANDARD-ORA_ETHNICITY-STANDARD-*-toggle-button`, `#IN-STANDARD-ORA_GENDER-STANDARD-*-toggle-button`, `#IN-DFF-indiaMilitaryStatus-ATTRIBUTE16-*-toggle-button`). Find `.cx-select__list-item, [role="gridcell"], [role="option"]` matching exact target string (e.g. `Asian`, `Male`, `No`). Click the gridcell directly. Verify input value holds on readback.
 
+### Trap 25: Section 3 Experience Tile Modal Unpopulated Sub-Fields (Country, City, Internal No) & Bulleted Achievements
+- **Phenomenon:** When opening the edit modal for work experience tiles on Section 3 (`/apply/section/3`), `Employer Country` is empty, `Employer City` is blank, `Internal` radio pills (`No` / `Yes`) are unselected, and the `Achievements` textarea contains raw text lacking standard bullet points (`• `).
+- **Root Cause:** When Oracle HCM imports work experience tiles from an uploaded resume or previous application history, it creates top-level tile cards but fails to auto-populate mandatory sub-attributes (Country LOV, City string, Internal employee status) in the underlying edit dialog. Furthermore, Oracle's resume parser strips markdown bullet formatting into unstructured multiline text.
+- **Remediation:**
+  1. Iterate across all experience tiles (excluding Education tile 0).
+  2. Click the tile edit button `.apply-flow-profile-item-tile__edit-item-icon` using `force=True` (handles Oracle JET CSS hover opacity).
+  3. Inspect `input[id^='countryCode']`. If not set to candidate country (e.g. `India`), click toggle button `button[id^='countryCode'][id$='-toggle-button']`, click the dropdown list item (`India`), and verify commit.
+  4. Inspect `input[name='employerCity']`. Populate candidate city (e.g. `Bengaluru`, `Noida`, `Delhi`) based on candidate employment metadata, dispatching `input` and `change` events.
+  5. Check `Internal` radio pills (`button.cx-select-pill-section`). If neither is active, explicitly click `No` (`button:has-text('No')`).
+  6. Retrieve authentic achievements from candidate profile (`company_site_apply/resume.md`). Format into clean bulleted text prefixed with `• ` and double-spaced (`\n\n• `). Populate `textarea[name='achievements']` and dispatch `input`/`change` events.
+  7. Click `SAVE` (`button.save-btn`), wait for modal to close (`page.wait_for_selector("input[id^='employerName']:visible", state="hidden")`), and allow 1 second for Knockout DOM re-indexing.
+
+

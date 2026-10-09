@@ -290,23 +290,6 @@ class OracleCloudFinger(BaseATSFinger):
         ok = DOMHelpers.set_input_value_native(page, pin_selector, clean_pin)
         return {"success": ok, "step": "pin_verification", "format": "unified"}
 
-    def _fill_experience_step(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Step: Experience Review - Run Parser Doctor to heal broken line wraps,
-        reorder experience tiles reverse-chronologically, and heal invalid education tiles.
-        """
-        self._reorder_tiles_reverse_chronological(page)
-        active_nail = self.get_active_nail(page)
-        if active_nail and hasattr(active_nail, "heal_invalid_education_tiles"):
-            active_nail.heal_invalid_education_tiles(page, candidate_data)
-
-        healed_reports = ReviewVerifier.audit_and_heal_experience_descriptions(page)
-        return {
-            "success": True,
-            "step": "experience_review",
-            "healed_descriptions": healed_reports
-        }
-
     def _fill_education_step(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Step: Education Review - Run Parser Doctor to heal college/degree anomalies and heal invalid education tiles.
@@ -1088,8 +1071,13 @@ class OracleCloudFinger(BaseATSFinger):
             if c_input.count() > 0 and c_input.is_visible():
                 current_c = c_input.input_value().strip()
                 if current_c != target_country:
-                    c_input.fill(target_country)
-                    time.sleep(0.8)
+                    c_toggle = page.locator("button[id^='countryCode'][id$='-toggle-button']:visible").first
+                    if c_toggle.count() > 0:
+                        c_toggle.click()
+                        time.sleep(0.6)
+                    else:
+                        c_input.fill(target_country)
+                        time.sleep(0.8)
                     clicked = page.evaluate('''(targetText) => {
                         const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
                         const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"], li')).filter(isVis);
@@ -1112,7 +1100,7 @@ class OracleCloudFinger(BaseATSFinger):
                 city_input.dispatch_event("blur")
 
         # 3. Internal: No
-        no_btn = page.locator(".standard-apply-flow-profile-item:has(input[id^='employerName']) button:has-text('No'), .app-form-item:has-text('Internal') button:has-text('No')").first
+        no_btn = page.locator("button[role='radio']:has-text('No'):visible, button.cx-select-pill-section:has-text('No'):visible, .standard-apply-flow-profile-item:has(input[id^='employerName']) button:has-text('No'), .app-form-item:has-text('Internal') button:has-text('No')").first
         if no_btn.count() > 0 and no_btn.is_visible():
             is_active = "active" in (no_btn.get_attribute("class") or "").lower() or no_btn.get_attribute("aria-pressed") == "true"
             if not is_active:
