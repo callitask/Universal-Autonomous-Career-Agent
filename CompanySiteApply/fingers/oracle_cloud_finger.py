@@ -75,6 +75,14 @@
 # Rationale: Guarantees authentic, professional career chronology on both Section 3 and Section 4
 #            Review screens across any requisition and candidate profile.
 # Preventative Notes: Never rely on Oracle's default tile insertion sequence.
+#
+# [ENTRY #011]
+# Term: [EDUCATION_MODAL_SCHOOL_AUTOCOMPLETE_HEALING]
+# Timestamp: 2026-10-09 18:50:00 +05:30
+# Issue / Context: Oracle Cloud HCM Education modal left School field blank because _heal_education_modal lacked institution autocomplete selection handling.
+# Changes Made: Added target_school resolution from candidate ground truth; automated educationalEstablishment combobox search, dropdown selection, and Knockout observable binding before SAVE.
+# Rationale: Guarantees 100% complete Education profiles on Oracle HCM candidate portal.
+# Preventative Notes: Always select the suggested dropdown option for JET comboboxes rather than raw text typing to ensure Knockout binds and the SAVE button activates.
 # ==============================================================================
 
 import os
@@ -974,9 +982,10 @@ class OracleCloudFinger(BaseATSFinger):
         """
         Heals open Education dialog: selects Degree, Country, End Date Month/Year, Area of Study, and clicks SAVE.
         """
+        target_school = str(edu_data.get("institution") or edu_data.get("school") or "").strip()
         target_degree = str(edu_data.get("degree") or "").strip()
         target_country = str(edu_data.get("country") or "India").strip()
-        target_major = str(edu_data.get("major") or "").strip()
+        target_major = str(edu_data.get("major") or edu_data.get("field_of_study") or "").strip()
         target_month = str(edu_data.get("end_month") or edu_data.get("graduated_month") or "").strip()
         target_year = str(edu_data.get("end_year") or edu_data.get("graduated_year") or "").strip()
 
@@ -989,6 +998,32 @@ class OracleCloudFinger(BaseATSFinger):
             time.sleep(0.3)
             degree_input.press("Enter")
             time.sleep(0.3)
+
+        # 1b. School / Educational Establishment (JET autocomplete combobox)
+        school_input = page.locator("input[name='educationalEstablishment']:visible, [id^='educationalEstablishment']:visible").first
+        if school_input.count() > 0 and target_school and not school_input.input_value().strip():
+            school_input.click()
+            school_input.fill(target_school)
+            time.sleep(1.2)
+            clicked_opt = page.evaluate('''(wantSchool) => {
+                const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="option"], [role="gridcell"]')).filter(isVis);
+                const wantLower = wantSchool.toLowerCase();
+                const opt = items.find(i => {
+                    const t = i.innerText.trim().toLowerCase();
+                    return t === wantLower || t.includes(wantLower) || wantLower.includes(t);
+                });
+                if (opt) {
+                    opt.click();
+                    return true;
+                }
+                return false;
+            }''', target_school)
+            if not clicked_opt:
+                school_input.press("ArrowDown")
+                time.sleep(0.3)
+                school_input.press("Enter")
+            time.sleep(0.5)
 
         # 2. Country
         country_input = page.locator("input[id^='countryCode']:visible, input[name='countryCode']:visible, input[name='country']:visible, [id^='countryCode']:visible").first

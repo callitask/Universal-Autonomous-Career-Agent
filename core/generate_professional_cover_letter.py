@@ -112,7 +112,7 @@ COVER_LETTER_HTML_TEMPLATE = """<!DOCTYPE html>
   {org_location}
 </div>
 
-<div class="re-line">Re: Application for {job_title} (Job ID: {job_id})</div>
+<div class="re-line">Subject: Application for {job_title} (Requisition ID: {job_id})</div>
 
 <div class="salutation">Dear Hiring Team,</div>
 
