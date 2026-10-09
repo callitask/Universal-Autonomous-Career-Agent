@@ -93,7 +93,7 @@ class ExperienceSectionAgent(BaseSectionAgent):
                         best_match = exp
                         break
 
-                self._heal_single_experience_modal(page, best_match)
+                self._heal_single_experience_modal(page, best_match, candidate_data)
                 healed_count += 1
 
             # Enforce reverse-chronological ordering
@@ -118,14 +118,15 @@ class ExperienceSectionAgent(BaseSectionAgent):
         except Exception:
             return False
 
-    def _heal_single_experience_modal(self, page: Any, exp_data: Dict[str, Any]):
-        """Heals an open Work Experience modal dialog."""
-        target_country = str(exp_data.get("country") or "India").strip()
-        target_city = str(exp_data.get("city") or "Bengaluru").strip()
+    def _heal_single_experience_modal(self, page: Any, exp_data: Dict[str, Any], candidate_data: Optional[Dict[str, Any]] = None):
+        """Heals an open Work Experience modal dialog dynamically from candidate profile."""
+        cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
+        target_country = str(exp_data.get("country") or cand.get("country") or "").strip()
+        target_city = str(exp_data.get("city") or cand.get("city") or "").strip()
 
         # 1. Employer Country
         country_inp = page.locator("input[id^='countryCode']:visible, input[name='countryCode']:visible").first
-        if country_inp.count() > 0 and country_inp.input_value().strip() != target_country:
+        if country_inp.count() > 0 and target_country and country_inp.input_value().strip() != target_country:
             c_toggle = page.locator("button[id^='countryCode'][id$='-toggle-button']:visible, button.icon-dropdown-arrow:visible").first
             if c_toggle.count() > 0:
                 c_toggle.click()

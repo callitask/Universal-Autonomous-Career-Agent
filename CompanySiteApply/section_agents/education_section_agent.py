@@ -110,7 +110,7 @@ class EducationSectionAgent(BaseSectionAgent):
 
             target_school = str(target.get("institution") or target.get("school") or "").strip()
             target_degree = str(target.get("degree") or "").strip()
-            target_country = str(target.get("country") or "India").strip()
+            target_country = str(target.get("country") or cand.get("country") or "").strip()
             target_major = str(target.get("major") or target.get("field_of_study") or "").strip()
             target_month = str(target.get("end_month") or target.get("graduated_month") or "").strip()
             target_year = str(target.get("end_year") or target.get("graduated_year") or "").strip()

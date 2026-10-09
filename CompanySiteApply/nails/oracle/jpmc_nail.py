@@ -191,24 +191,26 @@ class JPMCNail(BaseNail):
         )
 
         # 2. Ethnicity
-        eth_val = str(cand.get("ethnicity") or cand.get("Ethnicity") or cand.get("race") or "Asian").strip()
-        _select_cx_pill_or_dropdown(
-            toggle_css_list=['#IN-STANDARD-ORA_ETHNICITY-STANDARD-3-toggle-button', '[id*="ETHNICITY"][id$="-toggle-button"]', 'button[aria-label*="Ethnicity"]'],
-            input_css_list=['#IN-STANDARD-ORA_ETHNICITY-STANDARD-3', 'input[name*="ETHNICITY"]', 'input[id*="ETHNICITY"]'],
-            target_val=eth_val,
-            field_name="ethnicity",
-            label_hint="Ethnicity"
-        )
+        eth_val = str(cand.get("ethnicity") or cand.get("Ethnicity") or cand.get("race") or "").strip()
+        if eth_val and "decline" not in eth_val.lower():
+            _select_cx_pill_or_dropdown(
+                toggle_css_list=['#IN-STANDARD-ORA_ETHNICITY-STANDARD-3-toggle-button', '[id*="ETHNICITY"][id$="-toggle-button"]', 'button[aria-label*="Ethnicity"]'],
+                input_css_list=['#IN-STANDARD-ORA_ETHNICITY-STANDARD-3', 'input[name*="ETHNICITY"]', 'input[id*="ETHNICITY"]'],
+                target_val=eth_val,
+                field_name="ethnicity",
+                label_hint="Ethnicity"
+            )
 
         # 3. Gender
-        gen_val = str(cand.get("gender") or "Male").strip()
-        _select_cx_pill_or_dropdown(
-            toggle_css_list=['#IN-STANDARD-ORA_GENDER-STANDARD-4-toggle-button', '[id*="GENDER"][id$="-toggle-button"]', 'button[aria-label*="Gender"]'],
-            input_css_list=['#IN-STANDARD-ORA_GENDER-STANDARD-4', 'input[name*="GENDER"]', 'input[id*="GENDER"]'],
-            target_val=gen_val,
-            field_name="gender",
-            label_hint="Gender"
-        )
+        gen_val = str(cand.get("gender") or "").strip()
+        if gen_val and "decline" not in gen_val.lower():
+            _select_cx_pill_or_dropdown(
+                toggle_css_list=['#IN-STANDARD-ORA_GENDER-STANDARD-4-toggle-button', '[id*="GENDER"][id$="-toggle-button"]', 'button[aria-label*="Gender"]'],
+                input_css_list=['#IN-STANDARD-ORA_GENDER-STANDARD-4', 'input[name*="GENDER"]', 'input[id*="GENDER"]'],
+                target_val=gen_val,
+                field_name="gender",
+                label_hint="Gender"
+            )
 
         # 4. LinkedIn Link Normalization (Defense against truncation)
         linkedin_url = cand.get("linkedin_profile_url") or cand.get("linkedin")
@@ -401,63 +403,88 @@ class JPMCNail(BaseNail):
                 if best_option:
                     return best_option
 
-        # 8. Primary Area of Expertise (prioritizes Java Backend / Java Fullstack stacks)
+        # 8. Primary Area of Expertise (resolved dynamically from taxonomy and profile)
         if "primary area of expertise" in q and options:
-            for opt in options:
-                opt_l = opt.lower()
-                if "java backend" in opt_l or ("java" in opt_l and "backend" in opt_l):
-                    return opt
-            for opt in options:
-                opt_l = opt.lower()
-                if "java fullstack" in opt_l or ("java" in opt_l and "full stack" in opt_l) or ("java" in opt_l and "fullstack" in opt_l):
-                    return opt
             _tax = data.get("taxonomy_skills", {}) if isinstance(data, dict) else {}
             _terms = set()
             for _v in (_tax.values() if isinstance(_tax, dict) else []):
                 for _s in (_v if isinstance(_v, list) else []):
-                    _terms.add(str(_s).lower())
+                    if isinstance(_s, str):
+                        _terms.add(_s.lower().strip())
+                    elif isinstance(_s, dict):
+                        _terms.add(str(_s.get("skill_name", "")).lower().strip())
+            for text in [cand.get("resume_headline", ""), cand.get("profile_summary", "")]:
+                for word in re.findall(r'[a-zA-Z0-9+#]+', str(text).lower()):
+                    if len(word) > 2:
+                        _terms.add(word)
+
+            best_opt = None
+            best_score = -1
             for opt in options:
-                if opt and opt.lower() in _terms:
-                    return opt
+                opt_l = opt.lower()
+                score = 0
+                if opt_l in _terms:
+                    score += 10
+                for t in _terms:
+                    if len(t) > 3 and (t in opt_l or opt_l in t):
+                        score += 3
+                if score > best_score and score > 0:
+                    best_score = score
+                    best_opt = opt
+            if best_opt:
+                return best_opt
             return None
 
-        # 9. AWS Proficiency (resolve from skill map only; never assume level)
-        if "proficiency with aws" in q or "proficiency level in aws" in q:
+        # 9. Tool / Platform Proficiency (resolve dynamically from skill map or taxonomy)
+        if "proficiency" in q and options:
             _skills = ((data.get("ats_answers", {}) or {}).get("skill_years_experience", {}) or {}) if isinstance(data, dict) else {}
-            _aws_years = None
+            _tool_years = None
             for _k, _v in _skills.items():
-                if "aws" in str(_k).lower():
+                if str(_k).lower() in q:
                     try:
-                        _aws_years = float(_v)
+                        _tool_years = float(_v)
+                        break
                     except Exception:
-                        _aws_years = None
-                    break
-            if _aws_years is None:
-                return None
-            if _aws_years >= 4:
-                return self._match_choice("Advanced / Expert", options) or self._match_choice("Advanced", options)
-            if _aws_years >= 2:
-                return self._match_choice("Intermediate", options)
-            return self._match_choice("Beginner", options)
+                        pass
+            if _tool_years is not None:
+                if _tool_years >= 4:
+                    return self._match_choice("Advanced / Expert", options) or self._match_choice("Advanced", options) or self._match_choice("Expert", options)
+                if _tool_years >= 2:
+                    return self._match_choice("Intermediate", options)
+                return self._match_choice("Beginner", options)
+            else:
+                tot_exp = float(cand.get("total_experience_years", 0))
+                if tot_exp >= 5:
+                    return self._match_choice("Advanced / Expert", options) or self._match_choice("Advanced", options)
+                elif tot_exp >= 2:
+                    return self._match_choice("Intermediate", options)
+                return self._match_choice("Beginner", options)
 
-        # 10. Area of Focus within candidate domain (prioritizes Java Backend / Java Fullstack)
+        # 10. Area of Focus within candidate domain (resolved dynamically from taxonomy and profile)
         if "area of focus" in q and options:
-            for opt in options:
-                opt_l = opt.lower()
-                if "java backend" in opt_l or ("java" in opt_l and "backend" in opt_l):
-                    return opt
-            for opt in options:
-                opt_l = opt.lower()
-                if "java fullstack" in opt_l or ("java" in opt_l and "full stack" in opt_l) or ("java" in opt_l and "fullstack" in opt_l):
-                    return opt
             _tax = data.get("taxonomy_skills", {}) if isinstance(data, dict) else {}
             _terms = set()
             for _v in (_tax.values() if isinstance(_tax, dict) else []):
                 for _s in (_v if isinstance(_v, list) else []):
-                    _terms.add(str(_s).lower())
+                    if isinstance(_s, str):
+                        _terms.add(_s.lower().strip())
+                    elif isinstance(_s, dict):
+                        _terms.add(str(_s.get("skill_name", "")).lower().strip())
+            best_opt = None
+            best_score = -1
             for opt in options:
-                if opt and any(t and t in opt.lower() for t in _terms):
-                    return opt
+                opt_l = opt.lower()
+                score = 0
+                if opt_l in _terms:
+                    score += 10
+                for t in _terms:
+                    if len(t) > 3 and (t in opt_l or opt_l in t):
+                        score += 3
+                if score > best_score and score > 0:
+                    best_score = score
+                    best_opt = opt
+            if best_opt:
+                return best_opt
             return None
 
         return None

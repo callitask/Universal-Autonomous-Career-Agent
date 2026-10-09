@@ -8,6 +8,15 @@
 #               e-signature input, and non-negotiable human gate enforcement.
 # Rationale: Guarantees 100% review compliance while strictly protecting the human submission gate.
 # Preventative Notes: ABSOLUTELY NEVER CLICK SUBMIT.
+#
+# [ENTRY #002]
+# Term: [ZERO_HARDCODING_DEMOGRAPHICS_RESOLUTION]
+# Timestamp: 2026-10-09 21:30:00 +05:30
+# Issue / Context: Hardcoded demographic values ('Asian', 'Male', 'No') and static LinkedIn URL violated profile decoupling.
+# Changes Made: Dynamically resolved demographics (ethnicity, gender, military/veteran status) strictly from candidate_data['demographics']
+#               and candidate profile. Removed static fallback LinkedIn URL.
+# Rationale: Enables seamless application for any candidate regardless of gender, race, nationality, or military status.
+# Preventative Notes: Never hardcode demographic selections or candidate PII in this agent.
 # ==============================================================================
 
 import time
@@ -23,7 +32,7 @@ class ReviewSectionAgent(BaseSectionAgent):
     """
     Specialist Mini-Agent for Section 4: Supporting Documents, Diversity, and E-Signature.
     Handles Cover Letter PDF dropzone, Resume verification, canonical LinkedIn URL,
-    Demographics (Asian, Male, No), and Full Name E-Signature.
+    Demographics dynamically resolved from candidate profile, and Full Name E-Signature.
     Enforces the strict, non-negotiable human gate before submission.
     """
 
@@ -88,9 +97,9 @@ class ReviewSectionAgent(BaseSectionAgent):
         HALTS PRIOR TO CLICKING SUBMIT.
         """
         try:
-            cand = candidate_data.get("candidate", candidate_data)
+            cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
             full_name = str(cand.get("full_name") or f"{cand.get('first_name', '')} {cand.get('last_name', '')}").strip()
-            linkedin_url = str(cand.get("linkedin_url") or "https://www.linkedin.com/in/udaykandpal").strip()
+            linkedin_url = str(cand.get("linkedin_profile_url") or cand.get("linkedin_url") or cand.get("linkedin") or "").strip()
 
             # 1. LinkedIn link
             link_input = page.locator("input[name*='siteLink']:visible, input[id*='siteLink']:visible").first
@@ -99,10 +108,18 @@ class ReviewSectionAgent(BaseSectionAgent):
                 link_input.dispatch_event("input")
                 link_input.dispatch_event("change")
 
-            # 2. Diversity Demographics
-            self._select_exact_dropdown(page, "ETHNICITY", "Asian")
-            self._select_exact_dropdown(page, "GENDER", "Male")
-            self._select_exact_dropdown(page, "ATTRIBUTE16", "No")  # Military Status
+            # 2. Diversity Demographics dynamically resolved from candidate data
+            demographics = candidate_data.get("demographics") or {} if isinstance(candidate_data, dict) else {}
+            ethnicity_val = str(demographics.get("ethnicity") or demographics.get("race") or cand.get("ethnicity") or cand.get("race") or "").strip()
+            gender_val = str(demographics.get("gender") or cand.get("gender") or "").strip()
+            military_val = str(demographics.get("military_status") or demographics.get("veteran") or cand.get("military_status") or "").strip()
+
+            if ethnicity_val and "decline" not in ethnicity_val.lower():
+                self._select_exact_dropdown(page, "ETHNICITY", ethnicity_val)
+            if gender_val and "decline" not in gender_val.lower():
+                self._select_exact_dropdown(page, "GENDER", gender_val)
+            if military_val:
+                self._select_exact_dropdown(page, "ATTRIBUTE16", military_val)
 
             # 3. E-Signature Full Name
             sig_input = page.locator("input[name='fullName']:visible, input[id^='fullName']:visible").first

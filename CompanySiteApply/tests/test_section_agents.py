@@ -11,6 +11,26 @@ from CompanySiteApply.section_agents import (
 )
 
 
+class MockPill:
+    def __init__(self, text: str, selected: bool = False):
+        self._text = text
+        self._selected = selected
+        self.clicked = False
+
+    def inner_text(self):
+        return self._text
+
+    def get_attribute(self, attr: str):
+        if attr == "class":
+            return "selected" if self._selected else ""
+        if attr == "aria-pressed":
+            return "true" if self._selected else "false"
+        return None
+
+    def click(self):
+        self.clicked = True
+
+
 class TestSectionAgents(unittest.TestCase):
     def setUp(self):
         self.candidate_data = {
@@ -23,6 +43,9 @@ class TestSectionAgents(unittest.TestCase):
                 "city": "Bengaluru",
                 "country": "India",
                 "linkedin_url": "https://www.linkedin.com/in/udaykandpal",
+                "total_experience_years": 10,
+                "resume_headline": "Lead Java Architect | High-Performance Systems",
+                "profile_summary": "Expert in backend distributed systems, enterprise integration, microservices.",
                 "education": [{
                     "institution": "Jaypee Institute of Information Technology",
                     "degree": "Bachelor's Degree",
@@ -35,6 +58,21 @@ class TestSectionAgents(unittest.TestCase):
                     {"employer": "Cognizant", "bullets": ["Built backend"]},
                     {"employer": "Infosys", "bullets": ["Engineered APIs"]}
                 ]
+            },
+            "taxonomy_skills": {
+                "Domain Skills": ["Backend Architecture", "Microservices"],
+                "Technical Skills": ["Java", "Kafka", "AWS"]
+            },
+            "demographics": {
+                "gender": "Male",
+                "ethnicity": "Asian",
+                "military_status": "No"
+            },
+            "ats_answers": {
+                "skill_years_experience": {
+                    "aws": 5,
+                    "java": 10
+                }
             }
         }
 
@@ -118,6 +156,7 @@ class TestSectionAgents(unittest.TestCase):
         self.assertIn("experience", agent_names)
         self.assertNotIn("profile", agent_names)
         self.assertNotIn("questionnaire", agent_names)
+
     def test_education_isolation_from_experience(self):
         """Verifies EducationSectionAgent never interacts with Work Experience locators."""
         agent = EducationSectionAgent()
@@ -128,12 +167,180 @@ class TestSectionAgents(unittest.TestCase):
         mock_loc.all_text_contents.return_value = ["Bachelor's Degree", "Jaypee Institute of Information Technology"]
         mock_page.locator.return_value = mock_loc
 
-        # Audit should not search for employerName or achievements
         agent.audit(mock_page, self.candidate_data)
         call_args = [str(call) for call in mock_page.locator.call_args_list]
         for arg in call_args:
             self.assertNotIn("employerName", arg)
             self.assertNotIn("achievements", arg)
+
+    # =========================================================================
+    # UNIVERSAL DYNAMIC MATCHING TESTS (ZERO HARDCODING VALIDATION)
+    # =========================================================================
+
+    def test_dynamic_experience_tier_senior_candidate(self):
+        agent = QuestionnaireSectionAgent()
+        pills = [
+            MockPill("Less than 1 year"),
+            MockPill("1 to 3 years"),
+            MockPill("3 to 5 years"),
+            MockPill("At least 5 years")
+        ]
+        # Candidate with 10 years experience must pick "At least 5 years"
+        best = agent._resolve_experience_tier(10.0, pills)
+        self.assertIsNotNone(best)
+        self.assertEqual(best.inner_text(), "At least 5 years")
+
+    def test_dynamic_experience_tier_mid_candidate(self):
+        agent = QuestionnaireSectionAgent()
+        pills = [
+            MockPill("Less than 1 year"),
+            MockPill("1 to 3 years"),
+            MockPill("3 to 5 years"),
+            MockPill("5+ years")
+        ]
+        # Candidate with 3.5 years experience must pick "3 to 5 years"
+        best = agent._resolve_experience_tier(3.5, pills)
+        self.assertIsNotNone(best)
+        self.assertEqual(best.inner_text(), "3 to 5 years")
+
+    def test_dynamic_experience_tier_junior_candidate(self):
+        agent = QuestionnaireSectionAgent()
+        pills = [
+            MockPill("Less than 1 year"),
+            MockPill("1 to 3 years"),
+            MockPill("3 to 5 years"),
+            MockPill("5+ years")
+        ]
+        # Candidate with 1.5 years experience must pick "1 to 3 years"
+        best = agent._resolve_experience_tier(1.5, pills)
+        self.assertIsNotNone(best)
+        self.assertEqual(best.inner_text(), "1 to 3 years")
+
+    def test_dynamic_experience_tier_fresher_candidate(self):
+        agent = QuestionnaireSectionAgent()
+        pills = [
+            MockPill("No prior experience"),
+            MockPill("1 to 3 years"),
+            MockPill("3 to 5 years"),
+            MockPill("5+ years")
+        ]
+        # Fresher with 0 years experience must pick "No prior experience"
+        best = agent._resolve_experience_tier(0.0, pills)
+        self.assertIsNotNone(best)
+        self.assertEqual(best.inner_text(), "No prior experience")
+
+    def test_dynamic_domain_resolution_marketing_profile(self):
+        agent = QuestionnaireSectionAgent()
+        marketing_profile = {
+            "candidate": {
+                "total_experience_years": 4,
+                "resume_headline": "Senior Growth Marketing Manager | B2B Demand Gen | SEO & Content",
+                "profile_summary": "Performance marketing expert leading digital acquisition and campaigns."
+            },
+            "taxonomy_skills": {
+                "Domain Skills": ["Growth Marketing", "Demand Generation", "Digital Advertising"],
+                "Technical Skills": ["Google Analytics", "HubSpot", "Marketo"]
+            }
+        }
+        pills = [
+            MockPill("Software Engineering"),
+            MockPill("Marketing & Communications"),
+            MockPill("Human Resources"),
+            MockPill("Finance & Accounting")
+        ]
+        best = agent._resolve_expertise_or_domain_pill("primary area of expertise", pills, marketing_profile)
+        self.assertIsNotNone(best)
+        self.assertEqual(best.inner_text(), "Marketing & Communications")
+
+    def test_dynamic_domain_resolution_sales_profile(self):
+        agent = QuestionnaireSectionAgent()
+        sales_profile = {
+            "candidate": {
+                "total_experience_years": 7,
+                "resume_headline": "Enterprise Sales Director | Account Executive | SaaS B2B",
+                "profile_summary": "Exceeded quota closing high-value enterprise software deals."
+            },
+            "taxonomy_skills": {
+                "Domain Skills": ["Enterprise Sales", "Strategic Negotiations", "Account Management"],
+                "Technical Skills": ["Salesforce CRM", "Outreach", "Gong"]
+            }
+        }
+        pills = [
+            MockPill("Software Engineering"),
+            MockPill("Product Design"),
+            MockPill("Sales & Business Development"),
+            MockPill("Operations")
+        ]
+        best = agent._resolve_expertise_or_domain_pill("primary area of expertise", pills, sales_profile)
+        self.assertIsNotNone(best)
+        self.assertEqual(best.inner_text(), "Sales & Business Development")
+
+    def test_dynamic_tool_proficiency_salesforce(self):
+        agent = QuestionnaireSectionAgent()
+        profile = {
+            "candidate": {"total_experience_years": 6},
+            "ats_answers": {
+                "skill_years_experience": {
+                    "salesforce": 5.0
+                }
+            }
+        }
+        pills = [
+            MockPill("Beginner"),
+            MockPill("Intermediate"),
+            MockPill("Advanced / Expert")
+        ]
+        best = agent._resolve_tool_proficiency_pill("What is your proficiency level in Salesforce?", pills, profile)
+        self.assertIsNotNone(best)
+        self.assertEqual(best.inner_text(), "Advanced / Expert")
+
+    def test_dynamic_tool_proficiency_absent_skill(self):
+        agent = QuestionnaireSectionAgent()
+        profile = {
+            "candidate": {"total_experience_years": 3},
+            "taxonomy_skills": {"Domain Skills": ["Sales"]},
+            "ats_answers": {"skill_years_experience": {}}
+        }
+        pills = [
+            MockPill("Beginner"),
+            MockPill("Intermediate"),
+            MockPill("Advanced / Expert")
+        ]
+        best = agent._resolve_tool_proficiency_pill("What is your proficiency level in Kubernetes?", pills, profile)
+        self.assertIsNotNone(best)
+        self.assertEqual(best.inner_text(), "Beginner")
+
+    def test_review_agent_demographics_dynamic_female_candidate(self):
+        agent = ReviewSectionAgent()
+        mock_page = MagicMock()
+        mock_loc = MagicMock()
+        mock_loc.count.return_value = 1
+        mock_loc.first = mock_loc
+        mock_loc.input_value.return_value = ""
+        mock_loc.is_disabled.return_value = False
+        mock_loc.all_text_contents.return_value = []
+        mock_page.locator.return_value = mock_loc
+
+        female_profile = {
+            "candidate": {
+                "full_name": "Sarah Connor",
+                "linkedin_profile_url": "https://www.linkedin.com/in/sarahconnor"
+            },
+            "demographics": {
+                "gender": "Female",
+                "ethnicity": "Black or African American",
+                "military_status": "Yes"
+            }
+        }
+
+        with patch.object(agent, "_select_exact_dropdown") as mock_select:
+            agent.heal(mock_page, female_profile)
+            # Must call dropdown with candidate's actual values, NOT Asian / Male!
+            calls = mock_select.call_args_list
+            selected_items = [(call[0][1], call[0][2]) for call in calls]
+            self.assertIn(("ETHNICITY", "Black or African American"), selected_items)
+            self.assertIn(("GENDER", "Female"), selected_items)
+            self.assertIn(("ATTRIBUTE16", "Yes"), selected_items)
 
 
 if __name__ == "__main__":

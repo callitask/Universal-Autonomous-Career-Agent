@@ -8,6 +8,14 @@
 #               Country combobox healing, and interactive Preferred Location facility pill selection.
 # Rationale: Guarantees zero unmapped contact fields on requisition onboarding.
 # Preventative Notes: Never advance without verifying Preferred Location combobox commitment.
+#
+# [ENTRY #002]
+# Term: [ZERO_HARDCODING_CITY_LOCATION_RESOLUTION]
+# Timestamp: 2026-10-09 21:31:00 +05:30
+# Issue / Context: Hardcoded city literals ('Bengaluru', 'Tower D', 'Platina') broke compatibility for any other city/facility.
+# Changes Made: Dynamically resolved city and preferred location from candidate['city'], candidate['location'], and target_jobs['locations'].
+# Rationale: Seamlessly supports any city, state, or country across global requisitions.
+# Preventative Notes: Never hardcode city names or building names in this agent.
 # ==============================================================================
 
 import time
@@ -23,6 +31,7 @@ class ProfileSectionAgent(BaseSectionAgent):
     Specialist Mini-Agent for Personal Details, Contact Info, and Facility Location.
     Handles Title, First/Last Name, Email, Phone, Address lines, City, Postal Code,
     Address Country combobox, and the interactive Preferred Location facility directory.
+    Purely profile-driven: zero hardcoded city or facility literals.
     """
 
     @property
@@ -66,16 +75,21 @@ class ProfileSectionAgent(BaseSectionAgent):
 
     def heal(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Heals Address, Country, City, and Preferred Location.
+        Heals Address, Country, City, and Preferred Location strictly from candidate profile.
         """
         try:
-            cand = candidate_data.get("candidate", candidate_data)
-            city_val = str(cand.get("city") or "Bengaluru").strip()
-            country_val = str(cand.get("country") or "India").strip()
+            cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
+            target_jobs = candidate_data.get("target_jobs") or {} if isinstance(candidate_data, dict) else {}
+            locations_list = target_jobs.get("locations") or []
+
+            city_val = str(cand.get("city") or cand.get("location") or (locations_list[0] if locations_list else "")).strip()
+            country_val = str(cand.get("country") or "").strip()
+            if not country_val and "+91" in str(cand.get("phone", "")):
+                country_val = "India"
 
             # 1. Address Country
             country_input = page.locator("input[name='country']:visible, input[id^='country-']:not([id*='phoneNumber']):visible").first
-            if country_input.count() > 0 and not country_input.input_value().strip():
+            if country_input.count() > 0 and not country_input.input_value().strip() and country_val:
                 country_input.fill(country_val)
                 time.sleep(0.3)
                 country_input.press("ArrowDown")
@@ -84,24 +98,24 @@ class ProfileSectionAgent(BaseSectionAgent):
 
             # 2. City
             city_input = page.locator("input[id^='city']:visible, input[name='city']:visible").first
-            if city_input.count() > 0 and not city_input.input_value().strip():
+            if city_input.count() > 0 and not city_input.input_value().strip() and city_val:
                 city_input.fill(city_val)
                 city_input.dispatch_event("input")
                 city_input.dispatch_event("change")
 
             # 3. Preferred Location combobox pill
             pill_container = page.locator(".cx-select-pill-section, [class*='preferred-location']").first
-            if pill_container.count() > 0:
+            if pill_container.count() > 0 and city_val:
                 loc_input = page.locator("input[placeholder*='location' i]:visible, input[placeholder*='search' i]:visible").first
                 if loc_input.count() > 0 and loc_input.is_visible():
                     loc_input.click()
-                    loc_input.fill("Bengaluru")
+                    loc_input.fill(city_val)
                     time.sleep(1.0)
-                    page.evaluate("""() => {
-                        const items = Array.from(document.querySelectorAll('.cx-select__list-item, [role=\"option\"], li'));
-                        const opt = items.find(i => i.innerText.includes('Tower D') || i.innerText.includes('Platina') || i.innerText.includes('Bengaluru'));
+                    page.evaluate("""(targetCity) => {
+                        const items = Array.from(document.querySelectorAll('.cx-select__list-item, [role="option"], li'));
+                        const opt = items.find(i => i.innerText.toLowerCase().includes(targetCity.toLowerCase()));
                         if (opt) opt.click();
-                    }""")
+                    }""", city_val)
                     time.sleep(0.5)
 
             verified = self.verify(page, candidate_data)
