@@ -68,4 +68,31 @@
 2. **Trap 12: Section 1 Dependent Dropdowns & Preferred Location Autocomplete Binding:** Interactively query combobox items for facility directory options (e.g. `86856-Platina Block 3`).
 3. **Trap 13: Section 4 Demographic Dropdown Scope Collision:** Avoided broad `.includes('asian')` queries that accidentally hit the parent question block. Used exact text matching `=== 'Asian'` on `[role="gridcell"], [role="option"]`.
 4. **Trap 14: Job Search Tile Deduplication & `ALREADY APPLIED` Flag Inspection:** Automatically detected and skipped requisition tiles marked with `ALREADY APPLIED`.
-5. **Trap 15: Non-Negotiable Human Submission Gate:** Strictly halted execution on Section 4 review with SUBMIT enabled and unclicked.
+6. **Trap 26: Section 3 Education Modal School Field Autocomplete:** Handled asynchronous JET combobox dropdown selection for institution (`Jaypee Institute of Information Technology (JIIT)`) to trip Knockout observable and activate the SAVE button.
+7. **Trap 27: Fresh Cover Letter Header Standard:** Standardized from `RE:` to `Subject: Application for [Job Title] (Requisition ID: [Job ID])`.
+8. **Trap 28: Hierarchical Anatomical Component Architecture:** Decoupled execution into `PageBone` -> `SectionSurface` -> `FormMatrix` -> `FieldCell` so micro-healing on one section (Education) never resets or touches sibling sections (9 reverse-chronological experience tiles).
+
+---
+
+## 4. Operational Playbook for Future Chats & New Companies
+
+### Q1: In layman's terms, what is the workflow when starting the agent in a new chat for new jobs at JPMC?
+1. **Search & Score:** Scrapes available jobs on the active JPMC portal, skips any tile marked `ALREADY APPLIED`, and scores job descriptions against candidate context (>90% match).
+2. **Artifact Generation:** Generates tailored, factual cover letter (`Subject: Application for ...`) and compiles PDF.
+3. **Anatomical Section-Wise Filling:**
+   - **Page 1 (Profile Bone):** Personal info, verified Bangalore address, Preferred Location combobox pill.
+   - **Page 2 (Questionnaire Bone):** Multi-pass cascading question solver (Years of experience $\ge 5$, AWS Expert, Java Backend, Java/Python skill pills).
+   - **Page 3 (Timeline Bone):**
+     - Surgically audits Education modal: selects Degree, School autocomplete, dates, country, major, and clicks SAVE.
+     - Surgically audits Experience tiles: ensures Country, City, `Internal: No`, bulleted achievements (`• `), and enforces reverse-chronological sorting.
+   - **Page 4 (Review Bone):** Attaches fresh cover letter PDF, verifies LinkedIn URL, fills demographics/military flexfields, types full E-Signature.
+4. **Strict Human Gate:** Halts on Section 4 with SUBMIT active and **UNCLICKED**.
+
+### Q2: What should the user type in a new chat to run this with complete knowledge?
+> *"Apply on company site for JPMC Career Portal using active profile [Profile Name]. Follow the Hierarchical Anatomical Component Architecture in CompanySiteApply/anatomy and all traps documented in docs/ORACLE_HCM_ATS_DEEP_DIVE.md (Traps 11 through 28). Ensure zero errors, reverse-chronological experience order, and halt at Section 4 before clicking SUBMIT."*
+
+### Q3: When developing for a new company site, how do we inform the agent of past traps?
+1. **Direct the agent to `docs/ORACLE_HCM_ATS_DEEP_DIVE.md`:** This file contains 28 battle-tested traps and blueprints.
+2. **Require Anatomical Modularity:** Instruct the agent to implement a `CompanySiteApply/nails/<company_name>_nail.py` and attach to the appropriate ATS finger (`OracleCloudFinger`, `WorkdayFinger`, `GreenhouseFinger`).
+3. **Enforce Isolated Micro-Healing:** Mandate that if an audit fails during execution, the agent must heal only the failing `SectionSurface`/`FormMatrix` using `SurgicalAuditor`, never re-running the entire application.
+

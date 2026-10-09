@@ -432,4 +432,32 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
   6. Retrieve authentic achievements from candidate profile (`company_site_apply/resume.md`). Format into clean bulleted text prefixed with `• ` and double-spaced (`\n\n• `). Populate `textarea[name='achievements']` and dispatch `input`/`change` events.
   7. Click `SAVE` (`button.save-btn`), wait for modal to close (`page.wait_for_selector("input[id^='employerName']:visible", state="hidden")`), and allow 1 second for Knockout DOM re-indexing.
 
+### Trap 26: Section 3 Education Modal School Field Combobox Autocomplete & Disabled SAVE Button
+- **Phenomenon:** Inside the Section 3 Education edit modal, the School input (`input[name="educationalEstablishment"]`) remains blank with placeholder `"Start typing to see suggestions"`. Merely typing text (e.g. `Jaypee Institute of Information Technology`) does not activate the `SAVE` button (`button.save-btn`), leaving it grey and disabled.
+- **Root Cause:** Oracle JET treats `educationalEstablishment` as an asynchronous autocomplete combobox bound to an internal institution directory. Plain text assignment does not trip Knockout's selection observable. Only clicking an option from the generated `.cx-select__list-item` (or `[role="option"]`) dropdown commits the institution ID and enables the `SAVE` button.
+- **Remediation:**
+  1. Click and type the institution name (`target_school`) into `input[name="educationalEstablishment"]`.
+  2. Wait 1.0–1.5 seconds for backend query results to render in `.cx-select__list-item`.
+  3. Query visible items and click the exact or best substring match (e.g. `Jaypee Institute of Information Technology (JIIT)`).
+  4. Verify the input value reflects the selected string and the `SAVE` button transitions to `disabled=false`.
+  5. Click `SAVE` and verify the Education tile summary updates.
+  6. **Isolation Rule:** Never re-run or re-open experience tiles when healing Education.
+
+### Trap 27: Fresh Corporate Application Cover Letter Header Standard (`Subject: Application for ...` vs. `RE:`)
+- **Phenomenon:** The generated cover letter displays `RE: Application for ...` in the header block.
+- **Root Cause:** "RE:" (in re / in reference to) is reserved for replies to existing correspondence or ongoing email threads. Fresh formal corporate job applications must strictly use standard executive subject formatting: `Subject: Application for [Job Title] (Requisition ID: [Job ID])`.
+- **Remediation:** Standardize the cover letter generator (`core/generate_professional_cover_letter.py`) and HTML templates to render `Subject: Application for {job_title} (Requisition ID: {job_id})` across all ATS applications.
+
+### Trap 28: Hierarchical Anatomical Component Architecture (`PageBone` -> `SectionSurface` -> `FormMatrix` -> `FieldCell`)
+- **Phenomenon:** In monolithic ATS automation scripts, detecting a minor error in one section (e.g., missing Education school) often triggers a full-form re-run or creates throwaway ad-hoc scripts, which risk corrupting or resetting already-flawless sections (such as 9 perfectly reverse-chronological experience tiles).
+- **Root Cause:** Lack of strict boundary encapsulation between page-level routing, section-level management, modal-level operations, and atomic field bindings.
+- **Remediation:** Formalize the 5-level **Anatomical Component Hierarchy** in `CompanySiteApply/anatomy/`:
+  - **Level 1 (The Arm):** `ATSArm` — Platform detection and CDP connection management.
+  - **Level 2 (The Bones):** `PageBone` — Stage navigation (Sections 1, 2, 3, 4).
+  - **Level 3 (The Organs / Surface):** `SectionSurface` — Discrete section boundaries (`EducationSection`, `ExperienceSection`, `DiversitySection`).
+  - **Level 4 (The Nails / Tissue):** `FormMatrix` — Modal and tile units (`EducationModal`, `WorkExperienceTile`).
+  - **Level 5 (The Paint / Cells):** `FieldCell` — Atomic input handlers (`JetCombobox`, `RadioPill`, `BulletListTextarea`).
+  - **Surgical Auditor:** When auditing detects an error at Level 5, only that Level 4/5 component executes. Sibling sections are treated as immutable and strictly read-only.
+
+
 
