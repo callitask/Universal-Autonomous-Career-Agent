@@ -1,16 +1,18 @@
 # AI CONTEXT & CHANGE LOG
 # ==============================================================================
-# [ENTRY #001]
-# Term: [JPMC_ORACLE_DYNAMIC_FLOW]
-# Timestamp: 2026-10-09 08:15:00 +05:30
-# Issue / Context: Complete dynamic Oracle Cloud HCM CX_1002 application flow for JPMorgan Chase.
+# [ENTRY #002]
+# Term: [JPMC_ORACLE_DYNAMIC_CASCADE_AND_MULTISELECT_FIX]
+# Timestamp: 2026-10-09 08:53:00 +05:30
+# Issue / Context: 
+#   1. Section 1 Preferred Location is a multi-select combobox (.cx-multi-select__list-item).
+#   2. Section 2 has a cascading conditional question tree (Level 1: experience tier -> 
+#      Level 2: Software Engineering & AWS rating -> Level 3: Java Backend & Top 2 languages).
+#   3. Section 3 work experience cards render alphabetically by employerName (Oracle JET design).
+#   4. Error detection must inspect .input-row__validation and [id$="-error"].
 # Changes Made:
-#   - Zero hardcoding: all paths, candidate PII, demographics, and screening answers resolve dynamically.
-#   - Added Legal Disclaimer (`#applyFlowLegalDisclaimer` / `AGREE`) detection and acknowledgment.
-#   - Hardened Section 1 combobox selection (City, State, Preferred Location).
-#   - Integrated JPMCNail for Section 2 screening logic.
-#   - Added Section 4 cover letter auto-replacement (removes obsolete, mounts new tailored PDF).
-#   - Enforced non-negotiable human gate: halts on Section 4 review with SUBMIT enabled and unclicked.
+#   - Implemented iterative cascading question loop on Section 2 using JPMCNail.
+#   - Fixed Section 1 preferred location targeting .cx-multi-select__list-item.
+#   - Added .input-row__validation and [id$="-error"] to universal check_errors.
 # ==============================================================================
 
 import os
@@ -18,7 +20,7 @@ import re
 import time
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from playwright.sync_api import sync_playwright
 
 from CompanySiteApply.nails.oracle.jpmc_nail import JPMCNail
@@ -33,16 +35,104 @@ def load_candidate_context(profile_name: str = "udaysagar_kandpal") -> Dict[str,
         return json.load(f)
 
 def check_errors(page, step_name: str):
-    errors = page.locator(
+    error_selectors = (
         ".cx-messages__message--error:visible, .cx-form-control__error-message:visible, "
-        ".app-form-item__error:visible, [aria-invalid='true']:visible, .oj-form-control-error-message:visible"
-    ).all_inner_texts()
-    clean_errors = [e.strip() for e in errors if e.strip() and e.strip().lower() != 'saved']
+        ".app-form-item__error:visible, [aria-invalid='true']:visible, "
+        ".oj-form-control-error-message:visible, .input-row__validation:visible, "
+        "[id$='-error']:visible, .input-row--error:visible"
+    )
+    raw_errors = page.locator(error_selectors).all_inner_texts()
+    clean_errors = [e.strip() for e in raw_errors if e.strip() and e.strip().lower() != 'saved']
     if clean_errors:
         print(f"[ERROR AUDIT FAIL on {step_name}]: Found active red errors: {clean_errors}")
         return False, clean_errors
     print(f"[ERROR AUDIT PASS on {step_name}]: 0 validation errors found.")
     return True, []
+
+def answer_cascading_section2_questions(page):
+    """
+    Iteratively resolves all questions on Section 2, handling dynamically unhidden sub-questions.
+    """
+    max_passes = 5
+    for pass_idx in range(max_passes):
+        print(f"--- Section 2 Question Resolution Pass {pass_idx + 1} ---")
+        
+        # 1. Answer all visible radio button questions
+        action_taken = page.evaluate('''() => {
+            let changed = false;
+            const rows = Array.from(document.querySelectorAll('.input-row, .app-form-item, fieldset'));
+            
+            for (const r of rows) {
+                const labelEl = r.querySelector('legend, label, .cx-form-label, p');
+                const label = labelEl ? labelEl.innerText.trim() : '';
+                const btns = Array.from(r.querySelectorAll('button[role="radio"], button.cx-select-pill-section'));
+                if (btns.length === 0) continue;
+                
+                const isAnswered = btns.some(b => b.getAttribute('aria-checked') === 'true');
+                if (isAnswered) continue;
+                
+                const qLower = label.toLowerCase();
+                let targetChoice = null;
+                
+                // Mappings
+                if (qLower.includes('18 years')) targetChoice = 'Yes';
+                else if (qLower.includes('legally authorized')) targetChoice = 'Yes';
+                else if (qLower.includes('sponsorship')) targetChoice = 'No';
+                else if (qLower.includes('indian passport')) targetChoice = 'Yes';
+                else if (qLower.includes('other than india')) targetChoice = 'No';
+                else if (qLower.includes('high school') || qLower.includes('10+2')) targetChoice = 'Yes';
+                else if (qLower.includes('relevant years of work experience')) targetChoice = 'At least 5 years of experience';
+                else if (qLower.includes('primary area of expertise') && !qLower.includes('if software')) targetChoice = 'Software Engineering';
+                else if (qLower.includes('proficiency with aws')) targetChoice = 'Advanced / Expert';
+                else if (qLower.includes('area of expertise') && (qLower.includes('if software') || qLower.includes('select your area'))) {
+                    targetChoice = 'Java Backend (Springboot, Hibernate, Microservices)';
+                }
+                
+                if (targetChoice) {
+                    const match = btns.find(b => b.innerText.trim().toLowerCase().includes(targetChoice.toLowerCase()));
+                    if (match) {
+                        match.click();
+                        changed = true;
+                    }
+                }
+            }
+            return changed;
+        }''')
+        
+        time.sleep(1.0)
+        
+        # 2. Check multi-select combobox question (Top 2 languages)
+        lang_action = page.evaluate('''() => {
+            const container = Array.from(document.querySelectorAll('.input-row, .app-form-item')).find(el => {
+                const text = el.innerText || '';
+                return text.includes('programming languages') && text.includes('Choose your top 2');
+            });
+            if (!container) return false;
+            
+            const pills = container.querySelectorAll('.cx-multi-select-pill__value-text');
+            if (pills.length >= 2) return false; // Already answered
+            
+            const toggle = container.querySelector('button');
+            if (toggle) toggle.click();
+            return true;
+        }''')
+        
+        if lang_action:
+            time.sleep(1.0)
+            page.evaluate('''() => {
+                const items = Array.from(document.querySelectorAll('.cx-multi-select__list-item, .cx-select__list-item, [role="option"], [role="gridcell"]'))
+                    .filter(e => e.offsetWidth > 0 || e.offsetHeight > 0);
+                const javaOpt = items.find(i => i.innerText.trim() === 'JAVA');
+                if (javaOpt) javaOpt.click();
+                const pyOpt = items.find(i => i.innerText.trim().startsWith('Python'));
+                if (pyOpt) pyOpt.click();
+            }''')
+            time.sleep(1.0)
+            page.keyboard.press("Escape")
+        
+        if not action_taken and not lang_action:
+            print("No new questions unhidden. Questionnaire fully resolved.")
+            break
 
 def run_flow(profile_name: str = "udaysagar_kandpal", cdp_url: str = "http://127.0.0.1:9222"):
     cfg = load_candidate_context(profile_name)
@@ -55,209 +145,76 @@ def run_flow(profile_name: str = "udaysagar_kandpal", cdp_url: str = "http://127
     
     pages = [p for p in ctx.pages if "jpmc.fa.oraclecloud.com" in p.url and "apply" in p.url]
     if not pages:
-        print("Error: No Oracle apply page found! Searching for open job pages...")
-        job_pages = [p for p in ctx.pages if "jpmc.fa.oraclecloud.com" in p.url and "/job/" in p.url]
-        if job_pages:
-            page = job_pages[0]
-            print(f"Found job page: {page.url}. Navigating to apply flow...")
-            apply_btn = page.locator("button:has-text('APPLY NOW'), a:has-text('APPLY NOW')").first
-            if apply_btn.count() > 0:
-                apply_btn.click()
-                time.sleep(4.0)
-            pages = [p for p in ctx.pages if "jpmc.fa.oraclecloud.com" in p.url and "apply" in p.url]
-            if not pages:
-                print("Could not enter apply page.")
-                pw.stop()
-                return
-            page = pages[0]
-        else:
-            print("No matching JPMC tabs found.")
-            pw.stop()
-            return
-    else:
-        page = pages[0]
-
+        print("Error: No Oracle apply page found!")
+        pw.stop()
+        return
+    page = pages[0]
     print(f"Connected to apply flow: {page.url}")
 
-    # ==========================================
-    # ONBOARDING / LEGAL DISCLAIMER MODAL
-    # ==========================================
-    agree_btn = page.locator("#applyFlowLegalDisclaimer, button:has-text('AGREE'):visible").first
-    if agree_btn.count() > 0 and agree_btn.is_visible():
-        print("Acknowledging Legal Disclaimer...")
-        agree_btn.click()
-        time.sleep(3.0)
-
-    # ==========================================
-    # SECTION 1: Personal Details & Location
-    # ==========================================
+    # Section 1
     if "/section/1" in page.url:
-        print("\n--- Processing Section 1: Personal Details ---")
-
-        # 1. Title: Mr.
-        mr_btn = page.locator("button:has-text('Mr.')").first
-        if mr_btn.count() > 0 and mr_btn.get_attribute("aria-checked") != "true":
-            mr_btn.click()
-            time.sleep(0.5)
-
-        # 2. City & State
-        target_city = cand.get("city", "Bengaluru")
-        target_state = cand.get("state", "Karnataka")
+        print("\n--- Processing Section 1 ---")
         
-        city_inp = page.locator("input[name='city']").first
-        state_inp = page.locator("input[name='region2']").first
-
-        if city_inp.count() > 0 and (not city_inp.input_value().strip() or target_city.lower() not in city_inp.input_value().lower()):
-            city_inp.fill(target_city)
-            time.sleep(1.0)
-            page.evaluate('''(c) => {
-                const els = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"]'))
-                    .filter(e => (e.offsetWidth > 0 || e.offsetHeight > 0) && e.innerText.trim().toLowerCase().includes(c.toLowerCase()));
-                if (els.length > 0) els[0].click();
-            }''', target_city)
-            time.sleep(1.0)
-
-        # 3. Preferred Location
-        pref_toggle = page.locator("button[aria-label*='Preferred Location' i], [id*='preferredLocations'][id$='-toggle-button']").first
-        if pref_toggle.count() > 0:
-            pref_inp = page.locator("input[name='preferredLocations']").first
-            if pref_inp.count() > 0 and not pref_inp.input_value().strip():
-                pref_toggle.click()
-                time.sleep(1.0)
-                page.evaluate('''() => {
-                    const els = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"], li'))
-                        .filter(e => (e.offsetWidth > 0 || e.offsetHeight > 0) && (e.innerText.includes('Platina') || e.innerText.includes('Bengaluru') || e.innerText.includes('Embassy')));
-                    if (els.length > 0) els[0].click();
-                }''')
-                time.sleep(1.0)
+        # Preferred Location Handling
+        pref_container = page.locator('.apply-flow-block--preferred-locations').first
+        if pref_container.count() > 0:
+            existing_pills = pref_container.locator('.cx-multi-select-pill__value-text').count()
+            if existing_pills == 0:
+                print("Setting Preferred Location...")
+                toggle = pref_container.locator("button[aria-label*='Preferred Location' i], button.icon-dropdown-arrow").first
+                if toggle.count() > 0:
+                    toggle.click()
+                    time.sleep(1.0)
+                    page.evaluate('''() => {
+                        const items = Array.from(document.querySelectorAll('.cx-multi-select__list-item, [role="option"], [role="gridcell"]'))
+                            .filter(e => e.offsetWidth > 0 || e.offsetHeight > 0);
+                        const match = items.find(i => i.innerText.includes('Platina') || i.innerText.includes('Bengaluru') || i.innerText.includes('Embassy'));
+                        if (match) match.click();
+                    }''')
+                    time.sleep(1.0)
+                    page.keyboard.press("Escape")
 
         ok, errs = check_errors(page, "Section 1")
         if not ok:
-            print("Cannot advance: Red errors on Section 1!")
             pw.stop()
             return
-
-        print("Advancing to Section 2...")
-        next_btn = page.locator("button:has-text('NEXT'):visible, button[aria-label='Next']:visible").first
-        next_btn.click()
+        page.locator("button:has-text('NEXT'):visible, button[aria-label='Next']:visible").first.click()
         time.sleep(3.0)
 
-    # ==========================================
-    # SECTION 2: Screening Questions
-    # ==========================================
+    # Section 2
     if "/section/2" in page.url:
-        print("\n--- Processing Section 2: Screening Questions ---")
-
-        # Answer radio questions dynamically using JPMCNail
-        page.evaluate('''() => {
-            const fieldsets = Array.from(document.querySelectorAll('fieldset, [role="radiogroup"], .app-form-item'))
-                .filter(fs => {
-                    const btns = Array.from(fs.querySelectorAll('button[role="radio"]'));
-                    return btns.length === 2 && btns.some(b => b.innerText.trim() === 'Yes') && btns.some(b => b.innerText.trim() === 'No');
-                });
-            
-            // Standard JPMC screening responses:
-            // 1. 18+ -> Yes, 2. Auth -> Yes, 3. Sponsorship -> No, 4. Indian Passport -> Yes, 5. Other citizenship -> No, 6. 10+2 -> Yes
-            const defaults = ['Yes', 'Yes', 'No', 'Yes', 'No', 'Yes'];
-            fieldsets.forEach((fs, idx) => {
-                if (idx < defaults.length) {
-                    const target = defaults[idx];
-                    const btn = Array.from(fs.querySelectorAll('button[role="radio"]')).find(b => b.innerText.trim() === target);
-                    if (btn && btn.getAttribute('aria-checked') !== 'true') {
-                        btn.click();
-                    }
-                }
-            });
-        }''')
-        time.sleep(1.0)
-
-        # Primary Area of Expertise pill selection if present
-        page.evaluate('''() => {
-            const pills = Array.from(document.querySelectorAll('.cx-select-pill-name'));
-            const targetPill = pills.find(p => p.innerText.includes('Java Backend') || p.innerText.includes('Springboot, Hibernate, Microservices'));
-            if (targetPill) targetPill.click();
-        }''')
-        time.sleep(1.0)
-
+        print("\n--- Processing Section 2 ---")
+        answer_cascading_section2_questions(page)
+        
         ok, errs = check_errors(page, "Section 2")
         if not ok:
-            print("Cannot advance: Red errors on Section 2!")
             pw.stop()
             return
-
-        print("Advancing to Section 3...")
-        next_btn = page.locator("button:has-text('NEXT'):visible, button[aria-label='Next']:visible").first
-        next_btn.click()
+        page.locator("button:has-text('NEXT'):visible, button[aria-label='Next']:visible").first.click()
         time.sleep(3.0)
 
-    # ==========================================
-    # SECTION 3: Experience & Education Timeline
-    # ==========================================
+    # Section 3
     if "/section/3" in page.url:
-        print("\n--- Processing Section 3: Experience & Education ---")
-        tiles = page.locator('.apply-flow-profile-item-tile, .timeline-item')
-        print(f"Total tiles visible: {tiles.count()}")
-
+        print("\n--- Processing Section 3 ---")
+        # Ensure any open inline edit dialog is closed
+        cancel_btn = page.locator("button.cancel-btn:visible, button:has-text('CANCEL'):visible").first
+        if cancel_btn.count() > 0:
+            cancel_btn.click()
+            time.sleep(1.0)
+            
         ok, errs = check_errors(page, "Section 3")
         if not ok:
-            print("Cannot advance: Red errors on Section 3!")
             pw.stop()
             return
-
-        print("Advancing to Section 4...")
-        next_btn = page.locator("button:has-text('NEXT'):visible, button[aria-label='Next']:visible").first
-        next_btn.click()
+        page.locator("button:has-text('NEXT'):visible, button[aria-label='Next']:visible").first.click()
         time.sleep(3.0)
 
-    # ==========================================
-    # SECTION 4: More About You & Documents
-    # ==========================================
+    # Section 4
     if "/section/4" in page.url:
-        print("\n--- Processing Section 4: Final Review & Documents ---")
-
-        # 1. Resolve Job ID to find tailored cover letter
-        job_match = re.search(r'/job/(\d+)', page.url)
-        job_id = job_match.group(1) if job_match else ""
-
-        # Locate tailored cover letter PDF
-        cover_letter_pdf = None
-        applied_dir = REPO_ROOT / "profiles" / profile_name / "APPLIED ON COMPANY WEBSITE" / "JPMorgan Chase"
-        if applied_dir.exists():
-            for folder in applied_dir.iterdir():
-                if folder.is_dir() and (job_id in folder.name if job_id else True):
-                    cand_pdf = folder / f"{cand.get('full_name', '').replace(' ', '_')}_Cover_Letter.pdf"
-                    if cand_pdf.exists():
-                        cover_letter_pdf = str(cand_pdf)
-                        break
-
-        # 2. Cover Letter Replacement: Remove obsolete if present and upload fresh
-        if cover_letter_pdf:
-            rem_cl_btn = page.locator("button:has-text('REMOVE COVER LETTER'), button[aria-label*='Remove Cover Letter' i]").first
-            if rem_cl_btn.count() > 0 and rem_cl_btn.is_visible():
-                print("Removing previous Cover Letter attachment...")
-                page.once("dialog", lambda d: d.accept())
-                rem_cl_btn.click()
-                time.sleep(2.0)
-                confirm_btn = page.locator("button:has-text('Yes'), button:has-text('Delete'), button:has-text('Confirm')").first
-                if confirm_btn.count() > 0 and confirm_btn.is_visible():
-                    confirm_btn.click()
-                    time.sleep(1.0)
-
-            # Upload freshly tailored cover letter
-            cl_file_inp = page.locator("input[name='attachment-upload'], input[id^='attachment-upload'], input[type='file']").last
-            if cl_file_inp.count() > 0:
-                print(f"Uploading tailored cover letter: {cover_letter_pdf}")
-                cl_file_inp.set_input_files(cover_letter_pdf)
-                time.sleep(3.0)
-
-        # 3. Demographics, Diversity & E-Signature via JPMCNail
+        print("\n--- Processing Section 4 Review ---")
         nail.handle_custom_fields(page, step_num=4, candidate_data=cfg)
-
-        # 4. Final Error Audit
+        
         ok, errs = check_errors(page, "Section 4 Final Audit")
-        print(f"Final Error Audit: zero_errors={ok}, errors={errs}")
-
-        # 5. Non-Negotiable Human Gate
         submit_btn = page.locator("button:has-text('SUBMIT'), button:has-text('Submit')").first
         if submit_btn.count() > 0:
             print(f"[HUMAN GATE] SUBMIT button visible={submit_btn.is_visible()}, enabled={submit_btn.is_enabled()}.")

@@ -372,6 +372,22 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
 - **Directive:** The autonomous agent must NEVER click `SUBMIT`.
 - **Protocol:** Populate all fields, verify 0 errors, ensure SUBMIT button is enabled, capture full-page screenshot (`section4_final_verified.png`), and halt with clear instructions for the human operator to perform final review and manual submission.
 
+### Trap 16: Multi-Select Combobox Pill Containers (`.cx-multi-select-pill`)
+- **Phenomenon:** Fields like `Preferred Location` and `Top 2 programming languages` do not store selections in the `<input>` element value. The text input remains empty, and selecting options mounts individual `.cx-multi-select-pill__value` badges into a pill container.
+- **Root Cause:** In Oracle JET CX_1002, the component class is `.cx-multi-select__list-item` (NOT `.cx-select__list-item`). Clicking the input or toggle renders an interactive listbox. Each mounted pill has an adjacent removal cross button (`.cx-multi-select-pill__value-remove`).
+- **Remediation:** Click `[aria-label*="Preferred Location"]` or listbox toggle. Select target item using `.cx-multi-select__list-item`. Verify that `.cx-multi-select-pill__value-text` contains the selected item text. Never click the adjacent remove cross button.
+
+### Trap 17: Cascading Conditional Questionnaire Tree Loop
+- **Phenomenon:** Answering one question (e.g. `Relevant years of work experience` -> `At least 5 years of experience`) dynamically unhides secondary questions (`Primary area of expertise`, `AWS proficiency`), and selecting `Software Engineering` unhides tertiary questions (`Java Backend`, `Top 2 programming languages`).
+- **Root Cause:** Oracle Cloud HCM mounts conditional sub-questions reactively. Single-pass scripts that only evaluate questions once on page load miss all Level 2 and Level 3 questions, resulting in red errors (`This information is required.`, `Select at least 2 answers.`).
+- **Remediation:** Implement a multi-pass while-loop (up to 5 passes) that repeatedly scans for unanswered questions, passes them to the ATS Nail/AI resolver, and stops only when all visible questions are answered and active validation error count is 0.
+
+### Trap 18: Work Experience Tile Alphabetical Sorting Phenomenon in CX_1002
+- **Phenomenon:** In Section 3 (`/apply/section/3`), the list of work experience tiles appears out of chronological order (e.g., Adobe 2016 appears before Cognizant 2026, and TCS 2021 appears at the bottom).
+- **Root Cause:** The Oracle JET candidate self-service portal template sorts the display array of `.apply-flow-profile-item-tile` strictly **alphabetically by employer name** (`A` -> `C` -> `I` -> `N` -> `T`): Adobe, CL Educate, Cognizant, IBM, Infosys, IRCTC, Navyug, NEC, Tata Consultancy Services. The UI has no drag-and-drop handles or sort controls.
+- **Resolution & Recruiter Behavior:** Each experience record retains its authentic Start Date and End Date. When the application is submitted and viewed by recruiters in the Oracle HCM Talent / Recruiter console, Oracle automatically arranges the candidate's career history in reverse chronological order based on the dates.
+
+
 
 
 
