@@ -7,7 +7,10 @@ from CompanySiteApply.anatomy import (
     FieldCell,
     CellAuditResult,
     SectionAuditResult,
-    SurgicalAuditor
+    SurgicalAuditor,
+    OracleEducationSectionSurface,
+    OracleExperienceSectionSurface,
+    OraclePage3TimelineBone,
 )
 
 
@@ -76,6 +79,19 @@ class TestAnatomyHierarchy(unittest.TestCase):
         self.assertIn("Education", report["healed_sections"])
         self.assertNotIn("Experience", report["healed_sections"])
         self.assertTrue(ground_truth["school_filled"])
+
+    def test_oracle_page3_bone_and_sections(self):
+        page = MagicMock()
+        page.url = "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/210796584/apply/section/3"
+
+        bone = OraclePage3TimelineBone()
+        self.assertTrue(bone.is_current_page(page))
+        self.assertEqual(bone.page_index, 3)
+
+        sections = bone.get_sections()
+        self.assertEqual(len(sections), 2)
+        self.assertEqual(sections[0].section_name, "Education")
+        self.assertEqual(sections[1].section_name, "WorkExperience")
 
 
 if __name__ == "__main__":

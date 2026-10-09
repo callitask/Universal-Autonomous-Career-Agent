@@ -7,6 +7,12 @@ from CompanySiteApply.anatomy.base_anatomy import (
     SectionAuditResult,
 )
 from CompanySiteApply.anatomy.surgical_auditor import SurgicalAuditor
+from CompanySiteApply.anatomy.oracle_cloud import (
+    OracleEducationModalMatrix,
+    OracleEducationSectionSurface,
+    OracleExperienceSectionSurface,
+    OraclePage3TimelineBone,
+)
 
 __all__ = [
     "PageBone",
@@ -16,4 +22,8 @@ __all__ = [
     "CellAuditResult",
     "SectionAuditResult",
     "SurgicalAuditor",
+    "OracleEducationModalMatrix",
+    "OracleEducationSectionSurface",
+    "OracleExperienceSectionSurface",
+    "OraclePage3TimelineBone",
 ]
