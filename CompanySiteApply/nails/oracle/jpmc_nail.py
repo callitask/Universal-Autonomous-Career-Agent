@@ -92,7 +92,7 @@ class JPMCNail(BaseNail):
         results = {}
         cand = candidate_data.get("candidate", candidate_data)
 
-        def _select_cx_pill_or_dropdown(toggle_css_list: List[str], input_css_list: List[str], target_val: str, field_name: str) -> Optional[str]:
+        def _select_cx_pill_or_dropdown(toggle_css_list: List[str], input_css_list: List[str], target_val: str, field_name: str, label_hint: str = "") -> Optional[str]:
             if not target_val:
                 return None
             field = None
@@ -104,8 +104,17 @@ class JPMCNail(BaseNail):
                         break
                 except Exception:
                     continue
+            if field is None and label_hint:
+                try:
+                    row = page.locator(f".input-row:has-text('{label_hint}')").first
+                    if row.count() > 0:
+                        field = row.locator("input").first
+                except Exception:
+                    pass
+
             if field is None:
                 return None
+
             cur = field.input_value().strip()
             if cur and cur.lower() == target_val.lower():
                 return cur
@@ -119,16 +128,25 @@ class JPMCNail(BaseNail):
                         break
                 except Exception:
                     continue
+
             if toggle is not None:
                 toggle.click()
             else:
-                field.click()
-            time.sleep(0.5)
+                try:
+                    row = field.locator("xpath=ancestor::div[contains(@class, 'input-row')]").first
+                    t_btn = row.locator("button[id$='-toggle-button'], button.icon-dropdown-arrow").first
+                    if t_btn.count() > 0 and t_btn.is_visible():
+                        t_btn.click()
+                    else:
+                        field.click()
+                except Exception:
+                    field.click()
+            time.sleep(0.8)
 
-            # Prioritize exact matching on dropdown list items to avoid container scope collision
+            # Prioritize exact matching on dropdown list items (role=gridcell, role=option, cx-select__list-item)
             clicked = page.evaluate('''(targetText) => {
                 const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-                const items = Array.from(document.querySelectorAll('[role="gridcell"], [role="option"], .cx-select__list-item, .cx-select-list-item, li')).filter(isVis);
+                const items = Array.from(document.querySelectorAll('.cx-select__list-item, [role="gridcell"], [role="option"]')).filter(isVis);
                 const exactOpt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
                 if (exactOpt) {
                     exactOpt.click();
@@ -150,7 +168,7 @@ class JPMCNail(BaseNail):
                 # Retry exact match after typing filters the list
                 page.evaluate('''(targetText) => {
                     const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-                    const items = Array.from(document.querySelectorAll('[role="gridcell"], [role="option"], .cx-select__list-item, .cx-select-list-item')).filter(isVis);
+                    const items = Array.from(document.querySelectorAll('.cx-select__list-item, [role="gridcell"], [role="option"]')).filter(isVis);
                     const opt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
                     if (opt) opt.click();
                 }''', target_val)
@@ -165,28 +183,31 @@ class JPMCNail(BaseNail):
         # 1. India Uniformed Forces / Military Status
         forces_val = str(cand.get("india_uniformed_forces") or cand.get("military_status") or "No").strip()
         _select_cx_pill_or_dropdown(
-            toggle_css_list=['[id*="indiaMilitaryStatus"][id$="-toggle-button"]', 'button[aria-label*="India Uniformed"]', 'button.icon-dropdown-arrow'],
-            input_css_list=['input[name*="indiaMilitaryStatus"]', 'input[id*="indiaMilitaryStatus"]', '[id*="ATTRIBUTE16"]'],
+            toggle_css_list=['#IN-DFF-indiaMilitaryStatus-ATTRIBUTE16-5-toggle-button', '[id*="indiaMilitaryStatus"][id$="-toggle-button"]', 'button[aria-label*="India Uniformed"]'],
+            input_css_list=['#IN-DFF-indiaMilitaryStatus-ATTRIBUTE16-5', 'input[name*="indiaMilitaryStatus"]', 'input[id*="indiaMilitaryStatus"]', '[id*="ATTRIBUTE16"]'],
             target_val=forces_val,
-            field_name="india_uniformed_forces"
+            field_name="india_uniformed_forces",
+            label_hint="India Uniformed forces"
         )
 
         # 2. Ethnicity
         eth_val = str(cand.get("ethnicity") or cand.get("Ethnicity") or cand.get("race") or "Asian").strip()
         _select_cx_pill_or_dropdown(
-            toggle_css_list=['[id*="ETHNICITY"][id$="-toggle-button"]', 'button[aria-label*="Ethnicity"]', 'button.icon-dropdown-arrow'],
-            input_css_list=['input[name*="ETHNICITY"]', 'input[id*="ETHNICITY"]', '#IN-STANDARD-ORA_ETHNICITY-STANDARD-3'],
+            toggle_css_list=['#IN-STANDARD-ORA_ETHNICITY-STANDARD-3-toggle-button', '[id*="ETHNICITY"][id$="-toggle-button"]', 'button[aria-label*="Ethnicity"]'],
+            input_css_list=['#IN-STANDARD-ORA_ETHNICITY-STANDARD-3', 'input[name*="ETHNICITY"]', 'input[id*="ETHNICITY"]'],
             target_val=eth_val,
-            field_name="ethnicity"
+            field_name="ethnicity",
+            label_hint="Ethnicity"
         )
 
         # 3. Gender
         gen_val = str(cand.get("gender") or "Male").strip()
         _select_cx_pill_or_dropdown(
-            toggle_css_list=['[id*="GENDER"][id$="-toggle-button"]', 'button[aria-label*="Gender"]', 'button.icon-dropdown-arrow'],
-            input_css_list=['input[name*="GENDER"]', 'input[id*="GENDER"]', '#IN-STANDARD-ORA_GENDER-STANDARD-4'],
+            toggle_css_list=['#IN-STANDARD-ORA_GENDER-STANDARD-4-toggle-button', '[id*="GENDER"][id$="-toggle-button"]', 'button[aria-label*="Gender"]'],
+            input_css_list=['#IN-STANDARD-ORA_GENDER-STANDARD-4', 'input[name*="GENDER"]', 'input[id*="GENDER"]'],
             target_val=gen_val,
-            field_name="gender"
+            field_name="gender",
+            label_hint="Gender"
         )
 
         # 4. LinkedIn Link Normalization (Defense against truncation)
@@ -212,6 +233,94 @@ class JPMCNail(BaseNail):
                 print(f"[JPMCNail] E-Signature full name set to: '{full_name}'", flush=True)
 
         return results
+
+    def heal_invalid_education_tiles(self, page: Any, candidate_data: Dict[str, Any]) -> bool:
+        """
+        Audits Section 3 education tiles for invalid status (e.g. 'Fields to fix: 1', 'Unnamed Major').
+        Opens the edit modal, populates Degree, Area of Study, and Country from candidate data, and saves.
+        """
+        try:
+            cand = candidate_data.get("candidate", candidate_data)
+            edu_list = cand.get("education") or []
+            edu_info = edu_list[0] if edu_list else {}
+
+            target_degree = str(edu_info.get("degree") or "Bachelor's Degree").strip()
+            target_major = str(edu_info.get("major") or edu_info.get("field_of_study") or "Computer Science & Engineering").strip()
+            target_country = str(edu_info.get("country") or "India").strip()
+
+            # Check for invalid tile or "Fields to fix"
+            invalid_tile = page.locator(".apply-flow-profile-item-tile--invalid:visible, .apply-flow-profile-item-tile:has-text('Fields to fix'):visible").first
+            if invalid_tile.count() == 0:
+                return False
+
+            print("[JPMCNail] Detected invalid education tile. Launching healer...", flush=True)
+            edit_btn = invalid_tile.locator("button[aria-label*='Edit' i], button.icon-edit, .icon-edit, button").first
+            if edit_btn.count() > 0:
+                edit_btn.click()
+            else:
+                invalid_tile.click()
+            time.sleep(1.5)
+
+            # 1. Degree Combobox
+            deg_toggle = page.locator("button[id^='contentItemId'][id$='-toggle-button']:visible").first
+            if deg_toggle.count() > 0:
+                deg_toggle.click()
+                time.sleep(0.8)
+                page.evaluate('''(targetText) => {
+                    const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                    const items = Array.from(document.querySelectorAll('.cx-select__list-item, [role="gridcell"], [role="option"]')).filter(isVis);
+                    const match = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
+                    if (match) match.click();
+                }''', target_degree)
+                time.sleep(0.5)
+
+            # 2. Area of Study
+            study_inp = page.locator("input[name='areaOfStudy']:visible, input[id^='areaOfStudy']:visible").first
+            if study_inp.count() > 0:
+                study_inp.fill(target_major)
+                study_inp.dispatch_event("input")
+                study_inp.dispatch_event("change")
+
+            # 3. Country Combobox
+            c_toggle = page.locator("button[id^='countryCode'][id$='-toggle-button']:visible").first
+            if c_toggle.count() > 0:
+                c_toggle.click()
+                time.sleep(0.8)
+                selected_country = page.evaluate('''(targetText) => {
+                    const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                    const items = Array.from(document.querySelectorAll('.cx-select__list-item, [role="gridcell"], [role="option"]')).filter(isVis);
+                    const match = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
+                    if (match) {
+                        match.click();
+                        return true;
+                    }
+                    return false;
+                }''', target_country)
+                if not selected_country:
+                    c_inp = page.locator("input[name='countryCode']:visible, input[id^='countryCode']:visible").first
+                    if c_inp.count() > 0:
+                        c_inp.fill(target_country)
+                        time.sleep(0.5)
+                        page.evaluate('''(targetText) => {
+                            const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                            const items = Array.from(document.querySelectorAll('.cx-select__list-item, [role="gridcell"], [role="option"]')).filter(isVis);
+                            const match = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
+                            if (match) match.click();
+                        }''', target_country)
+                time.sleep(0.5)
+
+            # 4. Save Modal
+            save_btn = page.locator("button.save-btn:visible, button:has-text('SAVE'):visible").first
+            if save_btn.count() > 0:
+                save_btn.click()
+                time.sleep(2.0)
+                print("[JPMCNail] Saved healed education tile.", flush=True)
+                return True
+
+            return False
+        except Exception as e:
+            print(f"[JPMCNail] Notice: could not heal education tile ({e})", flush=True)
+            return False
 
     def override_screening_answer(
         self,

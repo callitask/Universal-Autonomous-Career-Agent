@@ -63,8 +63,8 @@ class JPMorganScraper(BaseCompanyScraper):
         site_code = self.config.get("site_code", "CX_1002")
         base_url = f"https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/{site_code}/jobs"
         
-        # Navigate to jobs page if not already there
-        if f"/sites/{site_code}" not in page.url:
+        # Navigate to jobs page if not already on the jobs search page
+        if "/jobs" not in page.url or "/my-profile" in page.url:
             await page.goto(base_url, wait_until="domcontentloaded")
             await page.wait_for_timeout(3000)
 

@@ -100,9 +100,15 @@ class OracleCloudFinger(BaseATSFinger):
         super().__init__()
         self.nails: List[BaseNail] = [JPMCNail(), BristleconeNail()]
 
-    def get_active_nail(self, page: Any, url: str) -> Optional[BaseNail]:
+    def get_active_nail(self, page: Any, url: Optional[str] = None) -> Optional[BaseNail]:
         """Dynamically identifies and returns the matching company Nail for the active page."""
         title = ""
+        if not url and hasattr(page, "url"):
+            try:
+                url = page.url
+            except Exception:
+                url = ""
+        url = url or ""
         try:
             title = page.title()
         except Exception:
@@ -286,8 +292,14 @@ class OracleCloudFinger(BaseATSFinger):
 
     def _fill_experience_step(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Step: Experience Review - Run Parser Doctor to heal broken line wraps.
+        Step: Experience Review - Run Parser Doctor to heal broken line wraps,
+        reorder experience tiles reverse-chronologically, and heal invalid education tiles.
         """
+        self._reorder_tiles_reverse_chronological(page)
+        active_nail = self.get_active_nail(page)
+        if active_nail and hasattr(active_nail, "heal_invalid_education_tiles"):
+            active_nail.heal_invalid_education_tiles(page, candidate_data)
+
         healed_reports = ReviewVerifier.audit_and_heal_experience_descriptions(page)
         return {
             "success": True,
@@ -297,8 +309,12 @@ class OracleCloudFinger(BaseATSFinger):
 
     def _fill_education_step(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Step: Education Review - Run Parser Doctor to heal college/degree anomalies.
+        Step: Education Review - Run Parser Doctor to heal college/degree anomalies and heal invalid education tiles.
         """
+        active_nail = self.get_active_nail(page)
+        if active_nail and hasattr(active_nail, "heal_invalid_education_tiles"):
+            active_nail.heal_invalid_education_tiles(page, candidate_data)
+
         gt_edu = candidate_data.get("education") or []
         healed_reports = ReviewVerifier.audit_and_heal_education_fields(page, ground_truth_education=gt_edu)
         return {
@@ -679,27 +695,29 @@ class OracleCloudFinger(BaseATSFinger):
                 time.sleep(1.0)
 
         # 5. Preferred Location (multi-select combobox)
-        pref_inp = page.locator("input[name='preferredLocations']:visible").first
-        if pref_inp.count() > 0:
-            # Check if pill already exists
-            pills = page.evaluate('''() => Array.from(document.querySelectorAll('.cx-multi-select-pill, .cx-multi-select-pill__text, [class*="multi-select-pill"]')).map(e => e.innerText.trim()).filter(Boolean)''')
+        pref_container = page.locator(".apply-flow-block--preferred-locations").first
+        if pref_container.count() > 0 or page.locator("input[name='preferredLocations']:visible").count() > 0:
+            pills = page.evaluate('''() => Array.from(document.querySelectorAll('.apply-flow-block--preferred-locations .cx-multi-select-pill__value-text, .cx-multi-select-pill, .cx-multi-select-pill__text')).map(e => e.innerText.trim()).filter(Boolean)''')
             if not pills:
-                pref_inp.click()
+                page.evaluate("""() => {
+                    const block = document.querySelector('.apply-flow-block--preferred-locations') || document;
+                    const btn = block.querySelector('button[id$="-toggle-button"], button.icon-dropdown-arrow, button');
+                    if (btn) btn.click();
+                }""")
                 time.sleep(1.0)
                 pref_target = str(cand.get("preferred_location") or cand.get("location") or cand.get("city") or "").strip()
                 page.evaluate("""(targetText) => {
-                    const listbox = document.querySelector('[id^="preferredLocations"][id$="-listbox"]');
-                    if (listbox) {
-                        const items = Array.from(listbox.querySelectorAll('li, .cx-multi-select__list-item, .cx-select__list-item'));
-                        let match = targetText ? items.find(i => i.innerText.toLowerCase().includes(targetText.toLowerCase())) : null;
-                        if (match) {
-                            match.click();
-                        } else if (items.length > 0) {
-                            items[0].click();
-                        }
+                    const items = Array.from(document.querySelectorAll('.cx-multi-select__list-item, [role="option"], li'))
+                        .filter(el => (el.offsetWidth > 0 || el.offsetHeight > 0) && (el.getAttribute('role') === 'option' || el.className.includes('cx-multi-select__list-item')));
+                    if (items.length === 0) return;
+                    let match = targetText ? items.find(i => i.innerText.toLowerCase().includes(targetText.toLowerCase())) : null;
+                    if (match) {
+                        match.click();
+                    } else if (items.length > 0) {
+                        items[0].click();
                     }
                 }""", pref_target)
-                time.sleep(1.0)
+                time.sleep(0.5)
                 page.keyboard.press("Escape")
                 time.sleep(0.5)
 

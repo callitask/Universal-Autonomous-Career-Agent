@@ -1,6 +1,7 @@
 import os
 import re
 from pathlib import Path
+from typing import Optional, List, Dict, Any
 from playwright.sync_api import sync_playwright
 
 COVER_LETTER_HTML_TEMPLATE = """<!DOCTYPE html>

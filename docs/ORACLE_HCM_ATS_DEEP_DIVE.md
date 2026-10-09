@@ -405,9 +405,18 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
   4. **Section 4:** Confirms Resume attached, fresh single-page Cover Letter PDF attached, canonical LinkedIn URL verified, Demographics answered, E-Signature filled, and SUBMIT button visible and enabled.
 - **Absolute Guardrail:** The SUBMIT button on Section 4 must NEVER be clicked by the agent; the agent halts strictly on Section 4 for human review.
 
+### Trap 22: Section 1 Fresh Application Missing Country Field Under Address Block
+- **Phenomenon:** When starting an application for a new requisition, Oracle HCM imports the candidate's profile but can leave the `Country *` combobox under the Address block unpopulated, causing `"The Country field is required."` red error when attempting to navigate to Section 2.
+- **Root Cause:** Requisition onboarding clones certain fields from candidate profile history but requires re-affirmation of the Address Country combobox (`input[name="country"]`).
+- **Remediation:** Always inspect `input[name="country"], input[id^="country-"]:not([id*="phoneNumber"])`. If empty, call `_select_cx_combobox` to select candidate country (e.g. `India`).
 
+### Trap 23: Section 3 Education Tile "Fields to Fix: 1" / Missing Degree Auto-Healer
+- **Phenomenon:** The education tile renders with a red border (`apply-flow-profile-item-tile--invalid`) showing `"Fields to fix: 1"` or `"Unnamed Major"`, indicating an invalid sub-form.
+- **Root Cause:** When the resume auto-parser extracts the school (`Jaypee Institute of Information Technology JIIT`), it fails to map the degree name to Oracle HCM's internal LOV (`Bachelor's Degree`), leaving the Degree field empty.
+- **Remediation:** Detect invalid education tiles (`.apply-flow-profile-item-tile--invalid`). Automatically click the tile edit pencil, open Degree combobox (`button[id^="contentItemId"][id$="-toggle-button"]`), select candidate degree (`Bachelor's Degree`), fill Area of Study (`Computer Science & Engineering`), select Country (`India`), click `SAVE`, and verify tile becomes valid.
 
-
-
-
+### Trap 24: Section 4 Demographic Knockout Model Deselection vs. Exact Gridcell Commit
+- **Phenomenon:** When attempting to select Diversity Information dropdowns (Ethnicity, Gender, India Uniformed forces), naive `.fill()` sets input text temporarily, but on blur or escape Oracle JET resets the input to blank because the value was not committed through the JET dropdown gridcell model.
+- **Root Cause:** Oracle JET select components require clicking the specific `div.cx-select__list-item[role="gridcell"]` inside the popup overlay. If matching includes broad `li` or parent elements, or if `.fill()` is called without clicking the gridcell, JET discards the uncommitted input.
+- **Remediation:** Click the row's specific toggle button (`#IN-STANDARD-ORA_ETHNICITY-STANDARD-*-toggle-button`, `#IN-STANDARD-ORA_GENDER-STANDARD-*-toggle-button`, `#IN-DFF-indiaMilitaryStatus-ATTRIBUTE16-*-toggle-button`). Find `.cx-select__list-item, [role="gridcell"], [role="option"]` matching exact target string (e.g. `Asian`, `Male`, `No`). Click the gridcell directly. Verify input value holds on readback.
 
