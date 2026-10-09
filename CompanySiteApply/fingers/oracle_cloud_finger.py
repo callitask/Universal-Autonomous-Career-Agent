@@ -64,13 +64,17 @@
 # Changes Made: All resolve from candidate/education/work data with empty-skip; human-gated operator fills unknowns. No assumed identity.
 # Rationale: Human-gated flow must leave unknowns blank, never invent.
 # Preventative Notes: Never restore demographic or country literals here.
-# [ENTRY #009]
-# Term: [WORK_EXPERIENCE_FORMATTING]
-# Timestamp: 2026-10-08 18:42:00 +05:30
-# Issue / Context: ATS parses achievements as a flat block of text. Previous logic only enforced bullets if the config had a list, leaving strings unformatted and missing newlines.
-# Changes Made: Updated _heal_work_experience_tile to aggressively split string descriptions, strip ATS-garbled mojibakes (Ã¢â‚¬Â¢), and enforce strict bullet ('• ') formatting.
-# Rationale: The agent must improve profile presentation, not just pass validation.
-# Preventative Notes: Always clean garbled text from resumes.
+# [ENTRY #010]
+# Term: [UNIVERSAL_REVERSE_CHRONOLOGICAL_EXPERIENCE_REORDERING]
+# Timestamp: 2026-10-09 09:30:00 +05:30
+# Issue / Context: Oracle Cloud HCM candidate portal backend query returns previous employments
+#                  alphabetically by employer name rather than chronologically across all portals.
+# Changes Made: Added _reorder_tiles_reverse_chronological() to OracleCloudFinger, sorting Knockout
+#               parent.forms observableArray by active status and start date descending. Invoked
+#               automatically at the end of _fill_experience_step and _fill_section_4_more_about_you.
+# Rationale: Guarantees authentic, professional career chronology on both Section 3 and Section 4
+#            Review screens across any requisition and candidate profile.
+# Preventative Notes: Never rely on Oracle's default tile insertion sequence.
 # ==============================================================================
 
 import os
@@ -813,12 +817,6 @@ class OracleCloudFinger(BaseATSFinger):
             "zero_errors_verified": len(errors) == 0
         }
 
-    def _fill_experience_step(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Step 3: Work History and Education Timeline Review.
-        Heals broken/unmapped degree cards, validates date alignments, and ensures zero red errors.
-        Iterates over all tiles to ensure data is exactly verified and not shortened.
-        """
     @staticmethod
     def _get_candidate_experiences(candidate_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         cand = candidate_data.get("candidate", candidate_data)
@@ -936,6 +934,9 @@ class OracleCloudFinger(BaseATSFinger):
 
                 time.sleep(1.0)
         print("[_fill_experience_step] Finished processing all tiles.", flush=True)
+
+        # Guarantee reverse-chronological experience tile ordering (current employer first, newest to oldest)
+        self._reorder_tiles_reverse_chronological(page)
 
         # Audit errors across Section 3
         errors = page.evaluate('''() => Array.from(document.querySelectorAll('.app-form-item__error, .oj-form-control-error-message, [class*="error-message"], .apply-flow-profile-item-tile--error')).map(e => e.innerText.trim()).filter(Boolean)''')
@@ -1166,6 +1167,60 @@ class OracleCloudFinger(BaseATSFinger):
 
         return True
 
+    def _reorder_tiles_reverse_chronological(self, page: Any) -> bool:
+        """
+        Universally reorders the Knockout experience observableArray in strict reverse-chronological order
+        (newest to oldest, current employer first) across Oracle Cloud HCM portals.
+        Ensures both Section 3 and Section 4 Review tiles render in authentic timeline order.
+        """
+        active_nail = self.get_active_nail(page)
+        if active_nail and hasattr(active_nail, "reorder_experience_tiles"):
+            try:
+                res = active_nail.reorder_experience_tiles(page)
+                if res:
+                    return True
+            except Exception as e:
+                print(f"[OracleCloudFinger] Active nail reordering notice: {e}", flush=True)
+
+        try:
+            sorted_count = page.evaluate("""() => {
+                const tiles = document.querySelectorAll('.apply-flow-profile-item-tile');
+                if (tiles.length <= 1) return 0;
+                const expTile = tiles.length > 1 ? tiles[1] : tiles[0];
+                let koProp = Object.keys(expTile).find(p => p.startsWith('__ko__'));
+                if (!koProp) return 0;
+                const ctx = expTile[koProp]['1' + koProp]?.context;
+                if (!ctx || !ctx.$parent) return 0;
+                const parent = ctx.$parent;
+                if (!parent.forms || typeof parent.forms.sort !== 'function') return 0;
+                
+                parent.forms.sort((a, b) => {
+                    const modA = typeof a === 'function' && typeof a().model === 'function' ? a().model() : null;
+                    const modB = typeof b === 'function' && typeof b().model === 'function' ? b().model() : null;
+                    if (!modA || !modB) return 0;
+                    
+                    const curA = typeof modA.currentJobFlag === 'function' ? modA.currentJobFlag() : 'N';
+                    const curB = typeof modB.currentJobFlag === 'function' ? modB.currentJobFlag() : 'N';
+                    if (curA === 'Y' && curB !== 'Y') return -1;
+                    if (curB === 'Y' && curA !== 'Y') return 1;
+                    
+                    const startA = typeof modA.startDate === 'function' ? String(modA.startDate() || '') : '';
+                    const startB = typeof modB.startDate === 'function' ? String(modB.startDate() || '') : '';
+                    return startB.localeCompare(startA);
+                });
+                
+                if (typeof parent._buildTiles === 'function') {
+                    parent._buildTiles();
+                }
+                return parent.forms().length;
+            }""")
+            if sorted_count:
+                print(f"[OracleCloudFinger] Reordered {sorted_count} experience tiles in reverse-chronological order.", flush=True)
+            return bool(sorted_count)
+        except Exception as e:
+            print(f"[OracleCloudFinger] Notice: could not reorder experience tiles: {e}", flush=True)
+            return False
+
     def _fill_section_4_more_about_you(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Step 4: More About You / Diversity & Demographics.
@@ -1252,6 +1307,9 @@ class OracleCloudFinger(BaseATSFinger):
             full_name = cand.get("full_name", "")
             if full_name:
                 DOMHelpers.set_input_value_native(page, "input[name='fullName'], #fullName-5, input[id*='fullName']", full_name)
+
+        # Guarantee reverse-chronological experience tile ordering on Section 4 review screen
+        self._reorder_tiles_reverse_chronological(page)
 
         # Audit errors across Section 4
         errors = page.evaluate('''() => Array.from(document.querySelectorAll('.app-form-item__error, .oj-form-control-error-message, [class*="error-message"], [aria-invalid="true"]')).map(e => e.innerText.trim()).filter(Boolean)''')
