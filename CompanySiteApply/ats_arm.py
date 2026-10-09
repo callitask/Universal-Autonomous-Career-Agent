@@ -69,10 +69,13 @@ class ATSArm:
             )
         self.browser = self.playwright.chromium.connect_over_cdp(self.cdp_url)
         self.context = self.browser.contexts[0]
-        # Find the page that is not about:blank or new-tab-page
+        # Find the active application page (prioritize /apply/ over downloader)
         self.page = self.context.pages[0]
         for p in self.context.pages:
-            if "jpmc.fa.oraclecloud.com" in p.url or "taleo" in p.url:
+            if "/apply/" in p.url:
+                self.page = p
+                break
+            elif ("jpmc.fa.oraclecloud.com" in p.url or "taleo" in p.url) and "downloader" not in p.url:
                 self.page = p
                 break
         return self.page
@@ -178,6 +181,24 @@ class ATSArm:
         from CompanySiteApply.section_agents import SectionAgentDispatcher
         dispatcher = SectionAgentDispatcher()
         return dispatcher.dispatch_audit(section_name, page, candidate_data)
+
+    def heal_subagent(self, name: str, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Surgically dispatches a granular Sub-Agent (e.g. preferred_location, dropdown_questions, documents).
+        """
+        page = self.connect()
+        from CompanySiteApply.section_agents import SectionAgentDispatcher
+        dispatcher = SectionAgentDispatcher()
+        return dispatcher.dispatch_heal(name, page, candidate_data)
+
+    def audit_subagent(self, name: str, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Runs an isolated read-only audit on a granular Sub-Agent.
+        """
+        page = self.connect()
+        from CompanySiteApply.section_agents import SectionAgentDispatcher
+        dispatcher = SectionAgentDispatcher()
+        return dispatcher.dispatch_audit(name, page, candidate_data)
 
     def auto_heal_page(self, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """

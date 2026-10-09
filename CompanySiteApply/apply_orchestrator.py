@@ -129,6 +129,11 @@ class ApplyOrchestrator:
                     logger.info("[ApplyOrchestrator] Healing Section 1 Profile...")
                     self.dispatcher.dispatch_heal("profile", page, candidate_data)
                     time.sleep(1.0)
+                    aud = self.dispatcher.dispatch_audit("profile", page, candidate_data)
+                    if not aud.get("is_valid", False):
+                        logger.warning(f"[ApplyOrchestrator] Section 1 audit reported anomalies: {aud}. Re-healing...")
+                        self.dispatcher.dispatch_heal("profile", page, candidate_data)
+                        time.sleep(1.0)
                     self.advance(page)
 
                 # -------------------------------------------------------------
@@ -138,6 +143,11 @@ class ApplyOrchestrator:
                     logger.info("[ApplyOrchestrator] Healing Section 2 Questionnaire...")
                     self.dispatcher.dispatch_heal("questionnaire", page, candidate_data)
                     time.sleep(1.0)
+                    aud = self.dispatcher.dispatch_audit("questionnaire", page, candidate_data)
+                    if not aud.get("is_valid", False):
+                        logger.warning(f"[ApplyOrchestrator] Section 2 audit reported anomalies: {aud}. Re-healing...")
+                        self.dispatcher.dispatch_heal("questionnaire", page, candidate_data)
+                        time.sleep(1.0)
                     self.advance(page)
 
                 # -------------------------------------------------------------

@@ -183,6 +183,76 @@ def main():
     p_fill.add_argument("--email", help="Candidate email for email step")
     p_fill.add_argument("--config", help="Path to candidate config JSON")
 
+def cmd_heal_subagent(args):
+    arm = ATSArm(cdp_url=args.cdp_url)
+    try:
+        candidate_data = {}
+        if args.config:
+            p = Path(args.config)
+            if p.exists():
+                candidate_data = json.loads(p.read_text("utf-8"))
+        print(f"Executing surgical heal on sub-agent '{args.name}'...")
+        res = arm.heal_subagent(args.name, candidate_data)
+        print("\nSub-Agent Heal Result:")
+        print(json.dumps(res, indent=2))
+    finally:
+        arm.disconnect()
+
+
+def cmd_audit_subagent(args):
+    arm = ATSArm(cdp_url=args.cdp_url)
+    try:
+        candidate_data = {}
+        if args.config:
+            p = Path(args.config)
+            if p.exists():
+                candidate_data = json.loads(p.read_text("utf-8"))
+        print(f"Executing audit on sub-agent '{args.name}'...")
+        res = arm.audit_subagent(args.name, candidate_data)
+        print("\nSub-Agent Audit Result:")
+        print(json.dumps(res, indent=2))
+    finally:
+        arm.disconnect()
+
+
+def cmd_list_subagents(args):
+    from CompanySiteApply.section_agents import SectionAgentDispatcher
+    dispatcher = SectionAgentDispatcher()
+    print("\n" + "=" * 60)
+    print("  REGISTERED HIERARCHICAL ATS MINI-AGENTS")
+    print("=" * 60)
+    print("\n[TOP-LEVEL SECTION COORDINATORS]:")
+    for s in dispatcher.list_available_sections():
+        print(f"  • {s}")
+    print("\n[GRANULAR SURGICAL SUB-AGENTS]:")
+    for sub in dispatcher.list_available_subagents():
+        print(f"  • {sub}")
+    print("=" * 60 + "\n")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="CompanySiteApply - Enterprise ATS Multi-Finger Tool")
+    parser.add_argument("--cdp-url", default=None, help="CDP connection endpoint (falls back to CDP_URL env var)")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # apply-flow (Autonomous master pipeline)
+    p_af = subparsers.add_parser("apply-flow", help="Autonomously execute end-to-end application lifecycle through Section Mini-Agents")
+    p_af.add_argument("--config", required=True, help="Path to candidate config JSON")
+
+    # inspect
+    p_insp = subparsers.add_parser("inspect", help="Deeply inspect active tab, detect ATS, flag honeypots, save schema")
+    
+    # detect
+    p_det = subparsers.add_parser("detect", help="Quick print of detected ATS platform and confidence")
+
+    # heal
+    p_heal = subparsers.add_parser("heal", help="Run Parser Doctor to heal broken line wraps and education anomalies")
+
+    # fill
+    p_fill = subparsers.add_parser("fill", help="Fill active step and advance")
+    p_fill.add_argument("--email", help="Candidate email for email step")
+    p_fill.add_argument("--config", help="Path to candidate config JSON")
+
     # heal-section
     p_hs = subparsers.add_parser("heal-section", help="Surgically heal a specific section via its dedicated mini-agent")
     p_hs.add_argument("--section", required=True, choices=["profile", "questionnaire", "education", "experience", "review"], help="Section name to heal")
@@ -192,6 +262,19 @@ def main():
     p_as = subparsers.add_parser("audit-section", help="Audit a specific section via its dedicated mini-agent")
     p_as.add_argument("--section", required=True, choices=["profile", "questionnaire", "education", "experience", "review"], help="Section name to audit")
     p_as.add_argument("--config", help="Path to candidate config JSON")
+
+    # heal-subagent
+    p_hsub = subparsers.add_parser("heal-subagent", help="Surgically heal a granular sub-agent (e.g. preferred_location, dropdown_questions, documents)")
+    p_hsub.add_argument("--name", required=True, help="Sub-agent name to heal")
+    p_hsub.add_argument("--config", help="Path to candidate config JSON")
+
+    # audit-subagent
+    p_asub = subparsers.add_parser("audit-subagent", help="Audit a granular sub-agent")
+    p_asub.add_argument("--name", required=True, help="Sub-agent name to audit")
+    p_asub.add_argument("--config", help="Path to candidate config JSON")
+
+    # list-subagents
+    subparsers.add_parser("list-subagents", help="List all registered top-level sections and granular sub-agents")
 
     args = parser.parse_args()
     if args.command == "apply-flow":
@@ -208,6 +291,12 @@ def main():
         cmd_heal_section(args)
     elif args.command == "audit-section":
         cmd_audit_section(args)
+    elif args.command == "heal-subagent":
+        cmd_heal_subagent(args)
+    elif args.command == "audit-subagent":
+        cmd_audit_subagent(args)
+    elif args.command == "list-subagents":
+        cmd_list_subagents(args)
 
 
 if __name__ == "__main__":

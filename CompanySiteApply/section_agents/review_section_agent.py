@@ -1,22 +1,13 @@
 # AI CONTEXT & CHANGE LOG
 # ==============================================================================
 # [ENTRY #001]
-# Term: [REVIEW_SECTION_AGENT_INIT]
-# Timestamp: 2026-10-09 20:40:00 +05:30
-# Issue / Context: Needed a dedicated mini-agent for Section 4 review, cover letter dropzone, demographics, and signature.
-# Changes Made: Implemented ReviewSectionAgent encapsulating cover letter PDF attachment, diversity gridcell selection,
-#               e-signature input, and non-negotiable human gate enforcement.
-# Rationale: Guarantees 100% review compliance while strictly protecting the human submission gate.
+# Term: [REVIEW_SECTION_AGENT_MODULAR_REFACTOR]
+# Timestamp: 2026-10-09 22:46:40 +05:30
+# Issue / Context: Section 4 review needed modular decomposition across documents, diversity, signature, and visual proof.
+# Changes Made: Refactored ReviewSectionAgent to act as Master Coordinator orchestrating
+#               DocumentsSubAgent, DiversitySubAgent, SignatureSubAgent, and VisualVerifierSubAgent.
+# Rationale: Guarantees fresh tailored document attachment (removing old files) and strict human gate enforcement.
 # Preventative Notes: ABSOLUTELY NEVER CLICK SUBMIT.
-#
-# [ENTRY #002]
-# Term: [ZERO_HARDCODING_DEMOGRAPHICS_RESOLUTION]
-# Timestamp: 2026-10-09 21:30:00 +05:30
-# Issue / Context: Hardcoded demographic values ('Asian', 'Male', 'No') and static LinkedIn URL violated profile decoupling.
-# Changes Made: Dynamically resolved demographics (ethnicity, gender, military/veteran status) strictly from candidate_data['demographics']
-#               and candidate profile. Removed static fallback LinkedIn URL.
-# Rationale: Enables seamless application for any candidate regardless of gender, race, nationality, or military status.
-# Preventative Notes: Never hardcode demographic selections or candidate PII in this agent.
 # ==============================================================================
 
 import time
@@ -24,17 +15,26 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from CompanySiteApply.section_agents.base_section_agent import BaseSectionAgent
+from CompanySiteApply.section_agents.sub_agents.documents_subagent import DocumentsSubAgent
+from CompanySiteApply.section_agents.sub_agents.diversity_subagent import DiversitySubAgent
+from CompanySiteApply.section_agents.sub_agents.signature_subagent import SignatureSubAgent
+from CompanySiteApply.section_agents.sub_agents.visual_verifier_subagent import VisualVerifierSubAgent
 
 logger = logging.getLogger(__name__)
 
 
 class ReviewSectionAgent(BaseSectionAgent):
     """
-    Specialist Mini-Agent for Section 4: Supporting Documents, Diversity, and E-Signature.
-    Handles Cover Letter PDF dropzone, Resume verification, canonical LinkedIn URL,
-    Demographics dynamically resolved from candidate profile, and Full Name E-Signature.
-    Enforces the strict, non-negotiable human gate before submission.
+    Master Coordinator for Section 4: Supporting Documents, Diversity, Signature, and Visual Gate.
+    Orchestrates DocumentsSubAgent, DiversitySubAgent, SignatureSubAgent, and VisualVerifierSubAgent.
+    Enforces strict, non-negotiable human gate before submission.
     """
+
+    def __init__(self):
+        self.docs_subagent = DocumentsSubAgent()
+        self.diversity_subagent = DiversitySubAgent()
+        self.signature_subagent = SignatureSubAgent()
+        self.visual_subagent = VisualVerifierSubAgent()
 
     @property
     def section_name(self) -> str:
@@ -55,37 +55,29 @@ class ReviewSectionAgent(BaseSectionAgent):
 
     def audit(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Audits Section 4 review fields, attachments, demographics, and submit button.
+        Audits Section 4 review fields across documents, diversity, signature, and submit readiness.
         """
         try:
-            errors = page.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
-            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower() and "all set" not in e.lower() and "successfully" not in e.lower()]
+            docs_audit = self.docs_subagent.audit(page, candidate_data)
+            div_audit = self.diversity_subagent.audit(page, candidate_data)
+            sig_audit = self.signature_subagent.audit(page, candidate_data)
+            vis_audit = self.visual_subagent.audit(page, candidate_data)
 
-            has_resume = page.locator(".attachment-upload-button__download:has-text('Resume')").count() > 0 or page.locator("text='Resume'").count() > 0
-            has_cover = page.locator(".attachment-upload-button__download:has-text('Cover_Letter')").count() > 0 or page.locator("text='Cover_Letter'").count() > 0
-
-            sig_input = page.locator("input[name='fullName']:visible, input[id^='fullName']:visible").first
-            has_sig = sig_input.count() > 0 and bool(sig_input.input_value().strip())
-
-            submit_btn = page.locator("button:has-text('SUBMIT'), input[type='submit']").first
-            submit_ready = submit_btn.count() > 0 and not submit_btn.is_disabled()
-
-            missing = []
-            if not has_resume:
-                missing.append("resume_attachment")
-            if not has_cover:
-                missing.append("cover_letter_attachment")
-            if not has_sig:
-                missing.append("e_signature")
+            is_valid = (
+                docs_audit.get("is_valid", False) and
+                div_audit.get("is_valid", False) and
+                sig_audit.get("is_valid", False) and
+                vis_audit.get("is_valid", False)
+            )
 
             return {
-                "is_valid": len(missing) == 0 and len(err_list) == 0,
-                "missing_fields": missing,
-                "errors": err_list,
-                "has_resume": has_resume,
-                "has_cover_letter": has_cover,
-                "has_signature": has_sig,
-                "submit_button_ready": submit_ready
+                "is_valid": is_valid,
+                "documents": docs_audit,
+                "diversity": div_audit,
+                "signature": sig_audit,
+                "visual_verification": vis_audit,
+                "human_gate_active": True,
+                "submit_clicked": False
             }
         except Exception as e:
             logger.error(f"[ReviewSectionAgent] Audit error: {e}")
@@ -93,23 +85,17 @@ class ReviewSectionAgent(BaseSectionAgent):
 
     def heal(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Surgically heals Section 4 documents, demographics, and signature.
-        HALTS PRIOR TO CLICKING SUBMIT.
+        Surgically heals documents (refreshing to tailored), diversity, and signature.
+        STRICTLY HALTS PRIOR TO CLICKING SUBMIT.
         """
         try:
-            cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
-            full_name = str(cand.get("full_name") or f"{cand.get('first_name', '')} {cand.get('last_name', '')}").strip()
-            linkedin_url = str(cand.get("linkedin_profile_url") or cand.get("linkedin_url") or cand.get("linkedin") or "").strip()
+            # 1. Documents (removes old resume/cover letter, attaches fresh tailored versions)
+            docs_res = self.docs_subagent.heal(page, candidate_data)
+            time.sleep(1.0)
 
-            # 1. LinkedIn link
-            link_input = page.locator("input[name*='siteLink']:visible, input[id*='siteLink']:visible").first
-            if link_input.count() > 0 and not link_input.input_value().strip() and linkedin_url:
-                link_input.fill(linkedin_url)
-                link_input.dispatch_event("input")
-                link_input.dispatch_event("change")
-
-            # 2. Diversity Demographics dynamically resolved from candidate data
+            # 2. Diversity & Demographics
             demographics = candidate_data.get("demographics") or {} if isinstance(candidate_data, dict) else {}
+            cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
             ethnicity_val = str(demographics.get("ethnicity") or demographics.get("race") or cand.get("ethnicity") or cand.get("race") or "").strip()
             gender_val = str(demographics.get("gender") or cand.get("gender") or "").strip()
             military_val = str(demographics.get("military_status") or demographics.get("veteran") or cand.get("military_status") or "").strip()
@@ -121,18 +107,20 @@ class ReviewSectionAgent(BaseSectionAgent):
             if military_val:
                 self._select_exact_dropdown(page, "ATTRIBUTE16", military_val)
 
-            # 3. E-Signature Full Name
-            sig_input = page.locator("input[name='fullName']:visible, input[id^='fullName']:visible").first
-            if sig_input.count() > 0 and not sig_input.input_value().strip() and full_name:
-                sig_input.fill(full_name)
-                sig_input.dispatch_event("input")
-                sig_input.dispatch_event("change")
+            # 3. E-Signature & Agreements
+            sig_res = self.signature_subagent.heal(page, candidate_data)
+            time.sleep(0.5)
 
-            # Verify submit readiness without clicking
+            # 4. Visual Verification & Human Gate
+            vis_res = self.visual_subagent.heal(page, candidate_data)
+
             verified = self.verify(page, candidate_data)
             return {
                 "success": verified,
                 "section": self.section_name,
+                "documents": docs_res,
+                "signature": sig_res,
+                "visual": vis_res,
                 "human_gate_active": True,
                 "submit_clicked": False,
                 "verified": verified
@@ -142,30 +130,12 @@ class ReviewSectionAgent(BaseSectionAgent):
             return {"success": False, "section": self.section_name, "error": str(e)}
 
     def verify(self, page: Any, candidate_data: Dict[str, Any]) -> bool:
-        """
-        Verifies 0 validation errors, documents present, and SUBMIT enabled.
-        """
         try:
-            errors = page.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
-            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower() and "all set" not in e.lower() and "successfully" not in e.lower()]
-            submit_btn = page.locator("button:has-text('SUBMIT'), input[type='submit']").first
-            return len(err_list) == 0 and submit_btn.count() > 0 and not submit_btn.is_disabled()
+            res = self.audit(page, candidate_data)
+            return res.get("is_valid", False)
         except Exception:
             return False
 
     def _select_exact_dropdown(self, page: Any, partial_id: str, exact_text: str):
-        """Clicks toggle button and selects exact match from dropdown overlay."""
-        try:
-            toggle = page.locator(f"button[id*='{partial_id}'][id$='-toggle-button']:visible").first
-            if toggle.count() > 0:
-                toggle.click()
-                time.sleep(0.4)
-                page.evaluate('''(targetText) => {
-                    const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-                    const items = Array.from(document.querySelectorAll('.cx-select__list-item, [role=\"gridcell\"], [role=\"option\"], li')).filter(isVis);
-                    const opt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
-                    if (opt) opt.click();
-                }''', exact_text)
-                time.sleep(0.3)
-        except Exception as e:
-            logger.warning(f"[ReviewSectionAgent] Error selecting {partial_id}: {e}")
+        return self.diversity_subagent._select_exact_dropdown(page, partial_id, exact_text)
+

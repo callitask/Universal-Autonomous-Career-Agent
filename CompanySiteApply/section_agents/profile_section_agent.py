@@ -22,17 +22,21 @@ import time
 import logging
 from typing import Any, Dict, List, Optional
 from CompanySiteApply.section_agents.base_section_agent import BaseSectionAgent
+from CompanySiteApply.section_agents.sub_agents.personal_details_subagent import PersonalDetailsSubAgent
+from CompanySiteApply.section_agents.sub_agents.preferred_location_subagent import PreferredLocationSubAgent
 
 logger = logging.getLogger(__name__)
 
 
 class ProfileSectionAgent(BaseSectionAgent):
     """
-    Specialist Mini-Agent for Personal Details, Contact Info, and Facility Location.
-    Handles Title, First/Last Name, Email, Phone, Address lines, City, Postal Code,
-    Address Country combobox, and the interactive Preferred Location facility directory.
-    Purely profile-driven: zero hardcoded city or facility literals.
+    Master Coordinator for Section 1: Personal Details & Preferred Location.
+    Composes PersonalDetailsSubAgent and PreferredLocationSubAgent.
     """
+
+    def __init__(self):
+        self.personal_subagent = PersonalDetailsSubAgent()
+        self.location_subagent = PreferredLocationSubAgent()
 
     @property
     def section_name(self) -> str:
@@ -53,84 +57,40 @@ class ProfileSectionAgent(BaseSectionAgent):
 
     def audit(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Audits required personal and contact inputs.
+        Audits Section 1 personal details and preferred location sub-agents.
         """
-        try:
-            errors = page.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
-            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower() and "all set" not in e.lower() and "successfully" not in e.lower()]
+        personal_audit = self.personal_subagent.audit(page, candidate_data)
+        location_audit = self.location_subagent.audit(page, candidate_data)
 
-            pref_loc = page.locator(".cx-select-pill, [class*='preferred-location']").count() > 0
-            city_val = page.locator("input[id^='city']:visible, input[name='city']:visible").first
-            has_city = city_val.count() > 0 and bool(city_val.input_value().strip())
+        errors = page.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
+        err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower() and "all set" not in e.lower() and "successfully" not in e.lower()]
 
-            return {
-                "is_valid": len(err_list) == 0 and has_city,
-                "errors": err_list,
-                "has_city": has_city,
-                "has_preferred_location": pref_loc
-            }
-        except Exception as e:
-            logger.error(f"[ProfileSectionAgent] Audit error: {e}")
-            return {"is_valid": False, "error": str(e)}
+        is_valid = personal_audit.get("is_valid", False) and location_audit.get("is_valid", False) and len(err_list) == 0
+
+        return {
+            "is_valid": is_valid,
+            "errors": err_list,
+            "personal_details": personal_audit,
+            "preferred_location": location_audit
+        }
 
     def heal(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Heals Address, Country, City, and Preferred Location strictly from candidate profile.
+        Executes surgical healing across personal details and preferred location.
         """
         try:
-            cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
-            target_jobs = candidate_data.get("target_jobs") or {} if isinstance(candidate_data, dict) else {}
-            locations_list = target_jobs.get("locations") or []
+            # 1. Heal personal details
+            personal_res = self.personal_subagent.heal(page, candidate_data)
 
-            city_val = str(cand.get("city") or cand.get("location") or (locations_list[0] if locations_list else "")).strip()
-            country_val = str(cand.get("country") or "").strip()
-            if not country_val and "+91" in str(cand.get("phone", "")):
-                country_val = "India"
-
-            # 1. Address Country
-            country_input = page.locator("input[name='country']:visible, input[id^='country-']:not([id*='phoneNumber']):visible").first
-            if country_input.count() > 0 and not country_input.input_value().strip() and country_val:
-                country_input.fill(country_val)
-                time.sleep(0.3)
-                country_input.press("ArrowDown")
-                time.sleep(0.2)
-                country_input.press("Enter")
-
-            # 2. City
-            city_input = page.locator("input[id^='city']:visible, input[name='city']:visible").first
-            if city_input.count() > 0 and not city_input.input_value().strip() and city_val:
-                city_input.fill(city_val)
-                city_input.dispatch_event("input")
-                city_input.dispatch_event("change")
-
-            # 3. Preferred Location combobox pill
-            pref_block = page.locator(".apply-flow-block--preferred-locations, [class*='preferred-locations']").first
-            if pref_block.count() > 0:
-                pills_cnt = pref_block.locator(".cx-multi-select-pill__value-text").count()
-                if pills_cnt == 0:
-                    toggle = pref_block.locator("button[id$='-toggle-button'], button.icon-dropdown-arrow, button").first
-                    if toggle.count() > 0:
-                        toggle.click()
-                        time.sleep(1.0)
-                        page.evaluate("""(targetCity) => {
-                            const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-                            const items = Array.from(document.querySelectorAll('.cx-multi-select__list-item, li[role="option"], [role="option"], [role="gridcell"]')).filter(isVis);
-                            if (items.length === 0) return;
-                            const match = items.find(i => i.innerText.toLowerCase().includes(targetCity.toLowerCase()));
-                            if (match) {
-                                match.click();
-                            } else {
-                                items[0].click();
-                            }
-                        }""", city_val)
-                        time.sleep(0.5)
-                        page.keyboard.press("Escape")
-                        time.sleep(0.5)
+            # 2. Heal preferred location
+            location_res = self.location_subagent.heal(page, candidate_data)
 
             verified = self.verify(page, candidate_data)
             return {
                 "success": verified,
                 "section": self.section_name,
+                "personal_details": personal_res,
+                "preferred_location": location_res,
                 "verified": verified
             }
         except Exception as e:
@@ -139,8 +99,9 @@ class ProfileSectionAgent(BaseSectionAgent):
 
     def verify(self, page: Any, candidate_data: Dict[str, Any]) -> bool:
         try:
-            errors = page.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
-            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower() and "all set" not in e.lower() and "successfully" not in e.lower()]
-            return len(err_list) == 0
+            res = self.audit(page, candidate_data)
+            return res.get("is_valid", False)
+        except Exception:
+            return False
         except Exception:
             return False

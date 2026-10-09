@@ -1,13 +1,13 @@
 # AI CONTEXT & CHANGE LOG
 # ==============================================================================
 # [ENTRY #001]
-# Term: [SECTION_AGENT_DISPATCHER_INIT]
-# Timestamp: 2026-10-09 20:41:00 +05:30
-# Issue / Context: Needed a central brain router to dynamically dispatch section-wise mini-agents on demand.
-# Changes Made: Implemented SectionAgentDispatcher managing agent registry, stage-based lookup,
-#               isolated heal routing, and autonomous page diagnosis.
-# Rationale: Replaces all ad-hoc script writing with deterministic, surgical mini-agent dispatching.
-# Preventative Notes: Always invoke agents with isolated execution boundaries.
+# Term: [SECTION_AGENT_DISPATCHER_HIERARCHICAL_ROUTING]
+# Timestamp: 2026-10-09 22:47:00 +05:30
+# Issue / Context: Needed granular routing supporting both top-level sections and surgical sub-agents.
+# Changes Made: Updated SectionAgentDispatcher to register top-level section coordinators and all 9 granular sub-agents.
+# Rationale: Enables single-subagent execution (e.g. heal preferred_location, heal dropdown_questions, heal documents)
+#            with zero side effects on sister sections.
+# Preventative Notes: Always preserve subagent boundaries.
 # ==============================================================================
 
 import logging
@@ -19,15 +19,27 @@ from CompanySiteApply.section_agents.education_section_agent import EducationSec
 from CompanySiteApply.section_agents.experience_section_agent import ExperienceSectionAgent
 from CompanySiteApply.section_agents.review_section_agent import ReviewSectionAgent
 
+# Granular Sub-Agents
+from CompanySiteApply.section_agents.sub_agents.personal_details_subagent import PersonalDetailsSubAgent
+from CompanySiteApply.section_agents.sub_agents.preferred_location_subagent import PreferredLocationSubAgent
+from CompanySiteApply.section_agents.sub_agents.binary_question_subagent import BinaryQuestionSubAgent
+from CompanySiteApply.section_agents.sub_agents.technical_competency_subagent import TechnicalCompetencySubAgent
+from CompanySiteApply.section_agents.sub_agents.dropdown_question_subagent import DropdownQuestionSubAgent
+from CompanySiteApply.section_agents.sub_agents.education_subagent import EducationSubAgent
+from CompanySiteApply.section_agents.sub_agents.experience_subagent import ExperienceSubAgent
+from CompanySiteApply.section_agents.sub_agents.documents_subagent import DocumentsSubAgent
+from CompanySiteApply.section_agents.sub_agents.diversity_subagent import DiversitySubAgent
+from CompanySiteApply.section_agents.sub_agents.signature_subagent import SignatureSubAgent
+from CompanySiteApply.section_agents.sub_agents.visual_verifier_subagent import VisualVerifierSubAgent
+
 logger = logging.getLogger(__name__)
 
 
 class SectionAgentDispatcher:
     """
-    Central Brain Dispatcher for Section-Wise Mini-Agents.
-    Maintains the registry of all specialist section agents, resolves which agent
-    is required based on page URL, DOM state, or diagnostic failure signatures,
-    and executes isolated micro-repairs without full-page restarts.
+    Central Brain Dispatcher for Section-Wise and Sub-Section Mini-Agents.
+    Maintains the registry of all specialist section and sub-section agents, resolves
+    which agent is required, and executes isolated micro-repairs without full-page restarts.
     """
 
     def __init__(self, agents: Optional[List[BaseSectionAgent]] = None):
@@ -35,25 +47,59 @@ class SectionAgentDispatcher:
             self._agents = {a.section_name.lower(): a for a in agents}
         else:
             default_agents = [
+                # Top-level Section Coordinators
                 ProfileSectionAgent(),
                 QuestionnaireSectionAgent(),
                 EducationSectionAgent(),
                 ExperienceSectionAgent(),
-                ReviewSectionAgent()
+                ReviewSectionAgent(),
+
+                # Granular Sub-Agents
+                PersonalDetailsSubAgent(),
+                PreferredLocationSubAgent(),
+                BinaryQuestionSubAgent(),
+                TechnicalCompetencySubAgent(),
+                DropdownQuestionSubAgent(),
+                EducationSubAgent(),
+                ExperienceSubAgent(),
+                DocumentsSubAgent(),
+                DiversitySubAgent(),
+                SignatureSubAgent(),
+                VisualVerifierSubAgent()
             ]
             self._agents = {a.section_name.lower(): a for a in default_agents}
 
     def register_agent(self, agent: BaseSectionAgent):
-        """Registers a custom or platform-specific section agent."""
+        """Registers a custom or platform-specific section/sub-section agent."""
         self._agents[agent.section_name.lower()] = agent
 
-    def get_agent(self, section_name: str) -> Optional[BaseSectionAgent]:
-        """Retrieves a specific section agent by name."""
-        return self._agents.get(section_name.lower())
+    def get_agent(self, name: str) -> Optional[BaseSectionAgent]:
+        """Retrieves a specific section or sub-section agent by name."""
+        return self._agents.get(name.lower())
+
+    def list_available_agents(self) -> List[str]:
+        """Returns the list of all registered section and sub-agent names."""
+        return list(self._agents.keys())
 
     def list_available_sections(self) -> List[str]:
-        """Returns the list of all registered section names."""
-        return list(self._agents.keys())
+        """Returns top-level section names."""
+        return ["profile", "questionnaire", "education", "experience", "review"]
+
+    def list_available_subagents(self) -> List[str]:
+        """Returns granular sub-agent names."""
+        return [
+            "personal_details",
+            "preferred_location",
+            "binary_questions",
+            "technical_competency",
+            "dropdown_questions",
+            "education",
+            "experience",
+            "documents",
+            "diversity",
+            "signature",
+            "visual_verifier"
+        ]
 
     def resolve_agents_for_page(self, page: Any) -> List[BaseSectionAgent]:
         """
@@ -68,40 +114,43 @@ class SectionAgentDispatcher:
                 logger.warning(f"Error checking can_handle for {agent.section_name}: {e}")
         return matching
 
-    def dispatch_heal(self, section_name: str, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
+    def dispatch_heal(self, name: str, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Surgically dispatches a single named section agent to heal its domain.
+        Surgically dispatches a single named section or sub-agent to heal its domain.
         Guarantees complete isolation from other sections.
         """
-        agent = self.get_agent(section_name)
+        agent = self.get_agent(name)
         if not agent:
             return {
                 "success": False,
-                "error": f"Unknown section agent '{section_name}'. Available: {self.list_available_sections()}"
+                "error": f"Unknown section agent '{name}'. Available: {self.list_available_agents()}"
             }
 
         logger.info(f"[SectionAgentDispatcher] Dispatched '{agent.section_name}' for surgical healing...")
         return agent.heal(page, candidate_data)
 
-    def dispatch_audit(self, section_name: str, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
+    def dispatch_audit(self, name: str, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Dispatches a single named section agent to audit its domain.
+        Dispatches a single named section or sub-agent to audit its domain.
         """
-        agent = self.get_agent(section_name)
+        agent = self.get_agent(name)
         if not agent:
             return {
                 "success": False,
-                "error": f"Unknown section agent '{section_name}'. Available: {self.list_available_sections()}"
+                "error": f"Unknown section agent '{name}'. Available: {self.list_available_agents()}"
             }
 
         return agent.audit(page, candidate_data)
 
     def auto_heal_current_page(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Inspects active page, identifies all applicable section agents, audits each,
+        Inspects active page, identifies top-level section coordinators, audits each,
         and heals only those sections that report anomalies.
         """
-        applicable = self.resolve_agents_for_page(page)
+        # Only run top-level coordinators for auto-page healing to prevent redundant passes
+        top_level_names = self.list_available_sections()
+        applicable = [self._agents[name] for name in top_level_names if name in self._agents and self._agents[name].can_handle(page)]
+
         if not applicable:
             return {
                 "success": False,
