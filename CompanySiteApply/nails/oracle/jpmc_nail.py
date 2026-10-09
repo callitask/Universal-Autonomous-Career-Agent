@@ -27,7 +27,18 @@
 # Issue / Context: Demographic fields keyed on versioned flexfield IDs that rev per requisition schema.
 # Changes Made: _resolve_field tier (exact ID -> name attribute -> shared semantic label proximity); all three demographic fields use it.
 # Rationale: Survives ATTRIBUTE suffix revs; future nails reuse the shared helper.
-# Preventative Notes: Never depend on a single versioned ID without name/label fallbacks.
+# [ENTRY #004]
+# Term: [REVERSE_CHRONOLOGICAL_EXPERIENCE_REORDERING]
+# Timestamp: 2026-10-09 09:12:00 +05:30
+# Issue / Context: Oracle Cloud HCM candidate portal backend returns previous employments
+#                  alphabetically by employer name rather than chronologically, displaying
+#                  tiles in unnatural non-chronological order.
+# Changes Made: Added reorder_experience_tiles() which sorts Knockout VM parent.forms
+#               observableArray in strict reverse-chronological order (newest to oldest,
+#               current job first) and triggers _buildTiles().
+# Rationale: Ensures candidate timeline displays in authentic professional order on both
+#            Section 3 and Section 4 Review screens.
+# Preventative Notes: Never rely on default Oracle HCM insertion order for tile display.
 # ==============================================================================
 
 import re
@@ -354,3 +365,49 @@ class JPMCNail(BaseNail):
             if target_l in opt.lower():
                 return opt
         return None
+
+    def reorder_experience_tiles(self, page: Any) -> bool:
+        """
+        Sorts the Knockout experience observableArray in strict reverse-chronological order
+        (newest to oldest, current job first) so Oracle Cloud HCM tiles render correctly.
+        """
+        try:
+            sorted_count = page.evaluate("""() => {
+                const tiles = document.querySelectorAll('.apply-flow-profile-item-tile');
+                if (tiles.length <= 1) return 0;
+                // Index 0 is typically education, experience tiles follow
+                const expTile = tiles.length > 1 ? tiles[1] : tiles[0];
+                let koProp = Object.keys(expTile).find(p => p.startsWith('__ko__'));
+                if (!koProp) return 0;
+                const ctx = expTile[koProp]['1' + koProp]?.context;
+                if (!ctx || !ctx.$parent) return 0;
+                const parent = ctx.$parent;
+                if (!parent.forms || typeof parent.forms.sort !== 'function') return 0;
+                
+                // Sort parent.forms directly using observableArray sort
+                parent.forms.sort((a, b) => {
+                    const modA = typeof a === 'function' && typeof a().model === 'function' ? a().model() : null;
+                    const modB = typeof b === 'function' && typeof b().model === 'function' ? b().model() : null;
+                    if (!modA || !modB) return 0;
+                    
+                    const curA = typeof modA.currentJobFlag === 'function' ? modA.currentJobFlag() : 'N';
+                    const curB = typeof modB.currentJobFlag === 'function' ? modB.currentJobFlag() : 'N';
+                    if (curA === 'Y' && curB !== 'Y') return -1;
+                    if (curB === 'Y' && curA !== 'Y') return 1;
+                    
+                    const startA = typeof modA.startDate === 'function' ? String(modA.startDate() || '') : '';
+                    const startB = typeof modB.startDate === 'function' ? String(modB.startDate() || '') : '';
+                    return startB.localeCompare(startA);
+                });
+                
+                if (typeof parent._buildTiles === 'function') {
+                    parent._buildTiles();
+                }
+                return parent.forms().length;
+            }""")
+            print(f"[JPMCNail] Reverse-chronologically reordered {sorted_count} experience tiles.", flush=True)
+            return bool(sorted_count)
+        except Exception as e:
+            print(f"[JPMCNail] Notice: could not reorder experience tiles ({e})", flush=True)
+            return False
+

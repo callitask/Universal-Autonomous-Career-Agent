@@ -50,6 +50,7 @@ venv.bak/
 # 3. Playwright & Browser Artifacts
 test-results/
 .playwright-artifacts/
+screenshots/
 
 # 4. Logs, Audit Dumps, and Databases
 *.log

@@ -385,7 +385,26 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
 ### Trap 18: Work Experience Tile Alphabetical Sorting Phenomenon in CX_1002
 - **Phenomenon:** In Section 3 (`/apply/section/3`), the list of work experience tiles appears out of chronological order (e.g., Adobe 2016 appears before Cognizant 2026, and TCS 2021 appears at the bottom).
 - **Root Cause:** The Oracle JET candidate self-service portal template sorts the display array of `.apply-flow-profile-item-tile` strictly **alphabetically by employer name** (`A` -> `C` -> `I` -> `N` -> `T`): Adobe, CL Educate, Cognizant, IBM, Infosys, IRCTC, Navyug, NEC, Tata Consultancy Services. The UI has no drag-and-drop handles or sort controls.
-- **Resolution & Recruiter Behavior:** Each experience record retains its authentic Start Date and End Date. When the application is submitted and viewed by recruiters in the Oracle HCM Talent / Recruiter console, Oracle automatically arranges the candidate's career history in reverse chronological order based on the dates.
+
+### Trap 19: Knockout VM Reverse-Chronological Self-Healing Reordering
+- **Phenomenon:** Candidates and operators expect all experience cards to render in reverse-chronological order (newest to oldest, current job on top) both in Section 3 and on the Section 4 review screen.
+- **Root Cause:** The underlying Knockout.js ViewModel binds to `parent.forms`, an observableArray initialized from the backend REST query order. When the view model reloads, it defaults to the backend order unless sorted programmatically.
+- **Remediation:** Inspect `parent.forms` in Knockout. Sort the observableArray using a strict reverse-chronological comparator (`currentJobFlag === 'Y'` first, followed by `startDate` descending `dateB.localeCompare(dateA)`), and invoke `parent._buildTiles()`. This instantly re-renders the DOM tiles on Section 3 in reverse-chronological order and carries directly forward into Section 4 Review!
+
+### Trap 20: Section 2 Multi-Select Language Pills & Combobox Deselection Protocol
+- **Phenomenon:** In Section 2, the multi-select question for top 2 programming languages renders `.cx-multi-select-pill` tags. Clicking an already-selected option inside the dropdown does not always toggle it off, or clicking adjacent buttons can inadvertently clear unintended pills.
+- **Root Cause:** Oracle HCM renders selected items as distinct DOM tags `<li class="cx-multi-select-pill__value cx-multi-select-pill__value--<lookupCode>">` containing an isolated `<button class="cx-multi-select-pill__value-remove">`.
+- **Remediation:** To reliably deselect an option (e.g. `PL/SQL`), target its specific pill remove button `.cx-multi-select-pill__value--<lookupCode> button.cx-multi-select-pill__value-remove` directly. Then open the dropdown and click the intended replacement option (`Python (numpy/pandas/scikit-learn)`), verifying that exactly the target pills (`JAVA`, `Python`) remain mounted.
+
+### Trap 21: Autonomous Visual AI Multimodal Auditing Architecture
+- **Architecture:** The agent captures full-page high-resolution screenshots of each section (`section_1_perfect_audit.png`, `section_2_perfect_audit.png`, `section_3_perfect_audit.png`, `section_4_perfect_audit.png`) and sends them to Gemini 3.8 Flash Vision (`google-genai` SDK) with round-robin credentials rotation.
+- **Verification Standard:**
+  1. **Section 1:** Confirms candidate contact details, City (`Bengaluru`), and active Preferred Location pill (`86856-Platina Block 3`).
+  2. **Section 2:** Confirms all radio buttons and pills are selected (`At least 5 years of experience`, `Software Engineering`, `Advanced / Expert` AWS, `Java Backend`, `JAVA`, `Python`), with 0 red validation errors.
+  3. **Section 3:** Confirms Education tile is present, all 9 Experience tiles are arranged in strict reverse-chronological order (Cognizant -> Infosys -> TCS -> CL Educate -> Navyug -> Adobe -> IBM -> IRCTC -> NEC), with complete authentic bullet points and 0 red errors.
+  4. **Section 4:** Confirms Resume attached, fresh single-page Cover Letter PDF attached, canonical LinkedIn URL verified, Demographics answered, E-Signature filled, and SUBMIT button visible and enabled.
+- **Absolute Guardrail:** The SUBMIT button on Section 4 must NEVER be clicked by the agent; the agent halts strictly on Section 4 for human review.
+
 
 
 

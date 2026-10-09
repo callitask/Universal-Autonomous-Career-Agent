@@ -11,8 +11,15 @@
 #   4. Error detection must inspect .input-row__validation and [id$="-error"].
 # Changes Made:
 #   - Implemented iterative cascading question loop on Section 2 using JPMCNail.
-#   - Fixed Section 1 preferred location targeting .cx-multi-select__list-item.
-#   - Added .input-row__validation and [id$="-error"] to universal check_errors.
+# [ENTRY #003]
+# Term: [MULTIMODAL_VISUAL_AUDIT_AND_EXPERIENCE_REORDERING]
+# Timestamp: 2026-10-09 09:16:00 +05:30
+# Issue / Context:
+#   1. Work experience tiles in Section 3 render alphabetically by employerName by default.
+#   2. End-to-end multimodal visual AI verification is required across all 4 sections.
+# Changes Made:
+#   - Integrated nail.reorder_experience_tiles(page) on Section 3.
+#   - Connected VisualAIAuditor to capture full screenshots and run Gemini 3.8 Flash audits.
 # ==============================================================================
 
 import os
@@ -24,6 +31,7 @@ from typing import Dict, Any, Optional, List
 from playwright.sync_api import sync_playwright
 
 from CompanySiteApply.nails.oracle.jpmc_nail import JPMCNail
+from core.visual_ai_auditor import VisualAIAuditor
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -201,6 +209,10 @@ def run_flow(profile_name: str = "udaysagar_kandpal", cdp_url: str = "http://127
         if cancel_btn.count() > 0:
             cancel_btn.click()
             time.sleep(1.0)
+            
+        # Reorder tiles strictly in reverse-chronological order
+        nail.reorder_experience_tiles(page)
+        time.sleep(1.0)
             
         ok, errs = check_errors(page, "Section 3")
         if not ok:
