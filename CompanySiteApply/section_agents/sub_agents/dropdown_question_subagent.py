@@ -89,18 +89,8 @@ class DropdownQuestionSubAgent(BaseSectionAgent):
 
     def heal(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
-            tax_skills = candidate_data.get("taxonomy_skills") or {}
-            skills_list = cand.get("skills") or []
-            if isinstance(tax_skills, dict):
-                skills_list.extend(tax_skills.get("technical_skills") or [])
-                skills_list.extend(tax_skills.get("domain_skills") or [])
-
-            # Extract languages from candidate
-            cand_languages = [str(s).lower() for s in skills_list]
-            cand_languages.extend([str(l).lower() for l in cand.get("languages", [])])
-            headline = str(cand.get("headline") or cand.get("current_title") or "").lower()
-            cand_languages.extend(headline.split())
+            from CompanySiteApply.ai_brain_resolver import AIBrainResolver
+            brain = AIBrainResolver.get_instance(candidate_data)
 
             questions = page.locator(".input-row, .app-form-item, .apply-flow-question-block, [class*='question-block']").all()
             healed_count = 0
@@ -114,71 +104,82 @@ class DropdownQuestionSubAgent(BaseSectionAgent):
                 if toggle.count() == 0:
                     continue
 
-                # Check if already answered
-                pills = q.locator(".cx-multi-select-pill__value-text, .cx-multi-select-pill").count()
-                if pills > 0:
-                    continue
-
                 label_el = q.locator("legend, label, .cx-form-label, p, h3, h4").first
-                q_text = label_el.inner_text().strip().lower() if label_el.count() > 0 else q.inner_text().strip().lower()
+                q_text = label_el.inner_text().strip() if label_el.count() > 0 else q.inner_text().strip()
 
                 # Determine required count (e.g. 'choose two' -> 2, 'choose three' -> 3, default 1)
                 req_count = 1
-                match_count = re.search(r'choose\s+(\w+)', q_text)
+                match_count = re.search(r'choose\s+(\w+)', q_text, re.IGNORECASE)
                 if match_count:
                     word = match_count.group(1).lower()
                     word_map = {"one": 1, "two": 2, "three": 3, "four": 4, "2": 2, "3": 3}
                     req_count = word_map.get(word, 2)
 
+                # Check existing pills: if bad negative pill exists (e.g. 'not require'), remove it
+                bad_pill_removed = page.evaluate('''(el) => {
+                    const pills = Array.from(el.querySelectorAll('.cx-multi-select-pill, .cx-multi-select-pill__value-text'));
+                    let removed = false;
+                    for (const p of pills) {
+                        const txt = p.innerText.toLowerCase();
+                        if (txt.includes('not require') || txt.includes('not hands-on')) {
+                            const btn = p.querySelector('button, [aria-label*="Remove"]') || p.parentElement.querySelector('button, [aria-label*="Remove"]');
+                            if (btn) { btn.click(); removed = true; }
+                        }
+                    }
+                    return removed;
+                }''', q.element_handle())
+                if bad_pill_removed:
+                    time.sleep(0.5)
+
+                # Check if already answered with valid pills
+                pills_count = q.locator(".cx-multi-select-pill__value-text, .cx-multi-select-pill").count()
+                if pills_count >= req_count and not bad_pill_removed:
+                    continue
+
                 # Open the dropdown
                 toggle.click()
-                time.sleep(1.0)
+                time.sleep(0.8)
 
-                # Select matching options
-                select_res = page.evaluate('''(args) => {
-                    const { candTerms, reqCount } = args;
+                # Fetch all available items
+                available_options = page.evaluate('''() => {
                     const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
                     const items = Array.from(document.querySelectorAll('.cx-multi-select__list-item, [role="option"], li[role="option"]')).filter(isVis);
-                    if (items.length === 0) return { selectedCount: 0, reason: "no_items" };
+                    return items.map(i => i.innerText.trim()).filter(Boolean);
+                }''')
 
+                # AI Brain resolves exact high-quality choices
+                resolution = brain.resolve_question(
+                    question_text=q_text,
+                    control_type="DROPDOWN_MULTI",
+                    options=available_options,
+                    req_count=req_count
+                )
+                target_choices = resolution.get("answer") or []
+                if isinstance(target_choices, str):
+                    target_choices = [c.strip() for c in target_choices.split(",") if c.strip()]
+
+                logger.info(f"[DropdownQuestionSubAgent] Brain resolved {q_text[:40]} -> {target_choices}")
+
+                # Select resolved options via DOM
+                select_res = page.evaluate('''(targets) => {
+                    const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                    const items = Array.from(document.querySelectorAll('.cx-multi-select__list-item, [role="option"], li[role="option"]')).filter(isVis);
                     const clicked = [];
-
-                    // 1. Try to find candidate skills/languages matches
-                    for (const item of items) {
-                        if (clicked.length >= reqCount) break;
-                        const itemText = item.innerText.trim().toLowerCase();
-                        
-                        // Check if any candidate term matches item
-                        const matched = candTerms.some(t => {
-                            if (t === itemText) return true;
-                            if (t.length > 2 && itemText.includes(t)) return true;
-                            if (itemText.length > 2 && t.includes(itemText)) return true;
-                            return false;
+                    for (const target of targets) {
+                        const targetLower = target.trim().toLowerCase();
+                        const item = items.find(i => {
+                            const t = i.innerText.trim().toLowerCase();
+                            return t === targetLower || (targetLower.length > 2 && t.includes(targetLower)) || (t.length > 2 && targetLower.includes(t));
                         });
-
-                        if (matched && !clicked.includes(item.innerText.trim())) {
+                        if (item && !clicked.includes(item.innerText.trim())) {
                             item.click();
                             clicked.push(item.innerText.trim());
                         }
                     }
+                    return { clicked };
+                }''', target_choices)
 
-                    // 2. Fallback if not enough matches found
-                    if (clicked.length === 0) {
-                        // Check for 'My job does not require coding' or 'Others'
-                        const fallbackItem = items.find(i => i.innerText.toLowerCase().includes('not require') || i.innerText.toLowerCase().includes('others'));
-                        if (fallbackItem) {
-                            fallbackItem.click();
-                            clicked.push(fallbackItem.innerText.trim());
-                        } else {
-                            items[0].click();
-                            clicked.push(items[0].innerText.trim());
-                        }
-                    }
-
-                    return { selectedCount: clicked.length, clicked };
-                }''', {"candTerms": cand_languages, "reqCount": req_count})
-
-                logger.info(f"[DropdownQuestionSubAgent] Selected for '{q_text[:40]}': {select_res}")
+                logger.info(f"[DropdownQuestionSubAgent] Clicks applied: {select_res}")
                 healed_count += 1
                 time.sleep(1.0)
 

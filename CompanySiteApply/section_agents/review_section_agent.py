@@ -111,7 +111,14 @@ class ReviewSectionAgent(BaseSectionAgent):
             sig_res = self.signature_subagent.heal(page, candidate_data)
             time.sleep(0.5)
 
-            # 4. Visual Verification & Human Gate
+            # 4. Enforce reverse-chronological ordering on Section 4 review tiles
+            try:
+                from CompanySiteApply.nails.oracle.jpmc_nail import JPMCNail
+                JPMCNail().reorder_experience_tiles(page)
+            except Exception as re_err:
+                logger.debug(f"[ReviewSectionAgent] Experience tile reorder note: {re_err}")
+
+            # 5. Visual Verification & Human Gate
             vis_res = self.visual_subagent.heal(page, candidate_data)
 
             verified = self.verify(page, candidate_data)

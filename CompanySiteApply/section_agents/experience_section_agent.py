@@ -175,36 +175,62 @@ class ExperienceSectionAgent(BaseSectionAgent):
             save_btn.click(force=True)
             time.sleep(1.2)
 
-    def _reorder_tiles_reverse_chronological(self, page: Any):
-        """Sorts Knockout parent.forms observableArray in reverse-chronological order."""
+    def _reorder_tiles_reverse_chronological(self, page: Any) -> bool:
+        """
+        Universally sorts Knockout experience observableArray in strict reverse-chronological order
+        (current employer first, newest to oldest) via DOM __ko__ context.
+        """
         try:
-            page.evaluate("""() => {
-                const node = document.querySelector('.apply-flow-profile-item-tile, .timeline-item');
-                if (!node || typeof ko === 'undefined') return;
-                const ctx = ko.contextFor(node);
-                if (!ctx || !ctx.$parent || !ctx.$parent.forms) return;
+            # 1. Try JPMCNail if available
+            try:
+                from CompanySiteApply.nails.oracle.jpmc_nail import JPMCNail
+                nail = JPMCNail()
+                if nail.reorder_experience_tiles(page):
+                    logger.info("[ExperienceSectionAgent] Reordered tiles via JPMCNail.")
+                    return True
+            except Exception as ne:
+                logger.debug(f"[ExperienceSectionAgent] JPMCNail delegation note: {ne}")
+
+            # 2. Universal Knockout __ko__ observableArray sort
+            sorted_count = page.evaluate("""() => {
+                const tiles = document.querySelectorAll('.apply-flow-profile-item-tile');
+                if (tiles.length <= 1) return 0;
+                // Index 0 is typically education, experience tiles follow
+                const expTile = tiles.length > 1 ? tiles[1] : tiles[0];
+                let koProp = Object.keys(expTile).find(p => p.startsWith('__ko__'));
+                if (!koProp) return 0;
+                const ctx = expTile[koProp]['1' + koProp]?.context;
+                if (!ctx || !ctx.$parent) return 0;
+                const parent = ctx.$parent;
+                if (!parent.forms || typeof parent.forms.sort !== 'function') return 0;
                 
-                const forms = ctx.$parent.forms();
-                if (!forms || forms.length <= 1) return;
-                
-                forms.sort((a, b) => {
-                    const aCurr = a.currentJobFlag ? a.currentJobFlag() === 'Y' : false;
-                    const bCurr = b.currentJobFlag ? b.currentJobFlag() === 'Y' : false;
-                    if (aCurr && !bCurr) return -1;
-                    if (!aCurr && bCurr) return 1;
-                    const aStart = a.startDate ? (a.startDate() || '') : '';
-                    const bStart = b.startDate ? (b.startDate() || '') : '';
-                    return bStart.localeCompare(aStart);
+                // Sort parent.forms directly using observableArray sort
+                parent.forms.sort((a, b) => {
+                    const modA = typeof a === 'function' && typeof a().model === 'function' ? a().model() : null;
+                    const modB = typeof b === 'function' && typeof b().model === 'function' ? b().model() : null;
+                    if (!modA || !modB) return 0;
+                    
+                    const curA = typeof modA.currentJobFlag === 'function' ? modA.currentJobFlag() : 'N';
+                    const curB = typeof modB.currentJobFlag === 'function' ? modB.currentJobFlag() : 'N';
+                    if (curA === 'Y' && curB !== 'Y') return -1;
+                    if (curB === 'Y' && curA !== 'Y') return 1;
+                    
+                    const startA = typeof modA.startDate === 'function' ? String(modA.startDate() || '') : '';
+                    const startB = typeof modB.startDate === 'function' ? String(modB.startDate() || '') : '';
+                    return startB.localeCompare(startA);
                 });
                 
-                ctx.$parent.forms.valueHasMutated();
-                if (typeof ctx.$parent._buildTiles === 'function') {
-                    ctx.$parent._buildTiles();
+                if (typeof parent._buildTiles === 'function') {
+                    parent._buildTiles();
                 }
+                return parent.forms().length;
             }""")
+            logger.info(f"[ExperienceSectionAgent] Reordered {sorted_count} experience tiles in reverse-chronological order.")
             time.sleep(0.5)
+            return bool(sorted_count)
         except Exception as e:
             logger.warning(f"[ExperienceSectionAgent] Reorder warning: {e}")
+            return False
 
     def _get_candidate_experiences(self, candidate_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         cand = candidate_data.get("candidate", candidate_data)

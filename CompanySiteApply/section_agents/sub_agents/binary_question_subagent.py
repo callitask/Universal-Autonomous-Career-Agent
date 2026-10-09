@@ -69,21 +69,20 @@ class BinaryQuestionSubAgent(BaseSectionAgent):
 
     def heal(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
-            ats_answers = candidate_data.get("ats_answers") or {} if isinstance(candidate_data, dict) else {}
-            legal = cand.get("legal_authorizations") or {}
-
-            questions = page.locator(".input-row, .app-form-item, .apply-flow-question-block, [class*='question-block']").all()
+            from CompanySiteApply.ai_brain_resolver import AIBrainResolver
+            brain = AIBrainResolver.get_instance(candidate_data)
             healed_count = 0
 
+            questions = page.locator(".input-row, .app-form-item, .apply-flow-question-block, [class*='question-block']").all()
             for q in questions:
                 if not q.is_visible():
                     continue
                 pills = q.locator("button.cx-select-pill-section, button[role='radio']").all()
                 if len(pills) != 2:
                     continue
-                pill_texts = [p.inner_text().strip().lower() for p in pills]
-                if "yes" not in pill_texts or "no" not in pill_texts:
+                pill_texts = [p.inner_text().strip() for p in pills]
+                pill_lower = [pt.lower() for pt in pill_texts]
+                if "yes" not in pill_lower or "no" not in pill_lower:
                     continue
 
                 has_selected = any("selected" in (p.get_attribute("class") or "") or p.get_attribute("aria-checked") == "true" for p in pills)
@@ -91,28 +90,16 @@ class BinaryQuestionSubAgent(BaseSectionAgent):
                     continue
 
                 label_el = q.locator("legend, label, .cx-form-label, p, h3, h4").first
-                q_text = label_el.inner_text().strip().lower() if label_el.count() > 0 else q.inner_text().strip().lower()
+                q_text = label_el.inner_text().strip() if label_el.count() > 0 else q.inner_text().strip()
 
-                target_choice = "no"
-
-                # Check explicit ats_answers
-                for pattern, ans in ats_answers.items():
-                    if pattern.lower() in q_text:
-                        target_choice = str(ans).strip().lower()
-                        break
-                else:
-                    if "18 years" in q_text or "at least 18" in q_text or "age of majority" in q_text:
-                        target_choice = "yes"
-                    elif "authorized to work" in q_text or "legally authorized" in q_text or "eligible to work" in q_text:
-                        target_choice = "yes" if legal.get("authorized_to_work_in_country", True) else "no"
-                    elif "require sponsorship" in q_text or "future require sponsorship" in q_text or "visa sponsorship" in q_text:
-                        target_choice = "yes" if legal.get("requires_sponsorship", False) else "no"
-                    elif "non-compete" in q_text or "restrictive covenant" in q_text:
-                        target_choice = "no"
-                    elif "employed by" in q_text or "worked for" in q_text or "former employee" in q_text:
-                        target_choice = "no"
-                    elif "disciplinary" in q_text or "felony" in q_text or "convicted" in q_text:
-                        target_choice = "no"
+                # Resolve via AI Brain
+                resolution = brain.resolve_question(
+                    question_text=q_text,
+                    control_type="BINARY_PILL",
+                    options=pill_texts
+                )
+                target_choice = str(resolution.get("answer") or "no").strip().lower()
+                logger.info(f"[BinaryQuestionSubAgent] Brain resolved '{q_text[:40]}' -> '{target_choice}'")
 
                 target_pill = None
                 for p in pills:

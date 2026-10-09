@@ -71,8 +71,8 @@ class TechnicalCompetencySubAgent(BaseSectionAgent):
 
     def heal(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
-            total_exp = float(cand.get("total_experience_years") or 0.0)
+            from CompanySiteApply.ai_brain_resolver import AIBrainResolver
+            brain = AIBrainResolver.get_instance(candidate_data)
             healed_count = 0
 
             questions = page.locator(".input-row, .app-form-item, .apply-flow-question-block, [class*='question-block']").all()
@@ -88,31 +88,30 @@ class TechnicalCompetencySubAgent(BaseSectionAgent):
                     continue
 
                 label_el = q.locator("legend, label, .cx-form-label, p, h3, h4").first
-                q_text = label_el.inner_text().strip().lower() if label_el.count() > 0 else q.inner_text().strip().lower()
+                q_text = label_el.inner_text().strip() if label_el.count() > 0 else q.inner_text().strip()
+                pill_texts = [p.inner_text().strip() for p in pills]
 
-                # 1. Experience tiers
-                if "years of work experience" in q_text or "experience you have" in q_text or "relevant work experience" in q_text:
-                    target_pill = self._resolve_experience_tier(total_exp, pills)
-                    if target_pill:
-                        target_pill.click()
-                        healed_count += 1
-                        time.sleep(0.3)
+                # Resolve via AI Brain
+                resolution = brain.resolve_question(
+                    question_text=q_text,
+                    control_type="RADIO_PILL",
+                    options=pill_texts
+                )
+                target_ans = resolution.get("answer") or ""
+                logger.info(f"[TechnicalCompetencySubAgent] Brain resolved '{q_text[:40]}' -> '{target_ans}'")
 
-                # 2. Tool / Cloud Proficiency
-                elif "proficiency" in q_text:
-                    target_pill = self._resolve_proficiency(q_text, pills, candidate_data)
-                    if target_pill:
-                        target_pill.click()
-                        healed_count += 1
-                        time.sleep(0.3)
+                # Match and click target pill
+                target_pill = None
+                for pill in pills:
+                    pt = pill.inner_text().strip()
+                    if pt.lower() == target_ans.lower() or target_ans.lower() in pt.lower() or pt.lower() in target_ans.lower():
+                        target_pill = pill
+                        break
 
-                # 3. Domain or Specialization
-                elif any(k in q_text for k in ["primary area", "area of expertise", "engineering focus", "technical area", "specialization"]):
-                    target_pill = self._resolve_domain_or_specialization(q_text, pills, candidate_data)
-                    if target_pill:
-                        target_pill.click()
-                        healed_count += 1
-                        time.sleep(0.3)
+                if target_pill:
+                    target_pill.click()
+                    healed_count += 1
+                    time.sleep(0.4)
 
             verified = self.verify(page, candidate_data)
             return {
