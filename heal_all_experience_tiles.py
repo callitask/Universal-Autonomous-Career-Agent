@@ -201,7 +201,11 @@ def main():
         time.sleep(0.5)
 
     print("\n=============================================")
-    print("All Experience Tiles processed!")
+    print("All Experience Tiles processed! Applying reverse-chronological reordering...")
+    from CompanySiteApply.nails.oracle.jpmc_nail import JPMCNail
+    nail = JPMCNail()
+    nail.reorder_experience_tiles(page)
+    time.sleep(1.0)
     page.screenshot(path="section_3_all_tiles_healed.png")
     print("Screenshot saved to section_3_all_tiles_healed.png")
 
