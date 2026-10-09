@@ -58,8 +58,8 @@ class ReviewSectionAgent(BaseSectionAgent):
         Audits Section 4 review fields, attachments, demographics, and submit button.
         """
         try:
-            errors = page.locator(".cx-message--error, .error, [role='alert'], .alert-danger").all_text_contents()
-            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower()]
+            errors = page.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
+            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower() and "all set" not in e.lower() and "successfully" not in e.lower()]
 
             has_resume = page.locator(".attachment-upload-button__download:has-text('Resume')").count() > 0 or page.locator("text='Resume'").count() > 0
             has_cover = page.locator(".attachment-upload-button__download:has-text('Cover_Letter')").count() > 0 or page.locator("text='Cover_Letter'").count() > 0
@@ -146,8 +146,8 @@ class ReviewSectionAgent(BaseSectionAgent):
         Verifies 0 validation errors, documents present, and SUBMIT enabled.
         """
         try:
-            errors = page.locator(".cx-message--error, .error, [role='alert'], .alert-danger").all_text_contents()
-            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower()]
+            errors = page.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
+            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower() and "all set" not in e.lower() and "successfully" not in e.lower()]
             submit_btn = page.locator("button:has-text('SUBMIT'), input[type='submit']").first
             return len(err_list) == 0 and submit_btn.count() > 0 and not submit_btn.is_disabled()
         except Exception:

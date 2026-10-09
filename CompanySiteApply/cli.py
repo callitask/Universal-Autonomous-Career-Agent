@@ -145,10 +145,29 @@ def cmd_audit_section(args):
         arm.disconnect()
 
 
+def cmd_apply_flow(args):
+    from CompanySiteApply.apply_orchestrator import ApplyOrchestrator
+    orchestrator = ApplyOrchestrator(cdp_url=args.cdp_url)
+    candidate_data = {}
+    if args.config:
+        p = Path(args.config)
+        if p.exists():
+            candidate_data = json.loads(p.read_text("utf-8"))
+    shot_dir = PROJECT_ROOT / "artifacts"
+    print("Executing autonomous application pipeline via Section Mini-Agents...")
+    res = orchestrator.run(candidate_data, screenshot_dir=shot_dir)
+    print("\nPipeline Result:")
+    print(json.dumps(res, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description="CompanySiteApply - Enterprise ATS Multi-Finger Tool")
     parser.add_argument("--cdp-url", default=None, help="CDP connection endpoint (falls back to CDP_URL env var)")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # apply-flow (Autonomous master pipeline)
+    p_af = subparsers.add_parser("apply-flow", help="Autonomously execute end-to-end application lifecycle through Section Mini-Agents")
+    p_af.add_argument("--config", required=True, help="Path to candidate config JSON")
 
     # inspect
     p_insp = subparsers.add_parser("inspect", help="Deeply inspect active tab, detect ATS, flag honeypots, save schema")
@@ -175,7 +194,9 @@ def main():
     p_as.add_argument("--config", help="Path to candidate config JSON")
 
     args = parser.parse_args()
-    if args.command == "inspect":
+    if args.command == "apply-flow":
+        cmd_apply_flow(args)
+    elif args.command == "inspect":
         cmd_inspect(args)
     elif args.command == "detect":
         cmd_detect(args)

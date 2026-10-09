@@ -56,19 +56,21 @@ class QuestionnaireSectionAgent(BaseSectionAgent):
         Audits active questions for unanswered fields and error banners.
         """
         try:
-            errors = page.locator(".cx-message--error, .error, [role='alert'], .alert-danger").all_text_contents()
-            err_list = [e.strip() for e in errors if e.strip()]
+            errors = page.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
+            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower() and "all set" not in e.lower() and "successfully" not in e.lower()]
 
             # Check unanswered blocks
             unanswered = page.evaluate("""() => {
-                const blocks = Array.from(document.querySelectorAll('.apply-flow-question-block, .cx-question-block, [class*=\"question\"]'));
+                const rows = Array.from(document.querySelectorAll('.input-row, .app-form-item, .apply-flow-question-block, [class*="question-block"]'));
                 const missing = [];
-                for (const b of blocks) {
-                    if (b.offsetWidth === 0 && b.offsetHeight === 0) continue;
-                    const hasSelected = b.querySelector('.selected, [aria-pressed=\"true\"], input:checked');
-                    const hasInput = b.querySelector('input[type=\"text\"], textarea');
+                for (const r of rows) {
+                    if (r.offsetWidth === 0 && r.offsetHeight === 0) continue;
+                    const btns = r.querySelectorAll('button[role="radio"], button.cx-select-pill-section, input[type="radio"], input[type="checkbox"]');
+                    if (btns.length === 0 || btns.length > 15) continue;
+                    const hasSelected = r.querySelector('[class*="selected"], [aria-checked="true"], [aria-pressed="true"], input:checked');
+                    const hasInput = r.querySelector('input[type="text"], textarea');
                     if (!hasSelected && (!hasInput || !hasInput.value.trim())) {
-                        const title = b.querySelector('.question-title, label, h3, h4');
+                        const title = r.querySelector('legend, label, .cx-form-label, p, h3, h4');
                         if (title) missing.push(title.innerText.trim());
                     }
                 }
@@ -100,17 +102,19 @@ class QuestionnaireSectionAgent(BaseSectionAgent):
                 pass_num += 1
                 unanswered_found = False
 
-                questions = page.locator(".apply-flow-question-block, [class*='question-block']").all()
+                questions = page.locator(".input-row, .app-form-item, .apply-flow-question-block, [class*='question-block']").all()
                 for q in questions:
                     if not q.is_visible():
                         continue
-                    q_text = q.inner_text().lower()
-                    pills = q.locator("button.cx-select-pill-section, [role='radio'], [role='checkbox']").all()
-                    if not pills:
+                    pills = q.locator("button.cx-select-pill-section, button[role='radio'], [role='radio'], [role='checkbox']").all()
+                    if not pills or len(pills) > 15:
                         continue
 
+                    label_el = q.locator("legend, label, .cx-form-label, p, h3, h4").first
+                    q_text = label_el.inner_text().strip().lower() if label_el.count() > 0 else q.inner_text().strip().lower()
+
                     # Check if already answered
-                    has_selected = any("selected" in (p.get_attribute("class") or "") or p.get_attribute("aria-pressed") == "true" for p in pills)
+                    has_selected = any("selected" in (p.get_attribute("class") or "") or p.get_attribute("aria-pressed") == "true" or p.get_attribute("aria-checked") == "true" for p in pills)
 
                     # 1. Experience tiers (resolved mathematically from candidate.total_experience_years)
                     if "years of work experience" in q_text or "experience you have" in q_text or "relevant work experience" in q_text:
@@ -121,7 +125,7 @@ class QuestionnaireSectionAgent(BaseSectionAgent):
                                 unanswered_found = True
                                 time.sleep(0.3)
 
-                    # 2. Tool / Platform Proficiency (resolved from skill_years_experience or taxonomy)
+                    # 2. Tool / Platform Proficiency (resolved from skill_years_experience, ats_answers, or taxonomy)
                     elif "proficiency" in q_text:
                         if not has_selected:
                             target_pill = self._resolve_tool_proficiency_pill(q_text, pills, candidate_data)
@@ -131,7 +135,7 @@ class QuestionnaireSectionAgent(BaseSectionAgent):
                                 time.sleep(0.3)
 
                     # 3. Primary area of expertise / focus / sub-area / domain
-                    elif any(k in q_text for k in ["primary area", "area of expertise", "engineering focus", "area of focus", "technical area", "sub-area"]):
+                    elif any(k in q_text for k in ["primary area", "area of expertise", "engineering focus", "area of focus", "technical area", "sub-area", "specialization"]):
                         if not has_selected:
                             target_pill = self._resolve_expertise_or_domain_pill(q_text, pills, candidate_data)
                             if target_pill and "selected" not in (target_pill.get_attribute("class") or ""):
@@ -179,8 +183,8 @@ class QuestionnaireSectionAgent(BaseSectionAgent):
 
     def verify(self, page: Any, candidate_data: Dict[str, Any]) -> bool:
         try:
-            errors = page.locator(".cx-message--error, .error, [role='alert'], .alert-danger").all_text_contents()
-            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower()]
+            errors = page.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
+            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower() and "all set" not in e.lower() and "successfully" not in e.lower()]
             return len(err_list) == 0
         except Exception:
             return False
@@ -342,6 +346,17 @@ class QuestionnaireSectionAgent(BaseSectionAgent):
         q_norm = (q_text or "").lower()
         cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
         answers_db = candidate_data.get("ats_answers") or {} if isinstance(candidate_data, dict) else {}
+
+        # 1. First check explicit ats_answers matching question or tool
+        for k, v in answers_db.items():
+            if isinstance(v, str):
+                k_l = k.lower().strip()
+                if k_l in q_norm or q_norm in k_l:
+                    for p in pill_elements:
+                        p_text = p.inner_text().strip().lower()
+                        if v.lower() == p_text or v.lower() in p_text or p_text in v.lower():
+                            return p
+
         skills_exp = answers_db.get("skill_years_experience") or {}
         
         matched_years = None

@@ -82,7 +82,12 @@ class ExperienceSectionAgent(BaseSectionAgent):
                 if edit_btn.count() == 0:
                     continue
 
-                edit_btn.click(force=True)
+                try:
+                    tile.scroll_into_view_if_needed()
+                    time.sleep(0.3)
+                    edit_btn.click(force=True)
+                except Exception:
+                    page.evaluate("(el) => el.click()", edit_btn.element_handle())
                 time.sleep(1.0)
 
                 # Match candidate experience item

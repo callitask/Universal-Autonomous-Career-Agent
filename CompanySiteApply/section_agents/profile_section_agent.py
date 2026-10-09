@@ -56,8 +56,8 @@ class ProfileSectionAgent(BaseSectionAgent):
         Audits required personal and contact inputs.
         """
         try:
-            errors = page.locator(".cx-message--error, .error, [role='alert'], .alert-danger").all_text_contents()
-            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower()]
+            errors = page.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
+            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower() and "all set" not in e.lower() and "successfully" not in e.lower()]
 
             pref_loc = page.locator(".cx-select-pill, [class*='preferred-location']").count() > 0
             city_val = page.locator("input[id^='city']:visible, input[name='city']:visible").first
@@ -104,19 +104,28 @@ class ProfileSectionAgent(BaseSectionAgent):
                 city_input.dispatch_event("change")
 
             # 3. Preferred Location combobox pill
-            pill_container = page.locator(".cx-select-pill-section, [class*='preferred-location']").first
-            if pill_container.count() > 0 and city_val:
-                loc_input = page.locator("input[placeholder*='location' i]:visible, input[placeholder*='search' i]:visible").first
-                if loc_input.count() > 0 and loc_input.is_visible():
-                    loc_input.click()
-                    loc_input.fill(city_val)
-                    time.sleep(1.0)
-                    page.evaluate("""(targetCity) => {
-                        const items = Array.from(document.querySelectorAll('.cx-select__list-item, [role="option"], li'));
-                        const opt = items.find(i => i.innerText.toLowerCase().includes(targetCity.toLowerCase()));
-                        if (opt) opt.click();
-                    }""", city_val)
-                    time.sleep(0.5)
+            pref_block = page.locator(".apply-flow-block--preferred-locations, [class*='preferred-locations']").first
+            if pref_block.count() > 0:
+                pills_cnt = pref_block.locator(".cx-multi-select-pill__value-text").count()
+                if pills_cnt == 0:
+                    toggle = pref_block.locator("button[id$='-toggle-button'], button.icon-dropdown-arrow, button").first
+                    if toggle.count() > 0:
+                        toggle.click()
+                        time.sleep(1.0)
+                        page.evaluate("""(targetCity) => {
+                            const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                            const items = Array.from(document.querySelectorAll('.cx-multi-select__list-item, li[role="option"], [role="option"], [role="gridcell"]')).filter(isVis);
+                            if (items.length === 0) return;
+                            const match = items.find(i => i.innerText.toLowerCase().includes(targetCity.toLowerCase()));
+                            if (match) {
+                                match.click();
+                            } else {
+                                items[0].click();
+                            }
+                        }""", city_val)
+                        time.sleep(0.5)
+                        page.keyboard.press("Escape")
+                        time.sleep(0.5)
 
             verified = self.verify(page, candidate_data)
             return {
@@ -130,8 +139,8 @@ class ProfileSectionAgent(BaseSectionAgent):
 
     def verify(self, page: Any, candidate_data: Dict[str, Any]) -> bool:
         try:
-            errors = page.locator(".cx-message--error, .error, [role='alert']").all_text_contents()
-            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower()]
+            errors = page.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
+            err_list = [e.strip() for e in errors if e.strip() and "saved" not in e.lower() and "all set" not in e.lower() and "successfully" not in e.lower()]
             return len(err_list) == 0
         except Exception:
             return False
