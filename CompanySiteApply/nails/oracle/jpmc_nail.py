@@ -114,12 +114,18 @@ class JPMCNail(BaseNail):
                 field.click()
             time.sleep(0.5)
 
+            # Prioritize exact matching on dropdown list items to avoid container scope collision
             clicked = page.evaluate('''(targetText) => {
                 const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-                const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-list-item, [role="gridcell"], [role="option"], li')).filter(isVis);
-                const opt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase() || i.innerText.trim().toLowerCase().startsWith(targetText.toLowerCase()));
-                if (opt) {
-                    opt.click();
+                const items = Array.from(document.querySelectorAll('[role="gridcell"], [role="option"], .cx-select__list-item, .cx-select-list-item, li')).filter(isVis);
+                const exactOpt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
+                if (exactOpt) {
+                    exactOpt.click();
+                    return true;
+                }
+                const prefixOpt = items.find(i => i.innerText.trim().toLowerCase().startsWith(targetText.toLowerCase()));
+                if (prefixOpt) {
+                    prefixOpt.click();
                     return true;
                 }
                 return false;
@@ -129,11 +135,15 @@ class JPMCNail(BaseNail):
             readback = field.input_value().strip()
             if not readback or readback.lower() != target_val.lower():
                 field.fill(target_val)
-                time.sleep(0.3)
-                page.keyboard.press("ArrowDown")
-                time.sleep(0.2)
-                page.keyboard.press("Enter")
-                time.sleep(0.3)
+                time.sleep(0.5)
+                # Retry exact match after typing filters the list
+                page.evaluate('''(targetText) => {
+                    const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                    const items = Array.from(document.querySelectorAll('[role="gridcell"], [role="option"], .cx-select__list-item, .cx-select-list-item')).filter(isVis);
+                    const opt = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase());
+                    if (opt) opt.click();
+                }''', target_val)
+                time.sleep(0.5)
                 readback = field.input_value().strip()
 
             page.keyboard.press("Escape")
@@ -154,7 +164,7 @@ class JPMCNail(BaseNail):
         eth_val = str(cand.get("ethnicity") or cand.get("Ethnicity") or cand.get("race") or "Asian").strip()
         _select_cx_pill_or_dropdown(
             toggle_css_list=['[id*="ETHNICITY"][id$="-toggle-button"]', 'button[aria-label*="Ethnicity"]', 'button.icon-dropdown-arrow'],
-            input_css_list=['input[name*="ETHNICITY"]', 'input[id*="ETHNICITY"]'],
+            input_css_list=['input[name*="ETHNICITY"]', 'input[id*="ETHNICITY"]', '#IN-STANDARD-ORA_ETHNICITY-STANDARD-3'],
             target_val=eth_val,
             field_name="ethnicity"
         )
@@ -163,12 +173,25 @@ class JPMCNail(BaseNail):
         gen_val = str(cand.get("gender") or "Male").strip()
         _select_cx_pill_or_dropdown(
             toggle_css_list=['[id*="GENDER"][id$="-toggle-button"]', 'button[aria-label*="Gender"]', 'button.icon-dropdown-arrow'],
-            input_css_list=['input[name*="GENDER"]', 'input[id*="GENDER"]'],
+            input_css_list=['input[name*="GENDER"]', 'input[id*="GENDER"]', '#IN-STANDARD-ORA_GENDER-STANDARD-4'],
             target_val=gen_val,
             field_name="gender"
         )
 
-        # 4. Full Name (E-Signature)
+        # 4. LinkedIn Link Normalization (Defense against truncation)
+        linkedin_url = cand.get("linkedin_profile_url") or cand.get("linkedin")
+        if linkedin_url:
+            link_field = page.locator("input[id*='siteLink'], input[name*='siteLink']").first
+            if link_field.count() > 0:
+                cur_link = link_field.input_value().strip()
+                if cur_link != linkedin_url:
+                    link_field.fill(linkedin_url)
+                    link_field.dispatch_event("input")
+                    link_field.dispatch_event("change")
+                    results["linkedin_url"] = linkedin_url
+                    print(f"[JPMCNail] Corrected LinkedIn link to canonical: '{linkedin_url}'", flush=True)
+
+        # 5. Full Name (E-Signature)
         full_name = cand.get("full_name", "")
         if full_name:
             sig_field = page.locator("input[name='fullName']:visible, [id^='fullName']:visible").first

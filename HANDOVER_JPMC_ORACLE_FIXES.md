@@ -1,99 +1,71 @@
-# Agent Handover: JPMC Oracle Cloud HCM Automation Fixes & Verification
+# Agent Handover: JPMC Oracle Cloud HCM Autonomous Job Search & Application (Site: CX_1002)
 
 ## 1. Goal and Current Context
-- **Target Role:** JPMorgan Chase (Chase) — *Senior Lead Software Engineer - Java/Python*
-- **Requisition / Job ID:** `210794073` (Site: `CX_1002`)
-- **Portal URL:** `https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1002/job/210794073/apply/section/4`
-- **Candidate Profile:** Udaysagar Kandpal (`F:\JOB AI AGENT\profiles\udaysagar_kandpal\candidate_config.json`)
-- **CRITICAL HUMAN GATE CONSTRAINT:** **DO NOT CLICK SUBMIT.** The automation has halted strictly on Section 4 with 100% of fields populated, verified, and 0 errors, leaving the page open in the CDP browser (`http://127.0.0.1:9222`) for user's manual review.
+- **Candidate Profile:** Udaysagar Kandpal (`profiles/udaysagar_kandpal/candidate_config.json`, 10+ yrs Lead Java Architect / Backend / Microservices / AWS / Kafka).
+- **Target Portal:** JPMorgan Chase Career Experience (`https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1002/`).
+- **Live Active Requisition:** **Lead Software Engineer – Java (Job ID: `210774158`)**
+  - **Business Unit:** Commercial & Investment Bank (CIB)
+  - **Location:** Bengaluru, Platina Block-3, Outer Ring Road (560103)
+  - **Match Score:** >95% (Exact alignment with Java 17, Spring Boot, IPC, Kafka, Distributed Systems, AI-Assisted Engineering).
+- **Portal Status:** Currently navigated to **Section 4 Review** (`https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1002/job/210774158/apply/section/4`).
+- **CRITICAL HUMAN GATE CONSTRAINT:** **NEVER CLICK SUBMIT.** All sections 1 to 4 are 100% completed with zero validation errors, new tailored cover letter uploaded, canonical LinkedIn link verified, Demographics set (`Asian`, `Male`, `No`), E-Signature filled (`Udaysagar Kandpal`), and the `SUBMIT` button enabled and **UNCLICKED**, ready for the user to manually review and submit in the CDP browser (`http://127.0.0.1:9222`).
 
 ---
 
-## 2. Completed Steps & Verification Audit
+## 2. Completed Steps & Empirical Verifications
 
-### Step 1: Scraping & Tailoring Artifacts (COMPLETED)
-- Scraped live JD for Job `210794073` directly via CDP.
-- Generated dedicated, verified tailored artifacts in:
-  `F:\JOB AI AGENT\profiles\udaysagar_kandpal\APPLIED ON COMPANY WEBSITE\JPMorgan Chase\Senior_Lead_Software_Engineer_Java_Python/`
-  - `Udaysagar_Kandpal_Resume.pdf`: Tailored A4 PDF with Zero-Omission Guardrail preserving all authentic candidate skills, experience bullets, and achievements.
-  - `Udaysagar_Kandpal_Cover_Letter.pdf` & `Cover_Letter.txt`: Specifically addressed to *Senior Lead Software Engineer - Java/Python (Job ID: 210794073)* within Treasury/CIO Corporate Technology, Bengaluru.
-  - `Job_Description.md` & `job_description.json`.
-  - `resume.md`.
+### Step 1: Autonomous Search & Role Discovery (COMPLETED)
+- Scraped open roles in Bengaluru using `CompanySiteApply/CompanyScraper/companies/jpmorgan/jpmorgan_scraper.py`.
+- Filtered out requisition `210794073` (*Senior Lead Software Engineer - Java/Python*) which displayed `ALREADY APPLIED` on the portal card (submitted previously).
+- Scored top unapplied roles against candidate context:
+  - **Job ID `210774158` (Lead Software Engineer – Java):** Match score 98/100.
+  - BU: Commercial & Investment Bank (CIB).
+  - Technologies: Java 17+, Spring Boot, Low-Latency IPC, memory-mapped files, ring buffers, gRPC, Protobuf, PostgreSQL, CockroachDB, Kafka, responsible AI workflows.
 
-### Step 2: Section 1 (Profile & Personal Details) Verification (COMPLETED)
-- Uploaded tailored `Udaysagar_Kandpal_Resume.pdf` and `Udaysagar_Kandpal_Cover_Letter.pdf`.
-- Title: Selected `Mr.`.
-- Country: `India`.
-- City combobox: Prioritizes official city `Bengaluru`, types `Bengaluru`, and clicks `.cx-select__list-item:has-text('Bengaluru, Karnataka')`. Confirmed readback: `'Bengaluru'` with 0 errors.
-- Preferred Location: Handled multi-select toggle, selected `'33437-Embassy Tech Village - Parcel'`.
-- Advanced cleanly to Section 2.
+### Step 2: Tailored Artifacts Generation (COMPLETED)
+- Created dedicated application directory:
+  `profiles/udaysagar_kandpal/APPLIED ON COMPANY WEBSITE/JPMorgan Chase/Lead_Software_Engineer_Java_210774158/`
+- Generated artifacts adhering strictly to `docs/templates/PROFESSIONAL_COVER_LETTER_TEMPLATE.md`:
+  - `Job_Description.md` & `job_description.json`
+  - `Cover_Letter.txt`
+  - `Cover_Letter.html` (Executive business typography, A4 1-page, NO tables, NO boxy cards)
+  - `Udaysagar_Kandpal_Cover_Letter.pdf` (Rendered via Playwright Chromium PDF)
+  - `Udaysagar_Kandpal_Resume.pdf` (Copied from validated master profile)
 
-### Step 3: Section 2 (Screening Questions) Prioritization (COMPLETED)
-- In `CompanySiteApply/nails/oracle/jpmc_nail.py`, `override_screening_answer` prioritizes:
-  - **Primary Area of Expertise:** `Java Backend (Springboot, Hibernate, Microservices)`.
-  - **Area of Focus:** `Java Fullstack (Springboot, Hibernate, Microservices, React/Angular, Cloud)`.
-  - **Work Authorization:** `Yes`.
-  - **Core Programming Languages:** `JAVA` and `Python`.
-  - **Total Experience:** `10+ years`.
-- Advanced cleanly to Section 3 with 0 errors.
-
-### Step 4: Section 3 (Education & Experience Healing) (COMPLETED & VERIFIED)
-- Discovered and resolved Oracle HCM CX_1002 inline edit behavior (`.apply-flow__content-form`, `.standard-apply-flow-profile-item`):
-  - In CX_1002, tile editing is inline, causing parent tiles to receive `profile-item-list--disabled { display: none }`.
-  - Built robust inline form handler that waits for form close (`wait_for_selector("input[id^='employerName']:visible", state="hidden")`).
-- **All 10 Tiles Healed and Saved with Zero Errors:**
-  1. **Tile 0 (Education - Jaypee Institute of Information Technology JIIT):** Degree `Bachelor's Degree`, Country `India`, End Date `07/2015`. SAVED.
-  2. **Tile 1 (Cognizant - Senior Associate, 03/2026 - Present):** Country `India`, City `Bengaluru`, Internal `No`, 7 authentic bullet points (`• `). SAVED.
-  3. **Tile 2 (Infosys - Consultant, 02/2024 - 02/2026):** Country `India`, City `Bengaluru`, Internal `No`, 8 authentic bullet points (`• `). SAVED.
-  4. **Tile 3 (Tata Consultancy Services - IT Analyst, 09/2021 - 01/2024):** Country `India`, City `Noida`, Internal `No`, 6 authentic bullet points (`• `). SAVED.
-  5. **Tile 4 (CL Educate Ltd. - Senior Executive, 02/2019 - 09/2021):** Country `India`, City `Delhi`, Internal `No`, 3 authentic bullet points (`• `). SAVED.
-  6. **Tile 5 (Navyug Infosolutions - Software Engineer, 06/2018 - 02/2019):** Country `India`, City `Noida`, Internal `No`, 3 authentic bullet points (`• `). SAVED.
-  7. **Tile 6 (Adobe India Pvt. Ltd. - Software Engineer, 06/2016 - 01/2017):** Country `India`, City `Noida`, Internal `No`, 2 authentic bullet points (`• `). SAVED.
-  8. **Tile 7 (IBM - Technical Analyst, 07/2015 - 05/2016):** Country `India`, City `Noida`, Internal `No`, 2 authentic bullet points (`• `). SAVED.
-  9. **Tile 8 (IRCTC - Intern, 06/2014 - 07/2014):** Country `India`, City `Delhi`, Internal `No`, 2 authentic bullet points (`• `). SAVED.
-  10. **Tile 9 (NEC Technologies India Ltd. - Trainee/Apprentice, 07/2013 - 08/2013):** Country `India`, City `Noida`, Internal `No`, 3 authentic bullet points (`• `). SAVED.
-- Open forms after healing: 0. Active errors: 0.
-- Advanced cleanly to Section 4.
-
-### Step 5: Section 4 (More About You & Demographics) Verification (COMPLETED)
-- **Live State on URL `.../apply/section/4`:**
-  - **Resume Attached:** `Udaysagar_Kandpal_Resume.pdf` (Verified).
-  - **Cover Letter Attached:** `Udaysagar_Kandpal_Cover_Letter.pdf` (Verified).
-  - **Resume / Additional Document Link:** `https://linkedin.com/in/udaykandpal`.
-  - **Ethnicity:** `Asian`.
-  - **Gender:** `Male`.
-  - **India Uniformed Forces:** `No`.
-  - **Full Name (E-Signature):** `Udaysagar Kandpal`.
-  - **Validation Errors:** **0 (Zero)**.
-  - **SUBMIT Button:** **ENABLED and UNCLICKED**.
-  - **Full-page screenshot captured:** `F:\JOB AI AGENT\section4_verification.png`.
+### Step 3: Application Flow Execution (Sections 1 to 4) (COMPLETED & VERIFIED)
+- **Onboarding:** Handled Legal Disclaimer modal (`#applyFlowLegalDisclaimer` / `AGREE` button).
+- **Section 1 (Personal Details):**
+  - Title: Selected `Mr.`.
+  - Candidate: `Udaysagar Kandpal`, `ukandpal2@gmail.com`, `+91 9654258060`.
+  - Address: `103, SVR Pavithra, 12th Cross Road`, `Bengaluru`, `Karnataka`, `560100`, `India`.
+  - Preferred Location: Handled interactive combobox, selected `86856-Platina Block 3` (matching the CIB office facility).
+  - Pre-Advance audit: 0 errors. Clicked NEXT.
+- **Section 2 (Application Questions):**
+  - Are you at least 18 years of age? -> `Yes`
+  - Legally authorized to work in this country? -> `Yes`
+  - Require sponsorship for employment visa? -> `No`
+  - Hold an Indian Passport? -> `Yes`
+  - Citizenship or passport of country other than India? -> `No`
+  - High School diploma (10+2), HSC or GED? -> `Yes`
+  - Pre-Advance audit: 0 errors. Clicked NEXT.
+- **Section 3 (Experience & Education):**
+  - Confirmed all 10 experience and education cards intact with authentic bullet points (`• `).
+  - Zero open forms, zero errors. Clicked NEXT.
+- **Section 4 (More About You & Documents):**
+  - **Cover Letter Replacement:** Removed obsolete cover letter (`REMOVE COVER LETTER`), confirmed dialog, and uploaded fresh tailored `Udaysagar_Kandpal_Cover_Letter.pdf`. Verified active document with green checkmark.
+  - **Resume:** Confirmed `Udaysagar_Kandpal_Resume.pdf` with green checkmark.
+  - **LinkedIn Link:** Verified canonical URL `https://www.linkedin.com/in/udaykandpal` (no truncation).
+  - **Diversity / Demographics:** Set Ethnicity to `Asian`, Gender to `Male`, Military Status to `No` using exact gridcell selection.
+  - **E-Signature:** Populated `Udaysagar Kandpal`.
+  - **Final Audit:** Total validation errors = 0.
+  - **Human Gate:** `SUBMIT` button visible, enabled, and **UNCLICKED**.
+  - **Verification Screenshot:** Saved to artifacts directory: `section4_final_verified_210774158.png`.
 
 ---
 
-## 3. Permanent Codebase Hardening Applied
-1. **`CompanySiteApply/fingers/oracle_cloud_finger.py`:**
-   - Updated `_fill_experience_step` to iterate cleanly across all tiles, detecting both inline form components and modal dialogs.
-   - Updated `_heal_work_experience_tile` with verified selectors (`input[id^='countryCode']:visible`, `input[id^='employerCity']:visible`, `button:has-text('No'):visible`, `textarea[id^='achievements']:visible`) and guaranteed wait-for-hidden on form close.
-2. **`CompanySiteApply/nails/oracle/jpmc_nail.py`:**
-   - Prioritized Java Backend / Fullstack screening answers.
-3. **`heal_all_experience_tiles.py`:**
-   - Reusable standalone healing script with authentic resume bullet definitions.
-
----
-
-## 4. Final Application State & Submission
-- **Manual Submission:** The user manually clicked **SUBMIT** on the verified Section 4 review page in the CDP browser. Application submitted successfully!
-- **Cover Letter Replacement:** Replaced obsolete cover letter with the newly styled clean professional executive PDF (zero tables, zero callout boxes, A4 single-page Harvard/Wharton standard).
-- **All Data Verified:** All personal details, address, screening questions (Java Backend prioritized), all 10 experience & education tiles, diversity details, canonical LinkedIn link, and e-signature verified with 0 errors.
-
----
-
-## 5. Architectural Hardening & Cross-Session Memory
-All fixes have been permanently integrated across the repository:
-1. `CompanySiteApply/fingers/oracle_cloud_finger.py`: Fully dynamic field extraction, combobox input click, listbox item selection, dependent state handling, inline form locking, and cover letter replacement flow. Zero hardcoded candidate PII or location literals.
-2. `CompanySiteApply/nails/oracle/jpmc_nail.py`: Prioritized Java Backend/Fullstack screening answers and dynamic demographic mapping.
-3. `core/generate_professional_cover_letter.py`: Reusable generator producing executive single-page cover letters without tables or boxes.
-4. `docs/templates/PROFESSIONAL_COVER_LETTER_TEMPLATE.md`: Master standard markdown specification for company application cover letters.
-5. `docs/ORACLE_HCM_ATS_DEEP_DIVE.md` & `docs/COMPANY_ATS_KNOWLEDGE.md`: Documented all 10 battle-tested production traps, root causes, and permanent solutions.
-6. `.agents/rules/SCAR_TISSUE.md`: Permanent scar entries ensuring future agent sessions never regress on combobox clear buttons, link truncation, cover letter replacement, or inline form locks.
-
+## 3. Engineering Traps Solved & Documented in `docs/ORACLE_HCM_ATS_DEEP_DIVE.md`
+1. **Trap 11: Application Entry Legal Disclaimer:** Handled `#applyFlowLegalDisclaimer` / `AGREE` button to unblock Section 1 initialization.
+2. **Trap 12: Section 1 Dependent Dropdowns & Preferred Location Autocomplete Binding:** Interactively query combobox items for facility directory options (e.g. `86856-Platina Block 3`).
+3. **Trap 13: Section 4 Demographic Dropdown Scope Collision:** Avoided broad `.includes('asian')` queries that accidentally hit the parent question block. Used exact text matching `=== 'Asian'` on `[role="gridcell"], [role="option"]`.
+4. **Trap 14: Job Search Tile Deduplication & `ALREADY APPLIED` Flag Inspection:** Automatically detected and skipped requisition tiles marked with `ALREADY APPLIED`.
+5. **Trap 15: Non-Negotiable Human Submission Gate:** Strictly halted execution on Section 4 review with SUBMIT enabled and unclicked.

@@ -1,8 +1,8 @@
 {
   "company_name": "JPMorgan Chase",
   "portal_type": "oracle_cloud_hcm",
-  "site_code": "CX_1001",
-  "base_jobs_url": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs",
+  "site_code": "CX_1002",
+  "base_jobs_url": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1002/jobs",
   "selectors": {
     "keyword_input": "#keyword",
     "location_input": "#location",

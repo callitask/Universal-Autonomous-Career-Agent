@@ -348,9 +348,30 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
   - `.input-row--invalid:visible`
 - **Verification:** Advance only when clean errors count == 0.
 
-### Trap 10: Non-Negotiable Human Submission Gate
+### Trap 11: Application Entry Legal Disclaimer (`applyFlowLegalDisclaimer` / `AGREE` button)
+- **Phenomenon:** When entering the apply flow for a new job (`/apply/section/1`), Oracle Cloud HCM renders an onboarding Legal Disclaimer modal/button `#applyFlowLegalDisclaimer` with text `AGREE`. Form inputs on Section 1 remain inactive or blocked until this disclaimer is acknowledged.
+- **Root Cause:** Oracle HCM CX_1002 requires mandatory acceptance of terms per requisition before initializing Knockout view models on Section 1.
+- **Remediation:** Detect `#applyFlowLegalDisclaimer:visible` or `button:has-text('AGREE'):visible`. Click it, wait 2–3 seconds for the disclaimer to dismiss, and verify personal info form fields (`input[name="firstName"]`, `input[name="city"]`) mount into the DOM.
+
+### Trap 12: Section 1 Dependent Dropdowns & Preferred Location Autocomplete Binding
+- **Phenomenon:** Preferred location is an Oracle JET combobox (`input[name="preferredLocations"]`, `#preferredLocations-XX-toggle-button`). Naively typing or misclicking outside can close the combobox or hit the reset button, wiping candidate location preferences.
+- **Root Cause:** Dependent pickers require specific location IDs or exact matching against the requisition's facility directory (e.g. `86856-Platina Block 3` for Outer Ring Road roles or `33437-Embassy Tech Village - Parcel`).
+- **Remediation:** Click the dropdown toggle button or type the location keywords into the combobox. Query `[role="gridcell"], [role="option"], .cx-select__list-item` for the exact matching location string and click it directly. Verify selection is rendered without red errors.
+
+### Trap 13: Section 4 Demographic Dropdown Scope Collision & Exact Gridcell Selection
+- **Phenomenon:** When attempting to select options like `Asian` in Section 4, naive substring or `.includes('asian')` queries match the giant question container `.cx-question` / `Diversity Information` which contains the word "Asian" in its body description, clicking the container instead of the dropdown option and leaving Ethnicity blank.
+- **Root Cause:** Broad CSS selector queries (`li, div`) without exact-match predicates bind to ancestor containers.
+- **Remediation:** Focus and fill the input (`input[id*="ETHNICITY"]`), wait for the dropdown overlay to filter, and select strictly where `el.innerText.trim().toLowerCase() === targetText.toLowerCase()` on elements with `[role="gridcell"], [role="option"]`. Check the input's `.input_value()` readback to confirm selection was persisted.
+
+### Trap 14: Job Search Tile Deduplication & `ALREADY APPLIED` Flag Inspection
+- **Phenomenon:** Automated scrapers re-target requisition IDs that the candidate already submitted in previous sessions, risking duplicate submission errors or wasted agent cycles.
+- **Root Cause:** Search results list all open requisitions regardless of candidate history unless the tile DOM text is inspected.
+- **Remediation:** Inspect each job card tile text for `"ALREADY APPLIED"`. The scraper must automatically flag `is_already_applied: True` and filter these out from active application queues.
+
+### Trap 15: Non-Negotiable Human Submission Gate
 - **Directive:** The autonomous agent must NEVER click `SUBMIT`.
 - **Protocol:** Populate all fields, verify 0 errors, ensure SUBMIT button is enabled, capture full-page screenshot (`section4_final_verified.png`), and halt with clear instructions for the human operator to perform final review and manual submission.
+
 
 
 
