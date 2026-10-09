@@ -67,7 +67,11 @@ def resolve_search_roots(candidate_data: Optional[Dict[str, Any]] = None) -> lis
             val = candidate_data.get(key)
             if val:
                 p = Path(str(val))
-                roots.append(str(p if p.is_dir() else p.parent))
+                base_dir = p if p.is_dir() else p.parent
+                csa_dir = base_dir / "company_site_apply"
+                if csa_dir.exists() and csa_dir.is_dir():
+                    roots.append(str(csa_dir))
+                roots.append(str(base_dir))
     root = str(_repo_root())
     roots.extend([str(Path(root) / "profiles" / "default_user"), root, os.getcwd()])
     # de-duplicate, keep order

@@ -17,7 +17,8 @@ def load_candidate_context(profile_name: Optional[str] = None):
     with open(cfg_path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
     
-    resume_path = REPO_ROOT / "profiles" / profile / "resume.md"
+    csa_resume = REPO_ROOT / "profiles" / profile / "company_site_apply" / "resume.md"
+    resume_path = csa_resume if csa_resume.exists() else (REPO_ROOT / "profiles" / profile / "resume.md")
     resume_text = ""
     if resume_path.exists():
         with open(resume_path, "r", encoding="utf-8") as f:

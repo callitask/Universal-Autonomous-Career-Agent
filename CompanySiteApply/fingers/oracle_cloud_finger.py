@@ -824,6 +824,28 @@ class OracleCloudFinger(BaseATSFinger):
             return cand["experience"]
 
         experiences = []
+        # Source 0: Check company_site_profile.employment (dedicated for product company apply)
+        csa_emp = candidate_data.get("company_site_profile", {}).get("employment", {})
+        if csa_emp:
+            for k, v in csa_emp.items():
+                comp = v.get("company") or k
+                bullets = v.get("achievements") or []
+                if not bullets and v.get("description"):
+                    clean_desc = re.sub(r'[â€¢•\r]', '', v.get("description", ""))
+                    bullets = [b.strip() for b in clean_desc.split('\n') if b.strip()]
+                city = v.get("city") or cand.get("city") or ""
+                country = v.get("country") or cand.get("country") or "India"
+                experiences.append({
+                    "employer": comp,
+                    "title": v.get("designation", ""),
+                    "country": country,
+                    "city": city,
+                    "bullets": bullets,
+                    "is_current": v.get("is_current", False)
+                })
+            if experiences:
+                return experiences
+
         # Source 1: Check resume.md
         try:
             from CompanySiteApply.utils.config_resolver import resolve_search_roots
