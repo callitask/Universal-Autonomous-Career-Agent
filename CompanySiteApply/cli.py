@@ -113,6 +113,38 @@ def cmd_fill(args):
         arm.disconnect()
 
 
+def cmd_heal_section(args):
+    arm = ATSArm(cdp_url=args.cdp_url)
+    try:
+        candidate_data = {}
+        if args.config:
+            p = Path(args.config)
+            if p.exists():
+                candidate_data = json.loads(p.read_text("utf-8"))
+        print(f"Executing surgical heal on section '{args.section}'...")
+        res = arm.heal_section(args.section, candidate_data)
+        print("\nSection Heal Result:")
+        print(json.dumps(res, indent=2))
+    finally:
+        arm.disconnect()
+
+
+def cmd_audit_section(args):
+    arm = ATSArm(cdp_url=args.cdp_url)
+    try:
+        candidate_data = {}
+        if args.config:
+            p = Path(args.config)
+            if p.exists():
+                candidate_data = json.loads(p.read_text("utf-8"))
+        print(f"Executing audit on section '{args.section}'...")
+        res = arm.audit_section(args.section, candidate_data)
+        print("\nSection Audit Result:")
+        print(json.dumps(res, indent=2))
+    finally:
+        arm.disconnect()
+
+
 def main():
     parser = argparse.ArgumentParser(description="CompanySiteApply - Enterprise ATS Multi-Finger Tool")
     parser.add_argument("--cdp-url", default=None, help="CDP connection endpoint (falls back to CDP_URL env var)")
@@ -132,6 +164,16 @@ def main():
     p_fill.add_argument("--email", help="Candidate email for email step")
     p_fill.add_argument("--config", help="Path to candidate config JSON")
 
+    # heal-section
+    p_hs = subparsers.add_parser("heal-section", help="Surgically heal a specific section via its dedicated mini-agent")
+    p_hs.add_argument("--section", required=True, choices=["profile", "questionnaire", "education", "experience", "review"], help="Section name to heal")
+    p_hs.add_argument("--config", help="Path to candidate config JSON")
+
+    # audit-section
+    p_as = subparsers.add_parser("audit-section", help="Audit a specific section via its dedicated mini-agent")
+    p_as.add_argument("--section", required=True, choices=["profile", "questionnaire", "education", "experience", "review"], help="Section name to audit")
+    p_as.add_argument("--config", help="Path to candidate config JSON")
+
     args = parser.parse_args()
     if args.command == "inspect":
         cmd_inspect(args)
@@ -141,6 +183,10 @@ def main():
         cmd_heal(args)
     elif args.command == "fill":
         cmd_fill(args)
+    elif args.command == "heal-section":
+        cmd_heal_section(args)
+    elif args.command == "audit-section":
+        cmd_audit_section(args)
 
 
 if __name__ == "__main__":

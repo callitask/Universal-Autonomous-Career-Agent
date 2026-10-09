@@ -15,7 +15,13 @@
 # Changes Made: cdp_url defaults to None, resolves via CDP_URL env; connect()
 #   raises a clear error when unconfigured instead of dialing a wrong port.
 # Rationale: Zero hardcoding; explicit failure beats silent wrong-port hangs.
-# Preventative Notes: Never restore a literal CDP default here.
+# [ENTRY #003]
+# Term: [SECTION_MINI_AGENTS_DISPATCHER_INTEGRATION]
+# Timestamp: 2026-10-09 20:42:00 +05:30
+# Issue / Context: ATSArm needed direct invocation hooks for section-wise mini-agents to eliminate ad-hoc script generation.
+# Changes Made: Added heal_section, audit_section, and auto_heal_page delegating directly to SectionAgentDispatcher.
+# Rationale: Provides seamless programmatic interface for isolated section micro-healing.
+# Preventative Notes: Never trigger full flow when a single section heal is requested.
 # ==============================================================================
 
 import json
@@ -154,3 +160,31 @@ class ATSArm:
             "healed_experience": exp_healed,
             "healed_education": edu_healed
         }
+
+    def heal_section(self, section_name: str, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Surgically dispatches a dedicated Section Mini-Agent to heal the named section.
+        """
+        page = self.connect()
+        from CompanySiteApply.section_agents import SectionAgentDispatcher
+        dispatcher = SectionAgentDispatcher()
+        return dispatcher.dispatch_heal(section_name, page, candidate_data)
+
+    def audit_section(self, section_name: str, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Runs an isolated read-only audit on the named section via its specialist Section Mini-Agent.
+        """
+        page = self.connect()
+        from CompanySiteApply.section_agents import SectionAgentDispatcher
+        dispatcher = SectionAgentDispatcher()
+        return dispatcher.dispatch_audit(section_name, page, candidate_data)
+
+    def auto_heal_page(self, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Audits and surgically heals all applicable sections on current page via SectionAgentDispatcher.
+        """
+        page = self.connect()
+        from CompanySiteApply.section_agents import SectionAgentDispatcher
+        dispatcher = SectionAgentDispatcher()
+        return dispatcher.auto_heal_current_page(page, candidate_data)
+
