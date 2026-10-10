@@ -130,6 +130,48 @@ class TestAIBrainResolver(unittest.TestCase):
             self.assertEqual(len(loaded), 1)
             self.assertEqual(loaded[0]["answer"], "Yes")
 
+    def test_non_technical_candidate_resolution(self):
+        # Sample non-tech profile: Anshika Garg (Internal Audit)
+        audit_data = {
+            "candidate": {
+                "full_name": "Anshika Garg",
+                "current_title": "Internal Audit Associate",
+                "total_experience_years": 0.5,
+                "country": "India",
+                "location": "Delhi",
+                "requires_sponsorship": False
+            },
+            "target_jobs": {
+                "keywords": ["Internal Audit Associate", "Financial Analyst", "Risk Advisory"],
+                "department": "Internal Audit & Risk"
+            },
+            "taxonomy_skills": {
+                "Domain Skills": ["Internal Controls", "Risk Assessment", "Statutory Audit", "Financial Analysis"]
+            },
+            "ats_answers": {},
+            "auto_learned_truths": {},
+            "profile_content": {
+                "key_skills": ["Internal Controls", "Risk Assessment", "Financial Modelling"]
+            }
+        }
+        audit_brain = AIBrainResolver(audit_data)
+        idx = audit_brain.knowledge_index
+        self.assertEqual(idx["candidate_name"], "Anshika Garg")
+        self.assertEqual(idx["primary_domain"], "Internal Audit & Risk")
+        self.assertFalse(idx["is_tech_candidate"])
+        self.assertEqual(idx["aws_proficiency"], "None")
+
+        # Non-tech candidate answering programming languages question
+        q = "Which of the following programming languages have you worked with?( Choose two that apply)"
+        options = [
+            "C++", ".NET", "Java", "Python",
+            "My job does not require coding/I am not hands-on with coding",
+            "Others/not listed above"
+        ]
+        res = audit_brain.resolve_question(q, control_type="DROPDOWN_MULTI", options=options, req_count=2)
+        ans = res["answer"]
+        self.assertIn("My job does not require coding/I am not hands-on with coding", ans)
+
 
 if __name__ == "__main__":
     unittest.main()

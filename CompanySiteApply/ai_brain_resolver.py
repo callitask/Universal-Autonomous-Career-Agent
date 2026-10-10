@@ -131,11 +131,11 @@ class AIBrainResolver:
                 unique_skills.append(clean)
 
         # 2. Programming languages specifically
-        prog_langs = []
         known_languages = [
             "Java", "Python", "SQL", "JavaScript", "TypeScript", "C++", "C#", "Go",
             "Scala", "Kotlin", "Ruby", "PHP", "PL/SQL", "Rust", "Swift"
         ]
+        prog_langs = []
         for kl in known_languages:
             if any(kl.lower() == s.lower() or f" {kl.lower()} " in f" {s.lower()} " for s in unique_skills):
                 prog_langs.append(kl)
@@ -152,10 +152,12 @@ class AIBrainResolver:
                 if str(p).strip() and str(p).strip() not in prog_langs:
                     prog_langs.insert(0, str(p).strip())
 
-        # Ensure Java is top for Java Full Stack candidate
-        current_title = str(cand.get("current_title") or cand.get("headline") or cand.get("resume_headline") or "").lower()
-        if "java" in current_title and "Java" not in prog_langs:
-            prog_langs.insert(0, "Java")
+        # Prioritize language mentioned directly in candidate title/headline if present
+        current_title = str(cand.get("current_title") or cand.get("headline") or cand.get("resume_headline") or "").strip()
+        for kl in known_languages:
+            if kl.lower() in current_title.lower() and kl in prog_langs:
+                prog_langs.remove(kl)
+                prog_langs.insert(0, kl)
 
         # 3. Total experience
         total_exp = float(cand.get("total_experience_years") or 0.0)
@@ -165,14 +167,60 @@ class AIBrainResolver:
             except Exception:
                 pass
 
-        # 4. Primary domain & specialization
-        primary_domain = "Software Engineering"
-        specialization = "Java Fullstack (Springboot, Hibernate, Microservices, React/Angular, Cloud)"
-        if "architect" in current_title or "solution" in current_title:
-            primary_domain = "Software Engineering"
+        # 4. Primary domain & specialization (100% Dynamic - Zero Hardcoding)
+        target_jobs = self.candidate_data.get("target_jobs") or {}
+        target_keywords = target_jobs.get("keywords") or []
+        recommended_titles = target_jobs.get("recommended_titles") or []
+        cog_prof = self.candidate_data.get("cognitive_profile") or {}
 
-        # 5. Cloud / AWS proficiency
-        aws_prof = "Advanced / Expert" if total_exp >= 5 else "Intermediate"
+        # Dynamically determine candidate domain
+        cand_domain = (
+            cog_prof.get("candidate_domain")
+            or cand.get("domain")
+            or cand.get("primary_domain")
+            or ats.get("Which primary technical area best describes your experience?")
+            or ats.get("primary_domain")
+            or target_jobs.get("department")
+            or target_jobs.get("functional_area")
+        )
+        if not cand_domain:
+            if current_title:
+                cand_domain = current_title
+            elif target_keywords:
+                cand_domain = target_keywords[0]
+            elif recommended_titles:
+                cand_domain = recommended_titles[0]
+            else:
+                cand_domain = "Professional"
+
+        primary_domain = cand_domain
+
+        # Dynamically determine specialization
+        specialization = ""
+        if ats.get("specialization"):
+            specialization = ats["specialization"]
+        elif target_keywords:
+            specialization = target_keywords[0]
+        elif recommended_titles:
+            specialization = recommended_titles[0]
+        elif current_title:
+            specialization = current_title
+        elif unique_skills:
+            specialization = ", ".join(unique_skills[:3])
+        else:
+            specialization = primary_domain
+
+        # Determine if candidate is in a software/technical coding domain
+        tech_tokens = ["software", "developer", "engineer", "architect", "programmer", "coding", "data science", "devops", "fullstack", "frontend", "backend"]
+        all_domain_text = f"{current_title} {primary_domain} {' '.join(target_keywords)}".lower()
+        is_tech_candidate = any(t in all_domain_text for t in tech_tokens) or len(prog_langs) > 0
+
+        # 5. Cloud / AWS proficiency (dynamically evaluated)
+        has_aws = any("aws" in s.lower() or "amazon web services" in s.lower() for s in unique_skills)
+        has_cloud = has_aws or any("cloud" in s.lower() or "azure" in s.lower() or "gcp" in s.lower() for s in unique_skills)
+        aws_prof = "None"
+        if has_aws or has_cloud:
+            aws_prof = "Advanced / Expert" if total_exp >= 5 else "Intermediate"
         if "aws" in ats:
             aws_prof = ats["aws"]
         elif "proficiency with AWS" in ats:
@@ -191,6 +239,7 @@ class AIBrainResolver:
             "total_experience_years": total_exp,
             "technical_skills": unique_skills,
             "programming_languages": prog_langs,
+            "is_tech_candidate": is_tech_candidate,
             "primary_domain": primary_domain,
             "specialization": specialization,
             "aws_proficiency": aws_prof,
@@ -322,36 +371,51 @@ class AIBrainResolver:
 
         # A. Programming Languages Multi-Select Question
         if "programming language" in q_lower or "languages have you worked" in q_lower:
-            cand_langs = idx["programming_languages"]
+            cand_langs = idx.get("programming_languages", [])
+            is_tech = idx.get("is_tech_candidate", False)
             matched_opts = []
-            for lang in cand_langs:
-                best = self._best_option_match(lang, options)
-                if best and best not in matched_opts:
-                    # STRICT RULE: NEVER select non-coding options for developers
-                    if "not require" not in best.lower() and "others" not in best.lower():
-                        matched_opts.append(best)
 
-            # If not enough matches from explicit list, search technical skills
-            if len(matched_opts) < req_count:
-                for skill in idx["technical_skills"]:
-                    best = self._best_option_match(skill, options)
+            if is_tech:
+                # For technical developers, match their verified programming languages
+                for lang in cand_langs:
+                    best = self._best_option_match(lang, options)
                     if best and best not in matched_opts:
                         if "not require" not in best.lower() and "others" not in best.lower():
                             matched_opts.append(best)
-                    if len(matched_opts) >= req_count:
-                        break
 
-            # STRICT SAFEGUARD: Never return empty or "not require" for technical candidate
-            if not matched_opts:
-                for fallback in ["Java", "SQL", "Python", "C++", ".NET"]:
-                    best = self._best_option_match(fallback, options)
+                # Search technical skills if more choices needed
+                if len(matched_opts) < req_count:
+                    for skill in idx.get("technical_skills", []):
+                        best = self._best_option_match(skill, options)
+                        if best and best not in matched_opts:
+                            if "not require" not in best.lower() and "others" not in best.lower():
+                                matched_opts.append(best)
+                        if len(matched_opts) >= req_count:
+                            break
+
+                # Safe fallback for tech candidate: pick coding languages from options matching skills
+                if not matched_opts:
+                    for opt in options:
+                        if "not require" not in opt.lower() and "none" not in opt.lower():
+                            matched_opts.append(opt)
+                            if len(matched_opts) >= req_count:
+                                break
+
+                selected = matched_opts[:req_count]
+                return selected, f"Selected top {len(selected)} verified programming languages from technical profile."
+            else:
+                # For non-technical profiles (e.g. Finance, Audit, HR, Sales)
+                # Check if "does not require coding" option exists
+                for opt in options:
+                    if "not require" in opt.lower() or "not hands-on" in opt.lower() or "none" in opt.lower():
+                        return [opt] if control_type == "DROPDOWN_MULTI" else opt, "Candidate profile is in a non-coding domain."
+                # Otherwise pick any skill that overlaps with candidate profile
+                for skill in idx.get("technical_skills", []):
+                    best = self._best_option_match(skill, options)
                     if best and best not in matched_opts:
                         matched_opts.append(best)
-                    if len(matched_opts) >= req_count:
-                        break
-
-            selected = matched_opts[:req_count]
-            return selected, f"Selected top {len(selected)} verified programming languages from candidate profile."
+                selected = matched_opts[:req_count] if matched_opts else (options[:req_count] if options else [])
+                return selected, "Selected domain-compatible options for candidate profile."
 
         # B. Experience Tiers
         if any(w in q_lower for w in ["years of work experience", "experience you have", "relevant work experience"]):
@@ -360,58 +424,54 @@ class AIBrainResolver:
             return selected_pill, f"Mapped {total_exp} years of total experience to bracket '{selected_pill}'."
 
         # C. Option-Driven Specialization Recognition
-        # If options contain specific software engineering specializations (e.g. Java Fullstack / Backend / Python / .NET)
-        opt_text = " ".join(options).lower()
-        if any(term in opt_text for term in ["java fullstack", "java full stack", "java backend", "c#/.net"]):
-            best = self._best_option_match(idx["specialization"], options)
-            if not best:
-                for opt in options:
-                    if "java fullstack" in opt.lower() or "java full stack" in opt.lower():
-                        best = opt
-                        break
-                    elif "java backend" in opt.lower():
-                        best = opt
-                        break
-            if best:
-                return best, f"Selected specialization '{best}' matching candidate profile via option-driven analysis."
+        # Search candidate specialization, target titles, and skills against options
+        best = self._best_option_match(idx.get("specialization", ""), options)
+        if best:
+            return best, f"Selected specialization '{best}' matching candidate profile."
 
         # D. Primary Area of Expertise
-        if "primary area of expertise" in q_lower or "primary technical area" in q_lower:
-            best = self._best_option_match(idx["primary_domain"], options)
+        if "primary area of expertise" in q_lower or "primary technical area" in q_lower or "primary area" in q_lower:
+            best = self._best_option_match(idx.get("primary_domain", ""), options)
             if best:
-                return best, f"Selected primary domain '{best}' matching candidate architecture profile."
-            # Fall back to specialization if primary domain is not in options
-            spec = self._best_option_match(idx["specialization"], options)
+                return best, f"Selected primary domain '{best}' matching candidate profile."
+            spec = self._best_option_match(idx.get("specialization", ""), options)
             if spec:
-                return spec, f"Selected specialization '{spec}' matching candidate architecture profile."
+                return spec, f"Selected specialization '{spec}' matching candidate profile."
 
-        # E. Specific Field of Specialization
-        if "specific field of specialization" in q_lower or "sub-area" in q_lower or "specialization" in q_lower or "area of expertise" in q_lower:
-            best = self._best_option_match(idx["specialization"], options)
+        # E. Specific Field of Specialization / Sub-area
+        if any(w in q_lower for w in ["specific field", "specialization", "sub-area", "area of expertise"]):
+            best = self._best_option_match(idx.get("specialization", ""), options)
             if not best:
-                # Look for Java Fullstack or Backend
-                for opt in options:
-                    if "java fullstack" in opt.lower() or "java full stack" in opt.lower():
-                        best = opt
-                        break
-                    elif "java backend" in opt.lower():
-                        best = opt
+                for skill in idx.get("technical_skills", []):
+                    best = self._best_option_match(skill, options)
+                    if best:
                         break
             if best:
-                return best, f"Selected specialization '{best}' matching Java Fullstack candidate history."
+                return best, f"Selected specialization '{best}' matching candidate profile taxonomy."
 
-        # E. Cloud / Tool Proficiency (e.g. AWS)
+        # F. Cloud / Tool Proficiency (e.g. AWS)
         if "proficiency" in q_lower or "rate your proficiency" in q_lower:
-            prof = idx["aws_proficiency"]
+            prof = idx.get("aws_proficiency", "None")
             best = self._best_option_match(prof, options)
             if not best:
-                # Highest tier for senior candidate
-                for opt in options:
-                    if "expert" in opt.lower() or "advanced" in opt.lower():
-                        best = opt
-                        break
+                total_exp = idx.get("total_experience_years", 0)
+                if total_exp >= 8:
+                    for opt in options:
+                        if "expert" in opt.lower() or "advanced" in opt.lower():
+                            best = opt
+                            break
+                elif total_exp >= 3:
+                    for opt in options:
+                        if "intermediate" in opt.lower():
+                            best = opt
+                            break
+                else:
+                    for opt in options:
+                        if "fundamental" in opt.lower() or "beginner" in opt.lower() or "basic" in opt.lower():
+                            best = opt
+                            break
             if best:
-                return best, f"Assigned proficiency rating '{best}' based on 10+ years backend cloud experience."
+                return best, f"Assigned proficiency rating '{best}' based on candidate experience profile."
 
         # F. Regulatory & Binary Yes/No
         if control_type == "BINARY_PILL" or len(options) == 2:
