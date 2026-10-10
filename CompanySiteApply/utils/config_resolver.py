@@ -72,6 +72,23 @@ def resolve_search_roots(candidate_data: Optional[Dict[str, Any]] = None) -> lis
                 if csa_dir.exists() and csa_dir.is_dir():
                     roots.append(str(csa_dir))
                 roots.append(str(base_dir))
+
+        # Dynamic candidate name slug discovery from profile metadata
+        cand = candidate_data.get("candidate", candidate_data)
+        full_name = cand.get("full_name") or candidate_data.get("full_name") or ""
+        if full_name:
+            import re
+            slug = re.sub(r'[^a-zA-Z0-9_]', '_', str(full_name).strip().lower())
+            repo_root = _repo_root()
+            prof_dir = repo_root / "profiles" / slug
+            if prof_dir.exists() and prof_dir.is_dir():
+                csa_dir = prof_dir / "company_site_apply"
+                if csa_dir.exists() and csa_dir.is_dir():
+                    roots.append(str(csa_dir))
+                applied_dir = prof_dir / "APPLIED ON COMPANY WEBSITE"
+                if applied_dir.exists() and applied_dir.is_dir():
+                    roots.append(str(applied_dir))
+                roots.append(str(prof_dir))
     root = str(_repo_root())
     roots.extend([str(Path(root) / "profiles" / "default_user"), root, os.getcwd()])
     # de-duplicate, keep order

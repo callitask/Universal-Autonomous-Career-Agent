@@ -1,0 +1,29 @@
+SARAH CONNOR
+India |  |  | linkedin.com/in/sarahconnor
+================================================================================
+
+October 11, 2026
+
+Global Technology & Engineering
+JPMorgan Chase & Co.
+India
+
+Re: Application for Lead Software Engineer (Job ID: )
+
+Dear Hiring Team,
+
+I am writing to express my enthusiastic interest in the Lead Software Engineer position at JPMorgan Chase & Co.. With over 10+ years of software engineering leadership architecting high-throughput distributed systems and mission-critical enterprise platforms, I am strongly aligned with your mandate to engineer resilient, market-leading solutions.
+
+Throughout my career leading engineering deliverables across enterprise platforms, I have specialized in marrying core backend architecture with high operational reliability:
+
+• Distributed Event-Driven Architecture: Architected scalable, low-latency microservices supporting high-throughput transactions with 99.99% delivery reliability. Designed resilient event streaming pipelines incorporating schema governance, partition tuning, and dead-letter queues.
+• Enterprise Data Architecture & High Performance Persistence: Architected hybrid data persistence layers leveraging relational RDBMS for strict ACID transaction semantics alongside distributed stores for massive data workloads and automated data analytics pipelines.
+• Cloud-Native Resilience & DevSecOps: Built cloud-native microservices deployed across containerized platforms (Kubernetes, Docker, Cloud), establishing zero-downtime CI/CD deployment pipelines, automated testing gates, and strict infrastructure monitoring protocols.
+• Technical Leadership & Architecture Governance: Directed cross-functional engineering teams, instituting rigorous code review standards, observability frameworks (distributed tracing, metrics, alerting), and mentoring developers in enterprise design patterns.
+
+JPMorgan Chase & Co.’s dedication to technology excellence requires platforms that are not only performant and scalable, but fundamentally auditable, secure, and fault-tolerant. My empirical background in designing distributed backend microservices, optimizing asynchronous messaging, and leading enterprise engineering teams directly equips me to deliver immediate value.
+
+I welcome the opportunity to discuss how my technical leadership, distributed backend expertise, and passion for engineering quality can contribute to the mission of JPMorgan Chase & Co.. Thank you for your time and consideration.
+
+Sincerely,
+SARAH CONNOR

@@ -128,6 +128,46 @@ class TestSubAgents(unittest.TestCase):
         self.assertTrue(res["human_gate_active"])
         self.assertFalse(res["submit_clicked"])
 
+    def test_documents_subagent_preuploaded_stale_detection(self):
+        agent = DocumentsSubAgent()
+        mock_page = MagicMock()
+        mock_page.url = "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1002/job/210790129/apply/section/4"
+        mock_page.evaluate.return_value = {
+            "resume": {"filled": True, "filename": "Udaysagar_Resume.pdf", "waiting": False, "hasRemove": True},
+            "cover": {"filled": True, "filename": "Old_Cover_Letter.pdf", "waiting": False, "hasRemove": True}
+        }
+        res = agent.audit(mock_page, {"job_id": "210790129"})
+        self.assertFalse(res["is_valid"])
+        self.assertTrue(res["is_preuploaded_cover"])
+        self.assertEqual(res["cover_status"], "PRE_UPLOADED_STALE")
+
+    def test_dispatcher_evaluate_and_heal_section_targeted_execution(self):
+        from CompanySiteApply.section_agents.section_agent_dispatcher import SectionAgentDispatcher
+        dispatcher = SectionAgentDispatcher()
+        mock_page = MagicMock()
+
+        # Mock sub-agents: personal details valid, preferred location needs healing
+        mock_personal = MagicMock()
+        mock_personal.section_name = "personal_details"
+        mock_personal.audit.return_value = {"is_valid": True}
+
+        mock_location = MagicMock()
+        mock_location.section_name = "preferred_location"
+        # First audit returns False (needs heal), second returns True (healed)
+        mock_location.audit.side_effect = [{"is_valid": False}, {"is_valid": True}]
+        mock_location.heal.return_value = {"success": True}
+
+        dispatcher.register_agent(mock_personal)
+        dispatcher.register_agent(mock_location)
+
+        report = dispatcher.evaluate_and_heal_section("profile", mock_page, {})
+        self.assertTrue(report["success"])
+        self.assertIn("preferred_location", report["subagents_healed"])
+        self.assertNotIn("personal_details", report["subagents_healed"])
+        mock_personal.heal.assert_not_called()
+        mock_location.heal.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
+

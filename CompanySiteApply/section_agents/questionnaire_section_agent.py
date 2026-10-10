@@ -27,10 +27,15 @@ class QuestionnaireSectionAgent(BaseSectionAgent):
     Orchestrates BinaryQuestionSubAgent, TechnicalCompetencySubAgent, and DropdownQuestionSubAgent.
     """
 
-    def __init__(self):
-        self.binary_subagent = BinaryQuestionSubAgent()
-        self.competency_subagent = TechnicalCompetencySubAgent()
-        self.dropdown_subagent = DropdownQuestionSubAgent()
+    def __init__(
+        self,
+        binary_subagent: Optional[BinaryQuestionSubAgent] = None,
+        competency_subagent: Optional[TechnicalCompetencySubAgent] = None,
+        dropdown_subagent: Optional[DropdownQuestionSubAgent] = None
+    ):
+        self.binary_subagent = binary_subagent or BinaryQuestionSubAgent()
+        self.competency_subagent = competency_subagent or TechnicalCompetencySubAgent()
+        self.dropdown_subagent = dropdown_subagent or DropdownQuestionSubAgent()
 
     @property
     def section_name(self) -> str:

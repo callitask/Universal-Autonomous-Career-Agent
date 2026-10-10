@@ -46,26 +46,43 @@ class SectionAgentDispatcher:
         if agents is not None:
             self._agents = {a.section_name.lower(): a for a in agents}
         else:
-            default_agents = [
-                # Top-level Section Coordinators
-                ProfileSectionAgent(),
-                QuestionnaireSectionAgent(),
-                EducationSectionAgent(),
-                ExperienceSectionAgent(),
-                ReviewSectionAgent(),
+            # Granular Sub-Agents
+            pers_sub = PersonalDetailsSubAgent()
+            loc_sub = PreferredLocationSubAgent()
+            bin_sub = BinaryQuestionSubAgent()
+            comp_sub = TechnicalCompetencySubAgent()
+            drop_sub = DropdownQuestionSubAgent()
+            edu_sub = EducationSubAgent()
+            exp_sub = ExperienceSubAgent()
+            doc_sub = DocumentsSubAgent()
+            div_sub = DiversitySubAgent()
+            sig_sub = SignatureSubAgent()
+            vis_sub = VisualVerifierSubAgent()
 
-                # Granular Sub-Agents
-                PersonalDetailsSubAgent(),
-                PreferredLocationSubAgent(),
-                BinaryQuestionSubAgent(),
-                TechnicalCompetencySubAgent(),
-                DropdownQuestionSubAgent(),
-                EducationSubAgent(),
-                ExperienceSubAgent(),
-                DocumentsSubAgent(),
-                DiversitySubAgent(),
-                SignatureSubAgent(),
-                VisualVerifierSubAgent()
+            # Top-level Section Coordinators sharing underlying subagents
+            prof_coord = ProfileSectionAgent(personal_subagent=pers_sub, location_subagent=loc_sub)
+            quest_coord = QuestionnaireSectionAgent(binary_subagent=bin_sub, competency_subagent=comp_sub, dropdown_subagent=drop_sub)
+            edu_coord = EducationSectionAgent()
+            exp_coord = ExperienceSectionAgent()
+            rev_coord = ReviewSectionAgent(docs_subagent=doc_sub, diversity_subagent=div_sub, signature_subagent=sig_sub, visual_subagent=vis_sub)
+
+            default_agents = [
+                prof_coord,
+                quest_coord,
+                edu_coord,
+                exp_coord,
+                rev_coord,
+                pers_sub,
+                loc_sub,
+                bin_sub,
+                comp_sub,
+                drop_sub,
+                edu_sub,
+                exp_sub,
+                doc_sub,
+                div_sub,
+                sig_sub,
+                vis_sub
             ]
             self._agents = {a.section_name.lower(): a for a in default_agents}
 
@@ -141,6 +158,113 @@ class SectionAgentDispatcher:
             }
 
         return agent.audit(page, candidate_data)
+
+    SECTION_TO_SUBAGENTS = {
+        "profile": ["personal_details", "preferred_location"],
+        "section_1": ["personal_details", "preferred_location"],
+        "questionnaire": ["binary_questions", "technical_competency", "dropdown_questions"],
+        "section_2": ["binary_questions", "technical_competency", "dropdown_questions"],
+        "section_3": ["education", "experience"],
+        "education": ["education"],
+        "experience": ["experience"],
+        "review": ["documents", "diversity", "signature", "visual_verifier"],
+        "section_4": ["documents", "diversity", "signature", "visual_verifier"],
+    }
+
+    def evaluate_and_heal_section(
+        self,
+        section_name: str,
+        page: Any,
+        candidate_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        AI Brain Cognitive Dispatcher:
+        1. Identifies which granular sub-agents map to the active section.
+        2. Pre-audits every sub-agent to discover precisely which domains require healing.
+        3. If all sub-agents are valid, cleanly bypasses redundant execution.
+        4. If anomalies exist, surgically dispatches ONLY the required sub-agents.
+        5. Verifies healed sub-agents with empirical post-execution audits.
+        """
+        sec_key = section_name.lower().strip()
+        sub_names = self.SECTION_TO_SUBAGENTS.get(sec_key)
+
+        # Fallback to top-level section coordinator if no sub-agents mapped
+        if not sub_names:
+            agent = self.get_agent(sec_key)
+            if agent:
+                logger.info(f"[AI Brain] Dispatching top-level agent '{agent.section_name}' for section '{sec_key}'...")
+                heal_res = agent.heal(page, candidate_data)
+                audit_res = agent.audit(page, candidate_data)
+                return {
+                    "section": sec_key,
+                    "success": audit_res.get("is_valid", False),
+                    "subagents_evaluated": [agent.section_name],
+                    "subagents_healed": [agent.section_name],
+                    "audit": audit_res,
+                    "heal_result": heal_res
+                }
+            return {
+                "section": sec_key,
+                "success": False,
+                "error": f"Unknown section '{sec_key}'"
+            }
+
+        logger.info(f"[AI Brain] Cognitive Dispatch: Evaluating section '{sec_key}' across sub-agents: {sub_names}...")
+        sub_agents = [self.get_agent(name) for name in sub_names if self.get_agent(name)]
+
+        pre_audits = {}
+        agents_needing_heal = []
+
+        # 1. Pre-audit Phase: Evaluate health of each sub-agent
+        for agent in sub_agents:
+            try:
+                res = agent.audit(page, candidate_data)
+                pre_audits[agent.section_name] = res
+                if not res.get("is_valid", False):
+                    logger.info(f"[AI Brain] -> Sub-Agent '{agent.section_name}' reports ANOMALY / ACTION_REQUIRED: {res}")
+                    agents_needing_heal.append(agent)
+                else:
+                    logger.info(f"[AI Brain] -> Sub-Agent '{agent.section_name}' verified VALID (skipping).")
+            except Exception as e:
+                logger.warning(f"[AI Brain] Pre-audit error on '{agent.section_name}': {e}")
+                agents_needing_heal.append(agent)
+
+        healed_results = {}
+        # 2. Targeted Healing Phase: Surgically invoke only the failing sub-agents
+        if not agents_needing_heal:
+            logger.info(f"[AI Brain] All sub-agents for '{sec_key}' are already 100% valid! No healing required.")
+        else:
+            for agent in agents_needing_heal:
+                logger.info(f"[AI Brain] Surgically healing '{agent.section_name}'...")
+                try:
+                    h_res = agent.heal(page, candidate_data)
+                    healed_results[agent.section_name] = h_res
+                except Exception as e:
+                    logger.error(f"[AI Brain] Error healing '{agent.section_name}': {e}")
+                    healed_results[agent.section_name] = {"success": False, "error": str(e)}
+
+        # 3. Post-Audit Verification Phase: Empirical verification
+        post_audits = {}
+        all_valid = True
+        for agent in sub_agents:
+            try:
+                ver_res = agent.audit(page, candidate_data)
+                post_audits[agent.section_name] = ver_res
+                if not ver_res.get("is_valid", False):
+                    all_valid = False
+            except Exception as e:
+                post_audits[agent.section_name] = {"is_valid": False, "error": str(e)}
+                all_valid = False
+
+        return {
+            "section": sec_key,
+            "success": all_valid,
+            "subagents_evaluated": sub_names,
+            "subagents_healed": [a.section_name for a in agents_needing_heal],
+            "pre_audits": pre_audits,
+            "healed_results": healed_results,
+            "post_audits": post_audits
+        }
 
     def auto_heal_current_page(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """

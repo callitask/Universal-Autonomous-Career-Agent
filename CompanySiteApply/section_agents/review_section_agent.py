@@ -30,11 +30,17 @@ class ReviewSectionAgent(BaseSectionAgent):
     Enforces strict, non-negotiable human gate before submission.
     """
 
-    def __init__(self):
-        self.docs_subagent = DocumentsSubAgent()
-        self.diversity_subagent = DiversitySubAgent()
-        self.signature_subagent = SignatureSubAgent()
-        self.visual_subagent = VisualVerifierSubAgent()
+    def __init__(
+        self,
+        docs_subagent: Optional[DocumentsSubAgent] = None,
+        diversity_subagent: Optional[DiversitySubAgent] = None,
+        signature_subagent: Optional[SignatureSubAgent] = None,
+        visual_subagent: Optional[VisualVerifierSubAgent] = None
+    ):
+        self.docs_subagent = docs_subagent or DocumentsSubAgent()
+        self.diversity_subagent = diversity_subagent or DiversitySubAgent()
+        self.signature_subagent = signature_subagent or SignatureSubAgent()
+        self.visual_subagent = visual_subagent or VisualVerifierSubAgent()
 
     @property
     def section_name(self) -> str:

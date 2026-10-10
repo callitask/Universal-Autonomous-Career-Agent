@@ -34,9 +34,13 @@ class ProfileSectionAgent(BaseSectionAgent):
     Composes PersonalDetailsSubAgent and PreferredLocationSubAgent.
     """
 
-    def __init__(self):
-        self.personal_subagent = PersonalDetailsSubAgent()
-        self.location_subagent = PreferredLocationSubAgent()
+    def __init__(
+        self,
+        personal_subagent: Optional[PersonalDetailsSubAgent] = None,
+        location_subagent: Optional[PreferredLocationSubAgent] = None
+    ):
+        self.personal_subagent = personal_subagent or PersonalDetailsSubAgent()
+        self.location_subagent = location_subagent or PreferredLocationSubAgent()
 
     @property
     def section_name(self) -> str:

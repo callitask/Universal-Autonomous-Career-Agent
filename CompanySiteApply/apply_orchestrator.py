@@ -135,8 +135,8 @@ class ApplyOrchestrator:
                 # SECTION 4: REVIEW (HUMAN GATE - NEVER SUBMIT)
                 # -------------------------------------------------------------
                 elif section == "review":
-                    logger.info("[ApplyOrchestrator] Arrived at Section 4 Review. Executing ReviewSectionAgent...")
-                    heal_res = self.dispatcher.dispatch_heal("review", page, candidate_data)
+                    logger.info("[ApplyOrchestrator] Arrived at Section 4 Review. Running AI Brain Cognitive Dispatch...")
+                    eval_res = self.dispatcher.evaluate_and_heal_section("review", page, candidate_data)
                     audit_res = self.dispatcher.dispatch_audit("review", page, candidate_data)
 
                     # Capture visual audit screenshot
@@ -155,7 +155,7 @@ class ApplyOrchestrator:
                         "status": "READY_FOR_HUMAN_SUBMISSION",
                         "section": "review",
                         "url": curr_url,
-                        "heal_result": heal_res,
+                        "eval_result": eval_res,
                         "audit_result": audit_res,
                         "screenshot_path": str(shot_path) if shot_path else None,
                         "human_gate_active": True,
@@ -167,41 +167,30 @@ class ApplyOrchestrator:
                 # SECTION 1: PROFILE
                 # -------------------------------------------------------------
                 elif section == "profile":
-                    logger.info("[ApplyOrchestrator] Healing Section 1 Profile...")
-                    self.dispatcher.dispatch_heal("profile", page, candidate_data)
-                    time.sleep(1.0)
-                    aud = self.dispatcher.dispatch_audit("profile", page, candidate_data)
-                    if not aud.get("is_valid", False):
-                        logger.warning(f"[ApplyOrchestrator] Section 1 audit reported anomalies: {aud}. Re-healing...")
-                        self.dispatcher.dispatch_heal("profile", page, candidate_data)
-                        time.sleep(1.0)
+                    logger.info("[ApplyOrchestrator] Arrived at Section 1 Profile. Running AI Brain Cognitive Dispatch...")
+                    eval_res = self.dispatcher.evaluate_and_heal_section("profile", page, candidate_data)
+                    if not eval_res.get("success", False):
+                        logger.warning(f"[ApplyOrchestrator] Section 1 reported anomalies: {eval_res}. Retrying...")
                     self.advance(page)
 
                 # -------------------------------------------------------------
                 # SECTION 2: QUESTIONNAIRE
                 # -------------------------------------------------------------
                 elif section == "questionnaire":
-                    logger.info("[ApplyOrchestrator] Healing Section 2 Questionnaire...")
-                    self.dispatcher.dispatch_heal("questionnaire", page, candidate_data)
-                    time.sleep(1.0)
-                    aud = self.dispatcher.dispatch_audit("questionnaire", page, candidate_data)
-                    if not aud.get("is_valid", False):
-                        logger.warning(f"[ApplyOrchestrator] Section 2 audit reported anomalies: {aud}. Re-healing...")
-                        self.dispatcher.dispatch_heal("questionnaire", page, candidate_data)
-                        time.sleep(1.0)
+                    logger.info("[ApplyOrchestrator] Arrived at Section 2 Questionnaire. Running AI Brain Cognitive Dispatch...")
+                    eval_res = self.dispatcher.evaluate_and_heal_section("questionnaire", page, candidate_data)
+                    if not eval_res.get("success", False):
+                        logger.warning(f"[ApplyOrchestrator] Section 2 reported anomalies: {eval_res}. Retrying...")
                     self.advance(page)
 
                 # -------------------------------------------------------------
                 # SECTION 3: EDUCATION & WORK EXPERIENCE
                 # -------------------------------------------------------------
                 elif section == "section_3":
-                    logger.info("[ApplyOrchestrator] Healing Section 3 Education & Experience...")
-                    # 1. Heal Education
-                    self.dispatcher.dispatch_heal("education", page, candidate_data)
-                    time.sleep(1.0)
-                    # 2. Heal Experience
-                    self.dispatcher.dispatch_heal("experience", page, candidate_data)
-                    time.sleep(1.0)
+                    logger.info("[ApplyOrchestrator] Arrived at Section 3 Education & Experience. Running AI Brain Cognitive Dispatch...")
+                    eval_res = self.dispatcher.evaluate_and_heal_section("section_3", page, candidate_data)
+                    if not eval_res.get("success", False):
+                        logger.warning(f"[ApplyOrchestrator] Section 3 reported anomalies: {eval_res}. Retrying...")
                     self.advance(page)
 
                 else:
