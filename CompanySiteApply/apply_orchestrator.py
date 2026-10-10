@@ -11,6 +11,7 @@
 # Preventative Notes: ABSOLUTELY NEVER CLICK SUBMIT ON SECTION 4.
 # ==============================================================================
 
+import re
 import time
 import json
 import logging
@@ -77,16 +78,20 @@ class ApplyOrchestrator:
     def detect_current_section(self, page: Any) -> str:
         """Determines the active ATS section from URL or DOM structure."""
         url = (getattr(page, "url", "") or "").lower()
-        if "/apply/email" in url or "email" in url:
-            return "email"
-        elif "/section/1" in url or "profile" in url or "personal" in url:
-            return "profile"
-        elif "/section/2" in url or "questions" in url:
-            return "questionnaire"
-        elif "/section/3" in url or "timeline" in url or "experience" in url:
-            return "section_3"
-        elif "/section/4" in url or "review" in url or "more-about-you" in url:
+        # Sanitize common portal path segments that contain 'experience' (e.g. /candidateexperience/)
+        path_only = re.sub(r'/candidateexperience/', '/', url)
+
+        # Prioritize explicit section numbers
+        if "/section/4" in path_only or "/apply/section/4" in path_only or "more-about-you" in path_only or "review" in path_only:
             return "review"
+        elif "/section/3" in path_only or "/apply/section/3" in path_only or "timeline" in path_only:
+            return "section_3"
+        elif "/section/2" in path_only or "/apply/section/2" in path_only or "questions" in path_only:
+            return "questionnaire"
+        elif "/section/1" in path_only or "/apply/section/1" in path_only or "personal" in path_only:
+            return "profile"
+        elif "/apply/email" in path_only or "email" in path_only:
+            return "email"
         return "unknown"
 
     def run(self, candidate_data: Dict[str, Any], max_steps: int = 10, screenshot_dir: Optional[Path] = None) -> Dict[str, Any]:

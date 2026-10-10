@@ -56,7 +56,7 @@ class DiversitySubAgent(BaseSectionAgent):
             missing = []
             if demographics.get("ethnicity") and not eth_val.strip():
                 missing.append("ethnicity")
-            if demographics.get("gender") and not gen_val.strip():
+            if demographics.get("gender") and (not gen_val.strip() or demographics["gender"].lower() != gen_val.lower()):
                 missing.append("gender")
             if demographics.get("military_status") and not mil_val.strip():
                 missing.append("military_status")
@@ -122,11 +122,17 @@ class DiversitySubAgent(BaseSectionAgent):
             clicked = page.evaluate('''(targetText) => {
                 const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
                 const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-option, li[role="option"], [role="option"], [role="gridcell"]')).filter(isVis);
-                const match = items.find(i => {
-                    const t = i.innerText.trim().toLowerCase();
-                    const w = targetText.trim().toLowerCase();
-                    return t === w || t.startsWith(w) || t.includes(w) || (w === 'no' && (t.includes('no') || t.includes('not')));
-                });
+                const w = targetText.trim().toLowerCase();
+                // 1. STRICT EXACT MATCH FIRST
+                let match = items.find(i => i.innerText.trim().toLowerCase() === w);
+                // 2. Fallback prefix/contains (strictly guard: never match 'female' when want 'male')
+                if (!match) {
+                    match = items.find(i => {
+                        const t = i.innerText.trim().toLowerCase();
+                        if (w === 'male' && t === 'female') return false;
+                        return t === w || t.startsWith(w) || (w === 'no' && (t.includes('no') || t.includes('not')));
+                    });
+                }
                 if (match) {
                     match.click();
                     return true;
