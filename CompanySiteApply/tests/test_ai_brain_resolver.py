@@ -121,8 +121,10 @@ class TestAIBrainResolver(unittest.TestCase):
     def test_atomic_persistence(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             custom_path = Path(tmpdir) / "test_screening_answers.json"
-            self.brain.output_json_path = custom_path
-            res = self.brain.resolve_question("Are you at least 18 years of age?", "BINARY_PILL", ["Yes", "No"])
+            fresh_brain = AIBrainResolver(self.candidate_data)
+            fresh_brain.output_json_path = custom_path
+            fresh_brain.history = []
+            res = fresh_brain.resolve_question("Are you at least 18 years of age?", "BINARY_PILL", ["Yes", "No"])
             self.assertTrue(custom_path.exists())
             loaded = json.loads(custom_path.read_text("utf-8"))
             self.assertEqual(len(loaded), 1)

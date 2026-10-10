@@ -235,8 +235,8 @@ def main():
     parser.add_argument("--cdp-url", default=None, help="CDP connection endpoint (falls back to CDP_URL env var)")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # apply-flow (Autonomous master pipeline)
-    p_af = subparsers.add_parser("apply-flow", help="Autonomously execute end-to-end application lifecycle through Section Mini-Agents")
+    # apply-flow (with alias 'apply')
+    p_af = subparsers.add_parser("apply-flow", aliases=["apply"], help="Autonomously execute end-to-end application lifecycle through Section Mini-Agents")
     p_af.add_argument("--config", required=True, help="Path to candidate config JSON")
 
     # inspect
@@ -277,7 +277,7 @@ def main():
     subparsers.add_parser("list-subagents", help="List all registered top-level sections and granular sub-agents")
 
     args = parser.parse_args()
-    if args.command == "apply-flow":
+    if args.command in ["apply-flow", "apply"]:
         cmd_apply_flow(args)
     elif args.command == "inspect":
         cmd_inspect(args)

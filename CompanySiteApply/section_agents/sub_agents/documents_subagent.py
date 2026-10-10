@@ -149,7 +149,7 @@ class DocumentsSubAgent(BaseSectionAgent):
         if target_path and os.path.isabs(target_path) and os.path.exists(target_path):
             return target_path
 
-        # Search inside APPLIED ON COMPANY WEBSITE for latest tailored job directory
+        # 1. Check candidate profile company_site_apply folder and candidate root
         try:
             from CompanySiteApply.utils.config_resolver import resolve_search_roots
             roots = resolve_search_roots(candidate_data)
@@ -157,9 +157,18 @@ class DocumentsSubAgent(BaseSectionAgent):
             roots = [os.getcwd()]
 
         for root in roots:
+            # Check company_site_apply
+            csa_dir = os.path.join(root, "company_site_apply")
+            if os.path.exists(csa_dir):
+                for fn in os.listdir(csa_dir):
+                    if doc_type == "cover_letter" and "cover" in fn.lower() and fn.endswith(".pdf"):
+                        return os.path.join(csa_dir, fn)
+                    elif doc_type == "resume" and "resume" in fn.lower() and fn.endswith(".pdf"):
+                        return os.path.join(csa_dir, fn)
+
+            # Check APPLIED ON COMPANY WEBSITE for latest tailored job directory
             applied_dir = os.path.join(root, "APPLIED ON COMPANY WEBSITE")
             if os.path.exists(applied_dir):
-                # Look for most recently modified subdirectory
                 candidates = []
                 for dirpath, _, filenames in os.walk(applied_dir):
                     for fn in filenames:
@@ -172,5 +181,12 @@ class DocumentsSubAgent(BaseSectionAgent):
                 if candidates:
                     candidates.sort(key=lambda x: x[0], reverse=True)
                     return candidates[0][1]
+
+            # Check candidate root directory
+            for fn in os.listdir(root):
+                if doc_type == "cover_letter" and "cover" in fn.lower() and fn.endswith(".pdf"):
+                    return os.path.join(root, fn)
+                elif doc_type == "resume" and "resume" in fn.lower() and fn.endswith(".pdf"):
+                    return os.path.join(root, fn)
 
         return target_path

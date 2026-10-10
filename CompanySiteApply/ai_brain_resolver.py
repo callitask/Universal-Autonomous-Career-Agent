@@ -226,17 +226,28 @@ class AIBrainResolver:
         cached_val = self._find_in_cached_truths(q_clean)
         if cached_val is not None:
             resolved = self._conform_answer_to_control(q_clean, cached_val, control_type, options, req_count)
-            record = {
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "question": q_clean,
-                "control_type": control_type,
-                "options": options,
-                "source": "CACHED_TRUTH",
-                "answer": resolved,
-                "rationale": "Exact match found in candidate ground-truth config."
-            }
-            self._persist_answer(record)
-            return record
+            is_valid_choice = True
+            if options and control_type in ["RADIO_PILL", "BINARY_PILL", "DROPDOWN"]:
+                if resolved not in options:
+                    is_valid_choice = False
+            elif options and control_type == "DROPDOWN_MULTI":
+                if not isinstance(resolved, list) or len(resolved) == 0 or not all(x in options for x in resolved):
+                    is_valid_choice = False
+
+            if is_valid_choice:
+                record = {
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "question": q_clean,
+                    "control_type": control_type,
+                    "options": options,
+                    "source": "CACHED_TRUTH",
+                    "answer": resolved,
+                    "rationale": "Exact match found in candidate ground-truth config."
+                }
+                self._persist_answer(record)
+                return record
+            else:
+                logger.info(f"[AIBrainResolver] Cached truth '{cached_val}' not found in options {options}. Falling through to dynamic deduction.")
 
         # 2. Resolve dynamically based on question category
         resolved, rationale = self._deduce_answer(q_clean, control_type, options, req_count)
@@ -348,14 +359,34 @@ class AIBrainResolver:
             selected_pill = self._resolve_tier_pill(total_exp, options)
             return selected_pill, f"Mapped {total_exp} years of total experience to bracket '{selected_pill}'."
 
-        # C. Primary Area of Expertise
+        # C. Option-Driven Specialization Recognition
+        # If options contain specific software engineering specializations (e.g. Java Fullstack / Backend / Python / .NET)
+        opt_text = " ".join(options).lower()
+        if any(term in opt_text for term in ["java fullstack", "java full stack", "java backend", "c#/.net"]):
+            best = self._best_option_match(idx["specialization"], options)
+            if not best:
+                for opt in options:
+                    if "java fullstack" in opt.lower() or "java full stack" in opt.lower():
+                        best = opt
+                        break
+                    elif "java backend" in opt.lower():
+                        best = opt
+                        break
+            if best:
+                return best, f"Selected specialization '{best}' matching candidate profile via option-driven analysis."
+
+        # D. Primary Area of Expertise
         if "primary area of expertise" in q_lower or "primary technical area" in q_lower:
             best = self._best_option_match(idx["primary_domain"], options)
             if best:
                 return best, f"Selected primary domain '{best}' matching candidate architecture profile."
+            # Fall back to specialization if primary domain is not in options
+            spec = self._best_option_match(idx["specialization"], options)
+            if spec:
+                return spec, f"Selected specialization '{spec}' matching candidate architecture profile."
 
-        # D. Specific Field of Specialization
-        if "specific field of specialization" in q_lower or "sub-area" in q_lower or "specialization" in q_lower:
+        # E. Specific Field of Specialization
+        if "specific field of specialization" in q_lower or "sub-area" in q_lower or "specialization" in q_lower or "area of expertise" in q_lower:
             best = self._best_option_match(idx["specialization"], options)
             if not best:
                 # Look for Java Fullstack or Backend

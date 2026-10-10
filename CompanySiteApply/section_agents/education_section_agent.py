@@ -118,6 +118,11 @@ class EducationSectionAgent(BaseSectionAgent):
             # 1. Open modal if not open
             modal_open = page.locator("input[name='educationalEstablishment']:visible, input[id^='contentItemId']:visible").count() > 0
             if not modal_open:
+                aud = self.audit(page, candidate_data)
+                if aud.get("is_valid", False):
+                    logger.info("[EducationSectionAgent] Education is already fully populated and valid.")
+                    return {"success": True, "section": self.section_name, "saved": False, "verified": True}
+
                 edu_tile = page.locator(".apply-flow-profile-item-tile:has-text('Degree'), .apply-flow-profile-item-tile:has-text('Education')").first
                 if edu_tile.count() > 0:
                     edit_btn = edu_tile.locator(".apply-flow-profile-item-tile__edit-item-icon, button.icon-edit, [class*='edit-item-icon']").first

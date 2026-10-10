@@ -41,13 +41,35 @@ class DiversitySubAgent(BaseSectionAgent):
 
     def audit(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
+            cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
+            demographics = candidate_data.get("demographics") or {} if isinstance(candidate_data, dict) else {}
+
             # Check for red errors or missing dropdown selections
             errors = page.locator(".input-row:has-text('ETHNICITY') [class*='error'], .input-row:has-text('GENDER') [class*='error']").all_text_contents()
             err_list = [e.strip() for e in errors if e.strip()]
 
+            # Inspect actual values of visible inputs
+            eth_val = page.locator("input[id*='ETHNICITY']:visible").first.input_value() if page.locator("input[id*='ETHNICITY']:visible").count() > 0 else ""
+            gen_val = page.locator("input[id*='GENDER']:visible").first.input_value() if page.locator("input[id*='GENDER']:visible").count() > 0 else ""
+            mil_val = page.locator("input[id*='ATTRIBUTE16']:visible").first.input_value() if page.locator("input[id*='ATTRIBUTE16']:visible").count() > 0 else ""
+
+            missing = []
+            if demographics.get("ethnicity") and not eth_val.strip():
+                missing.append("ethnicity")
+            if demographics.get("gender") and not gen_val.strip():
+                missing.append("gender")
+            if demographics.get("military_status") and not mil_val.strip():
+                missing.append("military_status")
+
+            is_valid = len(err_list) == 0 and len(missing) == 0
+
             return {
-                "is_valid": len(err_list) == 0,
-                "errors": err_list
+                "is_valid": is_valid,
+                "errors": err_list,
+                "missing": missing,
+                "ethnicity": eth_val,
+                "gender": gen_val,
+                "military_status": mil_val
             }
         except Exception as e:
             logger.error(f"[DiversitySubAgent] Audit error: {e}")
@@ -91,13 +113,33 @@ class DiversitySubAgent(BaseSectionAgent):
             toggle = page.locator(f"button[id*='{partial_id}'][id$='-toggle-button']:visible").first
             if toggle.count() > 0:
                 toggle.click()
-                time.sleep(0.5)
-                page.evaluate('''(targetText) => {
-                    const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-                    const items = Array.from(document.querySelectorAll('.cx-select-option, li[role="option"], [role="option"], [role="gridcell"]')).filter(isVis);
-                    const match = items.find(i => i.innerText.trim().toLowerCase() === targetText.toLowerCase() || i.innerText.trim().toLowerCase().includes(targetText.toLowerCase()));
-                    if (match) match.click();
-                }''', exact_text)
-                time.sleep(0.3)
+            else:
+                inp = page.locator(f"input[id*='{partial_id}']:visible").first
+                if inp.count() > 0:
+                    inp.click()
+            time.sleep(0.5)
+
+            clicked = page.evaluate('''(targetText) => {
+                const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                const items = Array.from(document.querySelectorAll('.cx-select__list-item, .cx-select-option, li[role="option"], [role="option"], [role="gridcell"]')).filter(isVis);
+                const match = items.find(i => {
+                    const t = i.innerText.trim().toLowerCase();
+                    const w = targetText.trim().toLowerCase();
+                    return t === w || t.startsWith(w) || t.includes(w) || (w === 'no' && (t.includes('no') || t.includes('not')));
+                });
+                if (match) {
+                    match.click();
+                    return true;
+                }
+                return false;
+            }''', exact_text)
+
+            if not clicked:
+                inp = page.locator(f"input[id*='{partial_id}']:visible").first
+                if inp.count() > 0:
+                    inp.fill(exact_text)
+                    time.sleep(0.3)
+                    inp.press("Enter")
+            time.sleep(0.5)
         except Exception as e:
             logger.warning(f"[DiversitySubAgent] Failed selecting {partial_id}: {e}")

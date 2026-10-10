@@ -37,16 +37,30 @@ class ApplyOrchestrator:
     def advance(self, page: Any) -> bool:
         """Clicks NEXT / Save and Continue to advance to the next step."""
         try:
-            next_btn = page.locator(
-                "button.apply-flow-pagination__button:has-text('NEXT'), "
-                "button:has-text('NEXT'), "
-                "button:has-text('Save and Continue'), "
-                "button:has-text('SAVE AND CONTINUE'), "
-                "button:has-text('Continue')"
-            ).first
+            # 1. Direct JS click on visible pagination button, strictly avoiding modal/dialog buttons
+            clicked = page.evaluate("""() => {
+                const btns = Array.from(document.querySelectorAll('button.apply-flow-pagination__button, button.navigation-button, button'));
+                for (const b of btns) {
+                    const text = (b.innerText || b.textContent || '').trim().toUpperCase();
+                    const isVisible = b.offsetWidth > 0 && b.offsetHeight > 0 && window.getComputedStyle(b).visibility !== 'hidden';
+                    if (isVisible && !b.disabled && (text === 'NEXT' || text.includes('SAVE AND CONTINUE') || text === 'CONTINUE')) {
+                        if (!b.closest('.app-dialog') && !b.classList.contains('app-dialog__footer-button')) {
+                            b.click();
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }""")
 
-            if next_btn.count() > 0 and not next_btn.is_disabled():
-                next_btn.click()
+            if not clicked:
+                # Fallback to visible pagination button locator with short timeout
+                next_btn = page.locator("button.apply-flow-pagination__button:visible").first
+                if next_btn.count() > 0 and not next_btn.is_disabled():
+                    next_btn.click(timeout=3000)
+                    clicked = True
+
+            if clicked:
                 time.sleep(2.0)
                 # Wait for loading overlay to disappear
                 try:
@@ -63,7 +77,9 @@ class ApplyOrchestrator:
     def detect_current_section(self, page: Any) -> str:
         """Determines the active ATS section from URL or DOM structure."""
         url = (getattr(page, "url", "") or "").lower()
-        if "/section/1" in url or "profile" in url or "personal" in url:
+        if "/apply/email" in url or "email" in url:
+            return "email"
+        elif "/section/1" in url or "profile" in url or "personal" in url:
             return "profile"
         elif "/section/2" in url or "questions" in url:
             return "questionnaire"
@@ -91,9 +107,29 @@ class ApplyOrchestrator:
                 logger.info(f"[ApplyOrchestrator] Step {step_count}: Section='{section}' | URL={curr_url}")
 
                 # -------------------------------------------------------------
+                # EMAIL & TERMS STEP
+                # -------------------------------------------------------------
+                if section == "email":
+                    logger.info("[ApplyOrchestrator] Handling Email & Terms entry step...")
+                    email_selector = "input[name='primary-email'], input#primary-email-0"
+                    email = candidate_data.get("candidate", {}).get("email") or candidate_data.get("email")
+                    if email and page.locator(email_selector).count() > 0:
+                        page.locator(email_selector).first.fill(email)
+                        time.sleep(0.5)
+                    cb = page.locator("input#legal-disclaimer-checkbox, input[type='checkbox']").first
+                    if cb.count() > 0 and not cb.is_checked():
+                        cb.check(force=True)
+                        time.sleep(0.5)
+                    agree = page.locator("button:has-text('AGREE'), button:has-text('Agree')")
+                    if agree.count() > 0 and agree.first.is_visible():
+                        agree.first.click()
+                        time.sleep(0.5)
+                    self.advance(page)
+
+                # -------------------------------------------------------------
                 # SECTION 4: REVIEW (HUMAN GATE - NEVER SUBMIT)
                 # -------------------------------------------------------------
-                if section == "review":
+                elif section == "review":
                     logger.info("[ApplyOrchestrator] Arrived at Section 4 Review. Executing ReviewSectionAgent...")
                     heal_res = self.dispatcher.dispatch_heal("review", page, candidate_data)
                     audit_res = self.dispatcher.dispatch_audit("review", page, candidate_data)

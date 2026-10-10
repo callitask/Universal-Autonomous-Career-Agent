@@ -61,6 +61,7 @@ class SignatureSubAgent(BaseSectionAgent):
             # 1. LinkedIn link
             link_input = page.locator("input[name*='siteLink']:visible, input[id*='siteLink']:visible").first
             if link_input.count() > 0 and not link_input.input_value().strip() and linkedin_url:
+                link_input.click()
                 link_input.fill(linkedin_url)
                 link_input.dispatch_event("input")
                 link_input.dispatch_event("change")
@@ -68,9 +69,23 @@ class SignatureSubAgent(BaseSectionAgent):
             # 2. E-Signature Full Name
             sig_input = page.locator("input[name='fullName']:visible, input[id^='fullName']:visible").first
             if sig_input.count() > 0 and not sig_input.input_value().strip() and full_name:
+                sig_input.click()
                 sig_input.fill(full_name)
                 sig_input.dispatch_event("input")
                 sig_input.dispatch_event("change")
+                sig_input.press("Tab")
+                # Also synchronize Knockout binding value if available
+                page.evaluate('''(name) => {
+                    const el = document.querySelector("input[name='fullName'], input[id^='fullName']");
+                    if (el && window.ko) {
+                        try {
+                            const ctx = window.ko.contextFor(el);
+                            if (ctx && ctx.$data && ctx.$data.element && ctx.$data.element.value) {
+                                ctx.$data.element.value(name);
+                            }
+                        } catch(e) {}
+                    }
+                }''', full_name)
 
             verified = self.verify(page, candidate_data)
             return {
