@@ -115,21 +115,24 @@ class DropdownQuestionSubAgent(BaseSectionAgent):
                     word_map = {"one": 1, "two": 2, "three": 3, "four": 4, "2": 2, "3": 3}
                     req_count = word_map.get(word, 2)
 
-                # Check existing pills: if bad negative pill exists (e.g. 'not require'), remove it
-                bad_pill_removed = page.evaluate('''(el) => {
-                    const pills = Array.from(el.querySelectorAll('.cx-multi-select-pill, .cx-multi-select-pill__value-text'));
-                    let removed = false;
-                    for (const p of pills) {
-                        const txt = p.innerText.toLowerCase();
-                        if (txt.includes('not require') || txt.includes('not hands-on')) {
-                            const btn = p.querySelector('button, [aria-label*="Remove"]') || p.parentElement.querySelector('button, [aria-label*="Remove"]');
-                            if (btn) { btn.click(); removed = true; }
+                # Check existing pills: if bad negative pill exists (e.g. 'not require') for a technical developer, remove it
+                is_tech = brain.knowledge_index.get("is_tech_candidate", True)
+                bad_pill_removed = False
+                if is_tech:
+                    bad_pill_removed = page.evaluate('''(el) => {
+                        const pills = Array.from(el.querySelectorAll('.cx-multi-select-pill, .cx-multi-select-pill__value-text'));
+                        let removed = false;
+                        for (const p of pills) {
+                            const txt = p.innerText.toLowerCase();
+                            if (txt.includes('not require') || txt.includes('not hands-on')) {
+                                const btn = p.querySelector('button, [aria-label*="Remove"]') || p.parentElement.querySelector('button, [aria-label*="Remove"]');
+                                if (btn) { btn.click(); removed = true; }
+                            }
                         }
-                    }
-                    return removed;
-                }''', q.element_handle())
-                if bad_pill_removed:
-                    time.sleep(0.5)
+                        return removed;
+                    }''', q.element_handle())
+                    if bad_pill_removed:
+                        time.sleep(0.5)
 
                 # Check if already answered with valid pills
                 pills_count = q.locator(".cx-multi-select-pill__value-text, .cx-multi-select-pill").count()

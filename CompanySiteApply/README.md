@@ -1,10 +1,10 @@
 # CompanySiteApply: Enterprise ATS Form Filling Subsystem
 
-> **Document Version:** 2.1 — Modular Fingers & Nails Architecture, CompanyScraper Integration, Parser Doctor Contracts & Demographic-Defaults Purge  
-> **Last Updated:** 2026-10-07  
-> **Execution Mode:** On-Demand / Human-Gated only (Decoupled from background daemons)
+> **Document Version:** 3.0 — Cognitive Sub-Agent Dispatch, Autonomous Career Agent Lifecycle, Stale Document Healing & Zero-Hardcoding Architecture  
+> **Last Updated:** 2026-10-11  
+> **Execution Mode:** Autonomous Full Lifecycle & On-Demand Human-Gated (Decoupled from background daemons)
 
-A decoupled, modular multi-fingered automation subsystem for applying directly to company career sites and enterprise Applicant Tracking Systems (ATSs).
+A decoupled, modular automation subsystem for applying directly to company career sites and enterprise Applicant Tracking Systems (ATSs) like Oracle Cloud HCM, Workday, and Greenhouse.
 
 ---
 
@@ -12,115 +12,122 @@ A decoupled, modular multi-fingered automation subsystem for applying directly t
 
 ```
 CompanySiteApply/
-├── README.md                       # This overview document and architecture contracts
+├── README.md                       # Subsystem overview and architectural contracts
 ├── SCOPE_OF_EDIT.md                # 100-Day extensibility guide & engineering rules
-├── ats_arm.py                      # Master orchestrator & CDP bridge
+├── autonomous_job_agent.py         # Master 6-Stage Autonomous Career Lifecycle Controller
+├── cognitive_job_matcher.py        # 100% Dynamic, profile-grounded job scoring engine
+├── apply_orchestrator.py           # Cognitive Section Dispatch Coordinator
+├── ai_brain_resolver.py            # Antigravity 2.0 Brain for screening questions & knowledge index
+├── ats_arm.py                      # CDP connection bridge & legacy inspection arm
 ├── ats_detector.py                 # Platform fingerprinting & honeypot detector
 ├── cli.py                          # Interactive CLI for inspection & manual form filling
 │
-├── fingers/                        # Pluggable ATS platform adapters ("The Fingers")
-│   ├── __init__.py                 # Dynamic finger registry & get_finger_for_page factory
-│   ├── base_finger.py              # BaseATSFinger abstract interface
-│   ├── oracle_cloud_finger.py      # Oracle Cloud HCM (Candidate Experience) & Taleo
-│   ├── workday_finger.py           # Workday multi-step wizard & review editor
-│   ├── greenhouse_finger.py        # Greenhouse application board handler
-│   └── generic_finger.py           # Adaptive fallback for custom company portals
+├── section_agents/                 # Top-Level Section Coordinators
+│   ├── base_section_agent.py       # BaseSectionAgent abstract contract
+│   ├── section_agent_dispatcher.py # evaluate_and_heal_section & Sub-Agent Registry
+│   ├── profile_section_agent.py    # Section 1 Coordinator (Personal Info + Preferred Location)
+│   ├── questionnaire_section_agent.py # Section 2 Coordinator (Pills + Dropdowns + Yes/No)
+│   ├── education_section_agent.py  # Section 3 Education Modal Coordinator
+│   ├── experience_section_agent.py # Section 3 Experience Reordering Coordinator
+│   ├── review_section_agent.py     # Section 4 Review, Documents & Diversity Coordinator
+│   └── sub_agents/                 # Granular Sub-Agents (Single Responsibility)
+│       ├── personal_details_subagent.py     # Section 1 Personal Info
+│       ├── preferred_location_subagent.py   # Section 1 Facility / Preferred Location
+│       ├── technical_competency_subagent.py # Section 2 Competency Radio Pills
+│       ├── dropdown_question_subagent.py    # Section 2 Multi-select Dropdowns
+│       ├── binary_question_subagent.py      # Section 2 Regulatory Yes/No Pills
+│       ├── education_subagent.py            # Section 3 Education Form & Autocomplete
+│       ├── experience_subagent.py           # Section 3 Experience Ordering & Bullets
+│       ├── documents_subagent.py            # Section 4 Document Upload & Stale Healing
+│       ├── diversity_subagent.py            # Section 4 Diversity Demographics
+│       ├── signature_subagent.py            # Section 4 E-Signature & Agreement
+│       └── visual_verifier_subagent.py      # Full-page screenshot & error audit
 │
-├── nails/                          # Company-specific customizations ("The Nails")
-│   ├── __init__.py                 # Nail exports
-│   ├── base_nail.py                # BaseNail abstract interface
-│   └── oracle/                     # Oracle HCM company-specific nails
-│       ├── __init__.py
-│       ├── jpmc_nail.py            # JPMorgan Chase custom field overrides
-│       └── bristlecone_nail.py     # Bristlecone custom field overrides
-│
-├── CompanyScraper/                 # Direct company career site scrapers
-│   ├── __init__.py
+├── CompanyScraper/                 # Direct corporate career site scrapers
 │   ├── base_scraper.py             # BaseCompanyScraper contract & ranking logic
-│   ├── cli_scraper.py              # Scraper CLI runner & job export coordinator
 │   └── companies/                  # Company-specific scrapers
-│       ├── __init__.py
-│       └── jpmorgan/               # JPMorgan Chase portal scraper implementation
-│           ├── __init__.py
+│       └── jpmorgan/               # JPMorgan Chase Oracle HCM portal scraper
 │           ├── config.json         # Portal endpoint and selector configurations
 │           └── jpmorgan_scraper.py # Scraper implementation
 │
 ├── parser_doctor/                  # ATS Resume Parser healing engine
-│   ├── __init__.py
-│   ├── line_wrap_healer.py         # Heals broken margin line wraps in experience text
+│   ├── line_wrap_healer.py         # Heals fragmented margin line wraps in text
 │   ├── education_healer.py         # Fixes swapped degree vs. college mappings
-│   └── review_verifier.py          # Coordinates DOM-level audit & healing
+│   └── review_verifier.py          # Coordinates DOM-level pre-submit verification
 │
-├── inspections/                    # Captured empirical reverse-engineered DOM schemas (Tier C)
-│   ├── generic_adaptive/          # Adaptive form step snapshots
-│   └── oracle_cloud_hcm/          # Saved Oracle Cloud step schemas
-│
-├── tests/                          # Automated regression test suite
-│   └── test_parser_doctor.py       # Unit tests for line wrap & education healing
+├── tests/                          # Automated regression test suite (66 tests)
+│   ├── test_autonomous_job_agent.py# Lifecycle & matching test suite
+│   ├── test_ai_brain_resolver.py   # Screening Q&A dynamic deduction tests
+│   ├── test_sub_agents.py          # Granular sub-agent audit & heal tests
+│   ├── test_section_agents.py      # Section coordinator integration tests
+│   └── test_parser_doctor.py       # Line wrap & education healing tests
 │
 └── utils/                          # Common DOM and security utilities
-    ├── __init__.py
-    ├── dom_helpers.py              # Native framework event dispatchers (JET, React, native inputs)
-    └── honeypot_guard.py           # Anti-bot honeypot and invisible trap detection
+    ├── config_resolver.py          # Dynamic search roots & candidate resolution
+    ├── dom_helpers.py              # Framework-native JavaScript event dispatchers
+    └── honeypot_guard.py           # Anti-bot honeypot detection
 ```
 
 ---
 
-## 2. Architecture & Subsystem Contracts
+## 2. Key Architecture Concepts
 
-### A. The Finger vs. Nail Split
-*   **The Finger (`CompanySiteApply/fingers/`):** Implements broad, platform-level ATS mechanics (e.g., Oracle Cloud HCM, Workday, Greenhouse). Manages standard steps: resume upload, auto-parse wait, standard demographics, experience tile editing, verification PIN entry, and review submission.
-*   **The Nail (`CompanySiteApply/nails/`):** Implements company-specific overrides and unique demographic/compliance fields for a specific employer on top of a base Finger.
-    *   *Example:* `JPMCNail` handles Indian Uniformed Forces / Military Status (`#IN-DFF-indiaMilitaryStatus-ATTRIBUTE16-8`), specialized employment dropdowns, and compliance questionnaires specific to JPMorgan Chase on Oracle HCM.
-    *   *Activation:* `OracleCloudFinger` queries `self.get_active_nail(page, page.url)` to dynamically delegate custom fields.
+### A. The 6-Stage Autonomous Lifecycle (`AutonomousJobAgent`)
+1. **Stage 1: Comprehend Profile**: Dynamically ingests `candidate_config.json`, master `resume.md`, and skills taxonomy with **zero hardcoding** across Tech, Finance, HR, Sales, and Operations.
+2. **Stage 2: Portal Search**: Autonomously executes career site searches using candidate's target keywords and preferred locations via `JPMorganScraper`. Prunes roles already applied via DOM tile check or `processed_ledger.json`.
+3. **Stage 3: Cognitive Match Evaluation**: Scores candidate jobs using `CognitiveJobMatcher` (0–100 factual fit based on candidate skills, seniority alignment, and location).
+4. **Stage 4: Document Tailoring**: Generates bespoke, role-specific cover letter PDFs referencing the exact `job_id`, `job_title`, and company.
+5. **Stage 5: Form Application**: Dispatches section mini-agents to complete Sections 1, 2, 3, and 4 in strict chronological order with non-destructive pre-audits and surgical micro-heals.
+6. **Stage 6: Visual Audit & Human Gate**: Captures full-page verification screenshot proof, records entry in `processed_ledger.json`, and **strictly halts before clicking Submit**.
 
-### B. CompanyScraper Subsystem
-*   **Purpose:** Ingests external corporate job postings directly from primary corporate career sites (e.g., JPMorgan Careers) without relying on intermediate job boards.
-*   **Ranking & Filtering:** `BaseCompanyScraper.score_job()` calculates title relevance, candidate skill overlap, and geographic suitability.
-*   **Output Convention:** By design, inspected direct opportunities save to `APPLIED ON COMPANY WEBSITE/<Company>/<Role>/job_description.json` or `output/<Company>_scraped_jobs.json`.
+### B. Cognitive Section Dispatch & Micro-Healing
+Instead of generating one-off scripts when an error occurs:
+- The coordinator calls `evaluate_and_heal_section(section_name, page, candidate_data)`.
+- It executes a **Pre-Audit** across all sub-agents of that section.
+- Compliant sub-agents are **bypassed entirely** (zero redundant clicks or resets).
+- Only failing sub-agents execute their isolated `heal()` routine.
+- A **Post-Audit** confirms resolution before advancing to the next section.
 
-### C. Parser Doctor
-*   **Purpose:** Inspects and repairs common ATS resume parsing anomalies before form submission.
-*   **`LineWrapHealer`:** Detects and reconciles fragmented bullet points caused by PDF margin wrapping.
-*   **`EducationHealer`:** Solves swapped degree and institution fields in Oracle Cloud HCM modal dialogs.
-*   **`ReviewVerifier`:** Executes comprehensive pre-submission verification to ensure zero red-validation errors.
+### C. Pre-Uploaded Stale Document Detection & Healing
+Oracle Cloud HCM persists draft attachments across sessions. If a user previously applied to a different role (e.g. *Principal Software Engineer*), the draft retains that stale file.
+- `DocumentsSubAgent` evaluates session freshness (`_fresh_cover_uploaded`).
+- If an attachment exists on the page but was not uploaded in the active session for the active job context, the audit flags:
+  ```json
+  {"is_valid": false, "is_preuploaded_cover": true, "cover_status": "PRE_UPLOADED_STALE"}
+  ```
+- Healing clicks `REMOVE COVER LETTER`, waits for `.attachment-upload-button--waiting`, uploads the freshly tailored document, and verifies `.attachment-upload-button--filled` with `"Your cover letter was changed."`.
 
-### D. DOM Helpers & Honeypot Guards
-*   **`DOMHelpers`:** Dispatches framework-native JavaScript events (React Synthetic Events, Oracle JET dispatchers) to guarantee input persistence.
-*   **`HoneypotGuard`:** Scans page DOM for hidden, off-screen, or zero-opacity input fields (common anti-automation traps) to prevent accidental completion that would blacklist the session.
+### D. Reverse-Chronological Experience Ordering
+Oracle HCM resume parser frequently shuffles work experience tiles out of order. `ExperienceSubAgent` and `JPMCNail` dynamically parse date spans from tiles and enforce strict reverse-chronological ordering (most recent role at the top).
 
 ---
 
-## 3. Data Classification & Codebase Hygiene
+## 3. Strict Human Submission Gate (Invariant)
 
-*   **Tier B Literals (Removed 2026-09-23; extended 2026-10-07):** Former hardcoded fallbacks in `oracle_cloud_finger.py` (`"560100"`, `"Bangalore"`) and hardcoded profile paths in `cli_scraper.py` / finger `search_roots` were purged. 2026-10-07 extension: all demographic and form defaults removed — salutation/country/degree/major/month/year/ethnicity/gender in `oracle_cloud_finger.py`, location/stack defaults in `CompanyScraper/base_scraper.py`, and fixed answers/assumed stacks plus `options[0]` fallback in `nails/oracle/jpmc_nail.py`. All values now resolve via `utils/config_resolver.py` from `--config` / `--profile` / `candidate_data`, with `profiles/default_user` as the only blueprint fallback. Empty config values are skipped, never defaulted. `verify_codebase_purity()` now scans `CompanySiteApply/` and `tests/` and passes green.
-*   **Tier C Samples (`inspections/`):** All JSON files in `CompanySiteApply/inspections/` are historical DOM capture dumps for reverse-engineering. They are non-executable reference samples, **gitignored and untracked** (`CompanySiteApply/inspections/` in `.gitignore`) because captures may embed PII. Re-capture locally via `cli.py inspect`; never commit them.
-*   **Shared libs:** `utils/config_resolver.py` (dynamic config), `core/utils/sanitize.py` (CSV/prompt/filename), `core/utils/url_filters.py` (CTC/WFH params), `core/utils/apply_status.py` (verified statuses). Company-direct apply stays on-demand/human-gated; Naukri (`02_*`, `naukri_scraper`, `ChatbotResolver`) and LinkedIn (`03_*`, `linkedin_scraper`, `LinkedInApplyHandler`) remain platform-isolated.
+> [!CAUTION]
+> **NEVER CLICK SUBMIT ON SECTION 4.**  
+> The agent is strictly prohibited from clicking the final `SUBMIT` button. The application must halt on Section 4 Review with all checkmarks green and the Submit button enabled, presenting the user with screenshot verification proof to finalize the submission manually.
 
 ---
 
-## 4. CLI Quick Reference
+## 4. Execution Commands
 
-Ensure your target career page is open in Chrome running on remote debugging port 9222:
-
+### Autonomous Full Lifecycle (Search -> Match -> Tailor -> Apply -> Gate):
 ```powershell
-# 1. Deeply inspect the active page and detect platform + honeypots
-python CompanySiteApply/cli.py inspect
-
-# 2. Quick detection of ATS engine & confidence score
-python CompanySiteApply/cli.py detect
-
-# 3. Run Parser Doctor to heal broken line wraps in experience text on the active tab
-python CompanySiteApply/cli.py heal
-
-# 4. Step-by-step fill the form (prompting for missing fields)
-python CompanySiteApply/cli.py fill --email candidate@example.com
+.venv\Scripts\python run_universal_apply.py --autonomous --profile <profile_name>
 ```
 
----
+### Search & Rank Requisitions Only:
+```powershell
+.venv\Scripts\python search_and_evaluate_jpmc_jobs.py --profile <profile_name>
+```
 
-## 5. Integration with Core Pipeline
+### Active Tab Apply Mode (For Already Open Forms):
+```powershell
+.venv\Scripts\python run_universal_apply.py --profile <profile_name>
+```
 
-*   `core/04_job_discovery.py` saves external company job listings to `profiles/<profile>/output/saved_external_jobs.json`.
-*   When the user reviews saved jobs and requests assistance with an enterprise application, `CompanySiteApply` executes on demand.
-*   `CompanySiteApply` is **completely decoupled** from `core/` and never runs as an unprompted background loop.
+### Run Test Suite:
+```powershell
+.venv\Scripts\python -m unittest discover -s CompanySiteApply/tests
+```
