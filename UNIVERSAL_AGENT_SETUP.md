@@ -73,19 +73,29 @@ F:\JOB AI AGENT\
 │
 ├── CompanySiteApply/                     # On-demand direct company ATS application engine
 │   ├── cli.py                            # Interactive CLI runner for direct ATS applications
+│   ├── apply_orchestrator.py             # Section dispatch with hard gates + per-section proofs
+│   ├── autonomous_job_agent.py           # 6-stage lifecycle controller
 │   ├── ats_arm.py                        # ATS orchestrator arm
 │   ├── ats_detector.py                   # Portal platform detection engine
+│   ├── section_agents/                   # Coordinators + discrete scripts/ + sub_agents/
+│   ├── ipc/                              # Section IPC bus (ipc_manager.py)
+│   ├── tests/                            # Regression suite (97 tests)
+│   ├── anatomy/                          # Portal anatomy models
 │   ├── fingers/                          # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
-│   ├── nails/                            # Company-specific ATS customizations (JPMC, Bristlecone)
+│   ├── nails/                            # Company-specific ATS customizations (nails/oracle: JPMC, Bristlecone)
 │   ├── CompanyScraper/                   # Direct company career site scrapers
 │   ├── parser_doctor/                    # ATS resume parsing healing and review verification
-│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver (no hardcoded profiles)
+│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver, experience_matcher
+│
+├── run_universal_apply.py                # Canonical entry: active-tab apply + --autonomous lifecycle
+├── search_and_evaluate_jpmc_jobs.py      # Canonical entry: search → evaluate → rank
 │
 ├── scripts/                              # Operational and maintenance utilities
 │   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles
 │   ├── reevaluate_ledger.py           # Ledger re-evaluation reset utility (utf-8-sig BOM safe)
 │   ├── test_colab_connection.py       # Colab gateway diagnostic (120s finite timeout)
-│   └── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
+│   ├── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
+│   └── legacy_company_apply/          # Archived one-off scripts (forensic reference only, never run)
 ├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)
 │
 ├── profiles/                             # Candidate profiles directory (Autonomous Sandboxes)

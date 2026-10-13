@@ -47,9 +47,11 @@ async def main():
         # Stage 3: Evaluate & Rank
         ranked_jobs = await agent.stage_3_evaluate_and_rank(page, eligible_jobs, max_evaluations=6)
         
-        # Save results to inspection json
-        out_file = REPO_ROOT / "jpmc_job_matches.json"
-        out_file.write_text(json.dumps(ranked_jobs, indent=2), encoding="utf-8")
+        # Save results to the candidate sandbox (never the repo root)
+        from CompanySiteApply.utils.match_report import save_match_report
+        out_file = save_match_report(
+            REPO_ROOT / "profiles" / agent.profile_slug / "output", ranked_jobs
+        )
         print(f"\nSaved match report to: {out_file}")
 
         if args.apply and ranked_jobs:

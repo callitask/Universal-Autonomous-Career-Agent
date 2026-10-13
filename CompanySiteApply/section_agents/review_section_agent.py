@@ -9,6 +9,13 @@
 # Rationale: Guarantees fresh tailored document attachment (removing old files) and strict human gate enforcement.
 # Preventative Notes: ABSOLUTELY NEVER CLICK SUBMIT.
 # ==============================================================================
+# [ENTRY #002]
+# Term: [REVIEW_PREVIEW_COLLISION_FIX]
+# Timestamp: 2026-10-12 22:11:00 +05:30
+# Issue / Context: Naked 'review' in url matched /jobs/preview/... URLs, causing false-positive section 4 routing.
+# Changes Made: Updated can_handle to use '/review' instead of naked 'review'.
+# Rationale: Prevents premature routing on preview URLs.
+# ==============================================================================
 
 import time
 import logging
@@ -55,7 +62,7 @@ class ReviewSectionAgent(BaseSectionAgent):
             return True
         try:
             url = getattr(page, "url", "")
-            return "/apply/section/4" in url or "review" in url.lower() or "more-about-you" in url.lower()
+            return "/apply/section/4" in url or "/review" in url.lower() or "more-about-you" in url.lower()
         except Exception:
             return False
 
@@ -117,10 +124,31 @@ class ReviewSectionAgent(BaseSectionAgent):
             sig_res = self.signature_subagent.heal(page, candidate_data)
             time.sleep(0.5)
 
-            # 4. Enforce reverse-chronological ordering on Section 4 review tiles
+            # 4. Enforce reverse-chronological ordering on Section 4 review tiles.
+            # The review screen re-renders backend order on navigation, so the
+            # Section 3 sort does not survive the trip. Re-sort HERE and verify
+            # from the review DOM — an unverified order fails the gate loudly.
+            # Retry: a single pass can lose to a late Knockout re-render.
+            order_verified = False
+            order_res: Dict[str, Any] = {}
             try:
-                from CompanySiteApply.nails.oracle.jpmc_nail import JPMCNail
-                JPMCNail().reorder_experience_tiles(page)
+                from CompanySiteApply.section_agents.scripts.s3_experience_ordering import (
+                    reorder_experience_tiles,
+                )
+                for _attempt in range(1, 4):
+                    order_res = reorder_experience_tiles(page)
+                    order_verified = bool(order_res.get("order_verified", False))
+                    if order_verified:
+                        if _attempt > 1:
+                            logger.info(f"[ReviewSectionAgent] Review order verified on attempt {_attempt}.")
+                        break
+                    logger.warning(
+                        f"[ReviewSectionAgent] Review reorder attempt {_attempt}/3 unverified: "
+                        f"ko={order_res.get('ko_sorted_count')} dom={order_res.get('dom_sorted_count')}."
+                    )
+                    time.sleep(1.0)
+                if not order_verified:
+                    logger.warning(f"[ReviewSectionAgent] Order NOT verified on review screen: {order_res}")
             except Exception as re_err:
                 logger.debug(f"[ReviewSectionAgent] Experience tile reorder note: {re_err}")
 
@@ -128,15 +156,22 @@ class ReviewSectionAgent(BaseSectionAgent):
             vis_res = self.visual_subagent.heal(page, candidate_data)
 
             verified = self.verify(page, candidate_data)
+            if not order_verified:
+                logger.warning("[ReviewSectionAgent] Halting gate: review-screen order unverified.")
             return {
-                "success": verified,
+                "success": verified and order_verified,
                 "section": self.section_name,
                 "documents": docs_res,
                 "signature": sig_res,
                 "visual": vis_res,
+                "order_verified": order_verified,
+                "order_detail": {
+                    k: order_res.get(k)
+                    for k in ("ko_sorted_count", "dom_sorted_count", "order_verified", "tiles_order")
+                },
                 "human_gate_active": True,
                 "submit_clicked": False,
-                "verified": verified
+                "verified": verified and order_verified
             }
         except Exception as e:
             logger.error(f"[ReviewSectionAgent] Heal error: {e}")

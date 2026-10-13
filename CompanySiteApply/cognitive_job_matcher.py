@@ -56,6 +56,7 @@ class CognitiveJobMatcher:
         self.target_keywords: List[str] = [str(k).strip() for k in target_jobs.get("keywords", []) if str(k).strip()]
         self.recommended_titles: List[str] = [str(t).strip() for t in target_jobs.get("recommended_titles", []) if str(t).strip()]
         self.negative_keywords: List[str] = [str(n).strip() for n in target_jobs.get("negative_keywords", []) if str(n).strip()]
+        self.allowed_countries: List[str] = [str(c).strip() for c in target_jobs.get("allowed_countries", []) if str(c).strip()]
 
         # Locations
         loc_list: List[str] = []
@@ -130,6 +131,29 @@ class CognitiveJobMatcher:
 
         reasons = []
         matched_skills = []
+
+        # ---------------------------------------------------------------------
+        # 0. Hard Country Gate (Config-driven; absent/empty = neutral)
+        # ---------------------------------------------------------------------
+        if self.allowed_countries:
+            loc_candidate_text = f"{job_details.get('location', '')} {job_details.get('full_tile_text', '')}".strip()
+            loc_eval_text = loc_candidate_text if loc_candidate_text else desc
+            loc_eval_lower = loc_eval_text.lower()
+
+            country_matched = any(
+                re.search(r'\b' + re.escape(c.lower()) + r'\b', loc_eval_lower)
+                for c in self.allowed_countries
+            )
+            if not country_matched:
+                return {
+                    "job_id": job_details.get("job_id", ""),
+                    "title": title,
+                    "score": 0,
+                    "is_eligible": False,
+                    "status": "DISQUALIFIED",
+                    "matched_skills": [],
+                    "reasons": ["out-of-country"]
+                }
 
         # ---------------------------------------------------------------------
         # 1. C6 Negative Keyword Gating (Intelligent Conflict Resolution)

@@ -47,6 +47,11 @@ even between requisitions of the same company):
 
 ## 2. JPMC Oracle CX_1001 Instantiation (job 210787954, proven 2026-10-07)
 
+> Historical case snapshot — portal specifics (CX_1001 site code, bespoke non-JET
+> comboboxes) belong to this requisition, not to CX_1002 flows. Current JPMC
+> automation targets `site_code = "CX_1002"` (Oracle JET + Knockout) and enters
+> search via the site root (see `jpmorgan_scraper.py`).
+
 Flow: `/job/<id>` → APPLY NOW → `/apply/email` (email + terms ACCEPT +
 NEXT → OTP, human enters code) → `/apply/section/1` → … → `/apply/section/4`
 (STOP before SUBMIT; capture review + answers.json; human approves submit).
@@ -118,7 +123,7 @@ with real keystrokes, ArrowDown + Enter, native-setter + event chain.
 ## 5. Standing Rules for Future Portal Work (binds all sessions)
 
 - Preload this file + `SCOPE_OF_EDIT.md` before any new finger/nail/scraper.
-- **Application Tracking & Tailoring:** Before applying, the agent MUST create a folder at `CompanySiteApply/<Company_Name>/<Role_Name>/`. It must generate a dynamically tailored Cover Letter (and tailored Resume notes) optimized for that specific JD and save them there alongside a `Tailoring_Audit.md` file. Never paste generic cover letters.
+- **Application Tracking & Tailoring:** Before applying, the agent MUST stage tailored artifacts under the candidate sandbox: `profiles/<profile>/company_site_apply/` (cover letter PDF + `Cover_Letter.txt` naming the requisition ID) and track under `profiles/<profile>/output/` (ledger, manifests). Resolved past tailored files live under `APPLIED ON COMPANY WEBSITE/`. Never invent paths outside the sandbox.
 - Shared-first: portal-wide fixes go in `dom_helpers.py`/shared libs with
   regression tests; per-company files carry selectors + truth-gating only.
 - No hardcoded field lists, city names, IDs, model names, or profile paths.

@@ -9,6 +9,22 @@
 # Rationale: Guarantees 100% data fidelity for career history without touching Education cards.
 # Preventative Notes: Never interact with education tiles when operating in this agent.
 # ==============================================================================
+# [ENTRY #002]
+# Term: [PHASE2_EXPERIENCE_ORDERING_FIX]
+# Timestamp: 2026-10-12 21:02:00 +05:30
+# Issue / Context: Knockout sort was doing localeCompare on "MM/YYYY" strings, resulting in month-based sort.
+# Changes Made: Delegated _reorder_tiles_reverse_chronological to s3_experience_ordering with numeric YYYYMM date comparison.
+# Rationale: Enforces strict reverse-chronological ordering (current job first, newest to oldest).
+# Preventative Notes: Never compare MM/YYYY strings alphabetically.
+# ==============================================================================
+# [ENTRY #003]
+# Term: [PHASE5_EXPERIENCE_TILE_IPC_DELEGATION]
+# Timestamp: 2026-10-12 21:48:00 +05:30
+# Issue / Context: Work experience section needed isolated sub-section execution and IPC serialization.
+# Changes Made: Updated heal() to delegate each tile to s3_experience_tile.heal_single_experience_tile().
+# Rationale: Guarantees modular sub-section isolation and prevents full section re-runs on single failure.
+# Preventative Notes: Never interact with subsequent tiles while an inline modal is still open.
+# ==============================================================================
 
 import time
 import logging
@@ -44,18 +60,29 @@ class ExperienceSectionAgent(BaseSectionAgent):
 
     def audit(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Audits Work Experience tiles for count and chronological ordering.
+        Audits Work Experience tiles for count AND runtime reverse-chronological
+        ordering. Count-only audits passed pre-saved drafts with scrambled
+        timelines (incident 2026-10-12) — order is now verified from visible
+        date text on every audit.
         """
         try:
-            tiles = page.locator(".apply-flow-profile-item-tile:has-text(' - ')").all_text_contents()
+            from CompanySiteApply.section_agents.scripts.s3_experience_ordering import (
+                get_tile_order,
+                is_reverse_chronological,
+            )
+            order = get_tile_order(page)
             cand_exp = self._get_candidate_experiences(candidate_data)
 
-            is_valid = len(tiles) >= min(len(cand_exp), 1)
+            keys = [t["sort_key"] for t in order]
+            ordered = is_reverse_chronological(keys) if order else False
+            count_ok = len(order) >= min(len(cand_exp), 1) if cand_exp else len(order) > 0
+            is_valid = count_ok and ordered
             return {
                 "is_valid": is_valid,
-                "tiles_count": len(tiles),
+                "tiles_count": len(order),
                 "expected_count": len(cand_exp),
-                "tiles": tiles[:5]
+                "chronological_order_correct": ordered,
+                "tiles": [t["title"] for t in order[:9]],
             }
         except Exception as e:
             logger.error(f"[ExperienceSectionAgent] Audit error: {e}")
@@ -64,42 +91,44 @@ class ExperienceSectionAgent(BaseSectionAgent):
     def heal(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Surgically heals Work Experience tiles and enforces reverse-chronological ordering.
+        Delegates single-tile healing to s3_experience_tile.
+        Re-queries the DOM before every tile (Oracle re-renders after SAVE) so
+        tile indices never go stale.
         """
         try:
-            exp_list = self._get_candidate_experiences(candidate_data)
-            tiles_count = page.locator(".apply-flow-profile-item-tile").count()
+            from CompanySiteApply.section_agents.scripts.s3_experience_tile import heal_single_experience_tile
+            from CompanySiteApply.ipc.ipc_manager import get_effective_session_id
+            _sess = get_effective_session_id(candidate_data, None)
 
             healed_count = 0
-            for i in range(tiles_count):
-                tile = page.locator(".apply-flow-profile-item-tile").nth(i)
-                tile_text = tile.inner_text().strip()
+            exp_idx = 0
+            # Bound by candidate truth count + small headroom for stale extra tiles.
+            cand_exp = self._get_candidate_experiences(candidate_data)
+            max_tiles = max(len(cand_exp), 1) + 2
 
-                # Skip Education tiles
-                if "degree" in tile_text.lower() or "education" in tile_text.lower() or "bachelor" in tile_text.lower() or "master" in tile_text.lower():
-                    continue
+            while exp_idx < max_tiles:
+                tiles = page.locator(".apply-flow-profile-item-tile").all()
+                exp_tiles = []
+                for t in tiles:
+                    try:
+                        tile_text = t.inner_text().strip()
+                    except Exception:
+                        continue
+                    if any(k in tile_text.lower() for k in ["degree", "education", "bachelor", "master"]):
+                        continue
+                    exp_tiles.append(t)
 
-                edit_btn = tile.locator(".apply-flow-profile-item-tile__edit-item-icon, button.icon-edit, [class*='edit-item-icon']").first
-                if edit_btn.count() == 0:
-                    continue
+                if exp_idx >= len(exp_tiles):
+                    break
 
-                try:
-                    tile.scroll_into_view_if_needed()
-                    time.sleep(0.3)
-                    edit_btn.click(force=True)
-                except Exception:
-                    page.evaluate("(el) => el.click()", edit_btn.element_handle())
-                time.sleep(1.0)
-
-                # Match candidate experience item
-                best_match = exp_list[0] if exp_list else {}
-                for exp in exp_list:
-                    emp = exp.get("employer", "").lower()
-                    if emp and (emp in tile_text.lower() or tile_text.lower() in emp):
-                        best_match = exp
-                        break
-
-                self._heal_single_experience_modal(page, best_match, candidate_data)
-                healed_count += 1
+                res = heal_single_experience_tile(page, candidate_data, tile_index=exp_idx, session_id=_sess or None)
+                if res.get("success"):
+                    healed_count += 1
+                elif res.get("deferred"):
+                    logger.warning(f"[ExperienceSectionAgent] Tile {exp_idx} deferred: {res.get('error')}")
+                    break
+                exp_idx += 1
+                time.sleep(0.5)
 
             # Enforce reverse-chronological ordering
             self._reorder_tiles_reverse_chronological(page)
@@ -177,59 +206,25 @@ class ExperienceSectionAgent(BaseSectionAgent):
 
     def _reorder_tiles_reverse_chronological(self, page: Any) -> bool:
         """
-        Universally sorts Knockout experience observableArray in strict reverse-chronological order
-        (current employer first, newest to oldest) via DOM __ko__ context.
+        Universally sorts experience tiles in strict reverse-chronological order
+        (current employer first, newest to oldest) via s3_experience_ordering.
         """
         try:
-            # 1. Try JPMCNail if available
-            try:
-                from CompanySiteApply.nails.oracle.jpmc_nail import JPMCNail
-                nail = JPMCNail()
-                if nail.reorder_experience_tiles(page):
-                    logger.info("[ExperienceSectionAgent] Reordered tiles via JPMCNail.")
-                    return True
-            except Exception as ne:
-                logger.debug(f"[ExperienceSectionAgent] JPMCNail delegation note: {ne}")
-
-            # 2. Universal Knockout __ko__ observableArray sort
-            sorted_count = page.evaluate("""() => {
-                const tiles = document.querySelectorAll('.apply-flow-profile-item-tile');
-                if (tiles.length <= 1) return 0;
-                // Index 0 is typically education, experience tiles follow
-                const expTile = tiles.length > 1 ? tiles[1] : tiles[0];
-                let koProp = Object.keys(expTile).find(p => p.startsWith('__ko__'));
-                if (!koProp) return 0;
-                const ctx = expTile[koProp]['1' + koProp]?.context;
-                if (!ctx || !ctx.$parent) return 0;
-                const parent = ctx.$parent;
-                if (!parent.forms || typeof parent.forms.sort !== 'function') return 0;
-                
-                // Sort parent.forms directly using observableArray sort
-                parent.forms.sort((a, b) => {
-                    const modA = typeof a === 'function' && typeof a().model === 'function' ? a().model() : null;
-                    const modB = typeof b === 'function' && typeof b().model === 'function' ? b().model() : null;
-                    if (!modA || !modB) return 0;
-                    
-                    const curA = typeof modA.currentJobFlag === 'function' ? modA.currentJobFlag() : 'N';
-                    const curB = typeof modB.currentJobFlag === 'function' ? modB.currentJobFlag() : 'N';
-                    if (curA === 'Y' && curB !== 'Y') return -1;
-                    if (curB === 'Y' && curA !== 'Y') return 1;
-                    
-                    const startA = typeof modA.startDate === 'function' ? String(modA.startDate() || '') : '';
-                    const startB = typeof modB.startDate === 'function' ? String(modB.startDate() || '') : '';
-                    return startB.localeCompare(startA);
-                });
-                
-                if (typeof parent._buildTiles === 'function') {
-                    parent._buildTiles();
-                }
-                return parent.forms().length;
-            }""")
-            logger.info(f"[ExperienceSectionAgent] Reordered {sorted_count} experience tiles in reverse-chronological order.")
-            time.sleep(0.5)
-            return bool(sorted_count)
+            from CompanySiteApply.section_agents.scripts.s3_experience_ordering import reorder_experience_tiles
+            res = reorder_experience_tiles(page)
+            if res.get("success"):
+                logger.info("[ExperienceSectionAgent] Successfully reordered tiles via s3_experience_ordering.")
+                return True
         except Exception as e:
-            logger.warning(f"[ExperienceSectionAgent] Reorder warning: {e}")
+            logger.debug(f"[ExperienceSectionAgent] s3_experience_ordering delegation note: {e}")
+
+        # Fallback to JPMCNail if available
+        try:
+            from CompanySiteApply.nails.oracle.jpmc_nail import JPMCNail
+            nail = JPMCNail()
+            return nail.reorder_experience_tiles(page)
+        except Exception as ne:
+            logger.warning(f"[ExperienceSectionAgent] Reorder warning: {ne}")
             return False
 
     def _get_candidate_experiences(self, candidate_data: Dict[str, Any]) -> List[Dict[str, Any]]:

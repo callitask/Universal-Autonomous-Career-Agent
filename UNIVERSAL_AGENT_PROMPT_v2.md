@@ -46,7 +46,7 @@ F:\JOB AI AGENT\.agents\rules\
 **0d. Read Architecture & Platform Documents:**
 ```
 F:\JOB AI AGENT\docs\
-  ├── WORKSPACE_RULES.md          ← Directives 1-8, Guardrails P1, C1-C25, H1-H6, D1-D3
+  ├── WORKSPACE_RULES.md          ← Directives 1-10, Guardrails P1, C1-C37, H1-H6, D1-D3
   ├── ARCHITECTURE_REFERENCE.md  ← Dual-brain anatomy, IPC contracts, data schemas
   ├── PLATFORM_KNOWLEDGE.md      ← Naukri/LinkedIn DOM patterns, SEO slugs, zero-comma rules
   └── GEMINI_WEB_AI_PROMPTS.md   ← Prompt guidelines and evaluation rubrics

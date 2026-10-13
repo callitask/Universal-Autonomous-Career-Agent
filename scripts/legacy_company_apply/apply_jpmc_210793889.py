@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from CompanySiteApply.fingers.oracle_cloud_finger import OracleCloudFinger
 from CompanySiteApply.nails.oracle.jpmc_nail import JPMCNail
-from core.visual_ai_auditor import VisualAIAuditor
+from scripts.legacy_company_apply.visual_ai_auditor import VisualAIAuditor
 
 JOB_ID = "210793889"
 JOB_TITLE = "Lead Software Engineer - Java, AWS"

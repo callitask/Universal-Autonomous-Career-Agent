@@ -35,7 +35,7 @@ class DiversitySubAgent(BaseSectionAgent):
             return True
         try:
             url = getattr(page, "url", "")
-            return "/apply/section/4" in url or "more-about-you" in url.lower() or "review" in url.lower()
+            return "/apply/section/4" in url or "more-about-you" in url.lower() or "/review" in url.lower()
         except Exception:
             return False
 

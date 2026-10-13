@@ -12,7 +12,7 @@
 * **Removed From:** `core/04_job_discovery.py`
 * **When:** Batch Architecture v2.0 Update
 * **Reason:** Pausing the entire discovery loop for up to 90 seconds per single job card evaluation created severe bottlenecks, limiting throughput.
-* **Replaced With:** ARM -> BRAIN -> EXECUTE Architecture. The scraper collects all job cards for a designation (ARM), dispatches them in bulk to `batch_question.json` (BRAIN), and executes deep scans only on approved cards (EXECUTE).
+* **Replaced With:** ARM -> BRAIN -> EXECUTE Architecture. The scraper collects all job cards for a designation (ARM), dispatches them in bulk to `batch_question.json` (BRAIN, answered via `batch_answer.json`), and executes deep scans only on approved cards (EXECUTE).
 
 ## 3. Python-Hardcoded Keyword Screening Lists
 * **Removed From:** `core/ai_client.py` (`_is_standard_screening_query`, `_heuristic_screening_answer`)

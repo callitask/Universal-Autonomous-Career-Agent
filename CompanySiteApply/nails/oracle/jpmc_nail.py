@@ -39,6 +39,14 @@
 # Rationale: Ensures candidate timeline displays in authentic professional order on both
 #            Section 3 and Section 4 Review screens.
 # Preventative Notes: Never rely on default Oracle HCM insertion order for tile display.
+#
+# [ENTRY #005]
+# Term: [PHASE2_EXPERIENCE_ORDERING_NUMERIC_SORT]
+# Timestamp: 2026-10-12 21:05:00 +05:30
+# Issue / Context: Knockout sort was doing localeCompare on "MM/YYYY" strings, resulting in month-based sort.
+# Changes Made: Updated reorder_experience_tiles() to delegate to s3_experience_ordering with numeric YYYYMM date comparison.
+# Rationale: Enforces strict reverse-chronological ordering (current job first, newest to oldest).
+# Preventative Notes: Never compare MM/YYYY strings alphabetically.
 # ==============================================================================
 
 import re
@@ -246,9 +254,14 @@ class JPMCNail(BaseNail):
             edu_list = cand.get("education") or []
             edu_info = edu_list[0] if edu_list else {}
 
-            target_degree = str(edu_info.get("degree") or "Bachelor's Degree").strip()
-            target_major = str(edu_info.get("major") or edu_info.get("field_of_study") or "Computer Science & Engineering").strip()
-            target_country = str(edu_info.get("country") or "India").strip()
+            target_degree = str(edu_info.get("degree") or "").strip()
+            target_major = str(edu_info.get("major") or edu_info.get("field_of_study") or "").strip()
+            target_country = str(edu_info.get("country") or "").strip()
+
+            # Defer rather than invent credentials when profile has no truth.
+            if not target_degree and not target_major and not target_country:
+                print("[JPMCNail] Education ground truth missing — deferring (no invented degree).", flush=True)
+                return False
 
             # Check for invalid tile or "Fields to fix"
             invalid_tile = page.locator(".apply-flow-profile-item-tile--invalid:visible, .apply-flow-profile-item-tile:has-text('Fields to fix'):visible").first
@@ -263,9 +276,9 @@ class JPMCNail(BaseNail):
                 invalid_tile.click()
             time.sleep(1.5)
 
-            # 1. Degree Combobox
+            # 1. Degree Combobox (skip when truth absent — never match on "")
             deg_toggle = page.locator("button[id^='contentItemId'][id$='-toggle-button']:visible").first
-            if deg_toggle.count() > 0:
+            if deg_toggle.count() > 0 and target_degree:
                 deg_toggle.click()
                 time.sleep(0.8)
                 page.evaluate('''(targetText) => {
@@ -276,16 +289,16 @@ class JPMCNail(BaseNail):
                 }''', target_degree)
                 time.sleep(0.5)
 
-            # 2. Area of Study
+            # 2. Area of Study (skip when truth absent — never clear the field)
             study_inp = page.locator("input[name='areaOfStudy']:visible, input[id^='areaOfStudy']:visible").first
-            if study_inp.count() > 0:
+            if study_inp.count() > 0 and target_major:
                 study_inp.fill(target_major)
                 study_inp.dispatch_event("input")
                 study_inp.dispatch_event("change")
 
-            # 3. Country Combobox
+            # 3. Country Combobox (skip when truth absent)
             c_toggle = page.locator("button[id^='countryCode'][id$='-toggle-button']:visible").first
-            if c_toggle.count() > 0:
+            if c_toggle.count() > 0 and target_country:
                 c_toggle.click()
                 time.sleep(0.8)
                 selected_country = page.evaluate('''(targetText) => {
@@ -504,45 +517,17 @@ class JPMCNail(BaseNail):
 
     def reorder_experience_tiles(self, page: Any) -> bool:
         """
-        Sorts the Knockout experience observableArray in strict reverse-chronological order
+        Sorts the experience tiles in strict reverse-chronological order
         (newest to oldest, current job first) so Oracle Cloud HCM tiles render correctly.
+        Delegates to s3_experience_ordering with numeric YYYYMM date comparison and DOM fallback.
         """
         try:
-            sorted_count = page.evaluate("""() => {
-                const tiles = document.querySelectorAll('.apply-flow-profile-item-tile');
-                if (tiles.length <= 1) return 0;
-                // Index 0 is typically education, experience tiles follow
-                const expTile = tiles.length > 1 ? tiles[1] : tiles[0];
-                let koProp = Object.keys(expTile).find(p => p.startsWith('__ko__'));
-                if (!koProp) return 0;
-                const ctx = expTile[koProp]['1' + koProp]?.context;
-                if (!ctx || !ctx.$parent) return 0;
-                const parent = ctx.$parent;
-                if (!parent.forms || typeof parent.forms.sort !== 'function') return 0;
-                
-                // Sort parent.forms directly using observableArray sort
-                parent.forms.sort((a, b) => {
-                    const modA = typeof a === 'function' && typeof a().model === 'function' ? a().model() : null;
-                    const modB = typeof b === 'function' && typeof b().model === 'function' ? b().model() : null;
-                    if (!modA || !modB) return 0;
-                    
-                    const curA = typeof modA.currentJobFlag === 'function' ? modA.currentJobFlag() : 'N';
-                    const curB = typeof modB.currentJobFlag === 'function' ? modB.currentJobFlag() : 'N';
-                    if (curA === 'Y' && curB !== 'Y') return -1;
-                    if (curB === 'Y' && curA !== 'Y') return 1;
-                    
-                    const startA = typeof modA.startDate === 'function' ? String(modA.startDate() || '') : '';
-                    const startB = typeof modB.startDate === 'function' ? String(modB.startDate() || '') : '';
-                    return startB.localeCompare(startA);
-                });
-                
-                if (typeof parent._buildTiles === 'function') {
-                    parent._buildTiles();
-                }
-                return parent.forms().length;
-            }""")
-            print(f"[JPMCNail] Reverse-chronologically reordered {sorted_count} experience tiles.", flush=True)
-            return bool(sorted_count)
+            from CompanySiteApply.section_agents.scripts.s3_experience_ordering import reorder_experience_tiles as script_reorder
+            res = script_reorder(page)
+            if res.get("success"):
+                print(f"[JPMCNail] Reverse-chronologically reordered experience tiles: {res}", flush=True)
+                return True
+            return False
         except Exception as e:
             print(f"[JPMCNail] Notice: could not reorder experience tiles ({e})", flush=True)
             return False

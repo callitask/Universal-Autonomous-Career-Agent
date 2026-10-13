@@ -19,7 +19,7 @@ CRITICAL INSTRUCTIONS:
    - DIRECTIVE 4: Method signatures and contracts are immutable. evaluate_job_match() executes deterministic factual scoring first in Zero-API mode, incorporates portal-verified match score calibration (+10% verified confidence bonus for Keyskills & Work Exp), and strictly gates Antigravity 2.0 IPC evaluation to the borderline window (40% <= score <= 65%). High-fit (>= 60%) qualifies immediately; out-of-domain drops at Stage 1 (0%); clear rejections (< 40%) resolve without IPC. MatchResult supports full tuple unpacking, attribute access, and dict methods.
    - DIRECTIVE 5: Naukri and LinkedIn handlers are strictly decoupled. Modals require container-isolated scrolling and React synthetic event dispatch for contenteditable elements. Guardrail H1 strictly prohibits blind options[0] or valid_opts[0] fallbacks in LinkedInApplyHandler, requiring IPC resolution and automated modal dismissal with 'Discard application' confirmation on failure or max steps. Enforces Invariant DOM vs. Dynamic Runtime data separation (Clause 12) and verified profile edit form targets (Clause 13).
    - DIRECTIVE 7: Canonical CSV tracker schema, deduplication logic, and status codes are strictly enforced. ctx.load_processed_ledger() returns ProcessedLedger (a hybrid dictionary with set API parity) supporting O(1) deduplication and structured metadata dicts (status, company, title, score, timestamp).
-   - DIRECTIVE 8: Known bug prevention guardrails (P1, C1-C4, C6, C9-C14, H1-H6, D1-D3) that were fixed — you must NEVER reintroduce them:
+   - DIRECTIVE 8: Known bug prevention guardrails (P1, C1-C37 except C5 which was never issued, H1-H6, D1-D3) that were fixed — you must NEVER reintroduce them:
       * P1: Codebase Purity Enforcer (zero candidate data or profile paths in core/*.py verified via ctx.verify_codebase_purity()).
       * C9: Immediate abort on platform rejection banners or premature drawer closure.
       * C10: Chatbot submit element scoping (.sendMsgbtn_container .send .sendMsg div, never un-scoped button).
@@ -30,7 +30,7 @@ CRITICAL INSTRUCTIONS:
 
 4. After reading, confirm you understand by listing:
    - The 10 directive names (including Directive 2 developer boundaries, secrets policy, Guardrail P1, and the Directive 10 page-loop protocol)
-   - The bug guardrail IDs (P1, C1-C4, C6, C9-C14, H1-H6, D1-D3) and what each prevents
+   - The bug guardrail IDs (P1, C1-C37 except C5 which was never issued, H1-H6, D1-D3) and what each prevents
    - The canonical CSV tracker header schema
    - The method signature, borderline IPC gating window (40-65%), and hybrid MatchResult contract for evaluate_job_match()
 
@@ -61,7 +61,7 @@ CRITICAL INSTRUCTIONS:
    - Section 4: All data schemas (candidate_config.json, cognitive_profile.json, search_manifest.json with naukri_match_score, job_details.json, tracker CSV, processed_ledger.json, pending_question.json, ques_ans_chatbot.json, naukri_cards/*.json, naukri_sync_report.json).
    - Section 5: Empirical DOM anatomy catalogs — 5.1 Search Results Page (SRP), 5.2 Job Details (JD) Page & match score items, 5.3 Chatbot Drawer, 5.4 Profile Edit Modals.
    - Section 6: Anti-detection timing parameters (30ms typing, 2500ms post-answer, domcontentloaded navigation, non-blocking profile sync).
-   - Section 7 & 8: Failure mode matrix and guardrails P1, H1-H6, C10-C14.
+   - Section 7 & 8: Failure mode matrix and guardrails P1, H1-H6, C1-C37 (no C5).
 
 4. After reading, confirm you understand by listing:
    - The full pipeline execution sequence.
@@ -91,7 +91,7 @@ WORKING PROTOCOL FOR THIS SESSION:
 4. Every file you output must be 100% complete — no truncation, no placeholder comments.
 5. Before modifying any function, verify it doesn't break callers listed in APPENDIX B of the rules.
 6. In 04_job_discovery.py, ensure ctx.load_processed_ledger() is handled via ProcessedLedger (supporting O(1) dictionary key lookups, structured metadata, and set operations).
-7. After proposing changes, run through the DIRECTIVE 8 bug guardrail checklist (P1, C1-C4, C6-C34, H1-H6, D1-D3) and confirm no guardrail is violated.
+7. After proposing changes, run through the DIRECTIVE 8 bug guardrail checklist (P1, C1-C37 except C5 which was never issued, H1-H6, D1-D3) and confirm no guardrail is violated.
 8. ALWAYS respect the AG 2.0 File-Based IPC architecture (pending_question.json). NEVER reintroduce terminal stdin or input() blocking.
 
 READY STATE:

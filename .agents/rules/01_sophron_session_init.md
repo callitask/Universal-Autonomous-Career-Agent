@@ -363,7 +363,7 @@ This prevents two concurrent sessions writing the same insight twice (e.g. both 
 This checkpoint fires automatically without user prompting. It takes under 10 seconds and zero user-visible output.
 
 1. **Re-read the active constraint block** (silently):
-   `F:\JOB AI AGENT\.agents\rules\ACTIVE_CONSTRAINT_BLOCK.md` — verify all 10 gates still apply to what you are about to do.
+   `F:\JOB AI AGENT\.agents\rules\ACTIVE_CONSTRAINT_BLOCK.md` - verify all 11 gates still apply to what you are about to do.
 
 2. **Sophron card audit**:
    Have I written a Sophron insight or TURN card in the last 5 turns? If NO → write one now before proceeding.

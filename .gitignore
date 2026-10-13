@@ -51,6 +51,7 @@ venv.bak/
 test-results/
 .playwright-artifacts/
 screenshots/
+jpmc_job_matches.json
 
 # 4. Logs, Audit Dumps, and Databases
 *.log
@@ -101,3 +102,8 @@ CompanySiteApply/inspections/**
 #   python scripts/build_knowledge_index.py --build
 knowledge/vectors/
 knowledge/graph/
+# IPC runtime files — never commit active session data
+CompanySiteApply/ipc/section_question.json
+CompanySiteApply/ipc/section_question.tmp
+CompanySiteApply/ipc/batch_section_question.json
+CompanySiteApply/ipc/ipc_error.log

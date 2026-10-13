@@ -33,28 +33,30 @@
 
 You must walk the tree file-by-file. No sampling. For **every** `.py`, `.md`, `.json` in scope, record: purpose, classes/functions with signatures, callers/consumers, contracts/guardrails enforced, DOM selectors/IPC keys touched, and whether docs describe it correctly.
 
+> Point-in-time audit brief — inventories were accurate at authoring; re-verify against the live tree before citing counts.
+
 **1A. Root Repo A â€” JOB AI AGENT (exclude `__pycache__`, `output.log`, OS files):**
 - Root files: `README.md`, `UNIVERSAL_AGENT_SETUP.md`, `UNIVERSAL_AGENT_PROMPT_v2.md`, `COPYRIGHT.md`, `LICENSE`, `.gitignore`, `desktop.ini` (note OS artifact, do not document as architecture).
 - `.agents/rules/`: `ACTIVE_CONSTRAINT_BLOCK.md` (GATE 1â€“11), `SCAR_TISSUE.md` (append-only), `00_user_cognitive_os.md`, `01_sophron_session_init.md`, `02_career_agent_operational_rules.md`, `03_career_agent_session_profile_init.md`, `workspace_rules.md`; `.agents/README.md` (v4.0 Batch â€” current launch directive).
-- `core/` (all 19 source files, no exceptions):
+- `core/` (23 source files at last count — re-glob; `visual_ai_auditor.py` retired to `scripts/legacy_company_apply/`):
   - Top: `01_ai_analyzer.py`, `02_profile_sync_naukri.py`, `02b_naukri_fast_resume_upload.py`, `03_profile_sync_linkedin.py`, `04_job_discovery.py`, `05_apply_jobs.py`, `ai_client.py`, `continuous_career_agent.py`, `generate_factual_tailored.py`, `ipc_auto_resolver.py`, `ipc_watcher.py`
   - `core/utils/`: `browser_manager.py`, `profile_context.py`, `search_state_manager.py`
   - `core/scrapers/`: `__init__.py`, `base_scraper.py`, `linkedin_scraper.py`, `naukri_scraper.py` (verify `WORKSPACE Appendix A` `DEAD CODE` claim â€” live or dead?)
   - `core/knowledge/`: `platform_heuristics.json`
 - `CompanySiteApply/` â€” historically under-documented, document fully line-by-line:
-  - Root: `__init__.py`, `ats_arm.py`, `ats_detector.py`, `cli.py` (note `input(">> ")` debug CLI â€” only stdin exception; never port to `core/`)
+  - Root: `__init__.py`, `ats_arm.py`, `ats_detector.py`, `cli.py`, `ai_brain_resolver.py`, `apply_orchestrator.py`, `autonomous_job_agent.py`, `cognitive_job_matcher.py` (note `input(">> ")` debug CLI â€” only stdin exception; never port to `core/`)
   - `fingers/`: `__init__.py` (registry order), `base_finger.py`, `oracle_cloud_finger.py`, `workday_finger.py`, `greenhouse_finger.py`, `generic_finger.py`
   - `nails/` (currently undocumented in README): `__init__.py`, `base_nail.py`, `oracle/__init__.py`, `oracle/jpmc_nail.py`, `oracle/bristlecone_nail.py` â€” capture company-override pattern vs finger pattern
   - `CompanyScraper/` (currently undocumented): `__init__.py`, `base_scraper.py`, `cli_scraper.py`, `companies/__init__.py`, `companies/jpmorgan/__init__.py`, `companies/jpmorgan/jpmorgan_scraper.py`, `companies/jpmorgan/config.json`
   - `parser_doctor/`: `__init__.py`, `line_wrap_healer.py`, `education_healer.py`, `review_verifier.py`
-  - `utils/`: `__init__.py`, `dom_helpers.py`, `honeypot_guard.py`
-  - `inspections/`: `generic_adaptive/adaptive_form_step_*.json` (2), `oracle_cloud_hcm/authentication_email_*.json` + `unknown_*.json` (9) â€” schema, not live PII to copy
-  - `tests/`: `test_parser_doctor.py`
+  - `utils/`: `__init__.py`, `dom_helpers.py`, `honeypot_guard.py`, `config_resolver.py`, `experience_matcher.py`
+  - `inspections/`: gitignored runtime DOM snapshots (count varies; never copy PII out)
+  - `tests/`: 12 files, 100 tests (re-count via `grep def test_`)
   - Docs: `README.md`, `SCOPE_OF_EDIT.md`
-- `scripts/`: `reevaluate_ledger.py` (only file â€” document purpose + ledger statuses it touches)
+- `scripts/`: `build_knowledge_index.py`, `reevaluate_ledger.py`, `test_colab_connection.py`, `phase_4_run.ps1`, plus `legacy_company_apply/` (archived one-offs, never run)
 - `docs/`: `WORKSPACE_RULES.md`, `ARCHITECTURE_REFERENCE.md`, `PLATFORM_KNOWLEDGE.md`, `GEMINI_WEB_AI_PROMPTS.md`, `REFERENCE_DEPLOYMENT_GUIDE.md`, `COMPANY_ATS_KNOWLEDGE.md`, `ORACLE_HCM_ATS_DEEP_DIVE.md`, `STRATEGIC_RESUME_TAILORING.md`, `UNIVERSAL_ATS_REVERSE_ENGINEERING_PLAYBOOK.md`, `KNOWLEDGE_GRAPH_CHANGELOG.md`, `DEPRECATED_SYSTEMS_CHANGELOG.md`, plus this brief
 - `profiles/default_user/` ONLY: `candidate_config.json` (full `screening_heuristics` schema), `resume.md` (format), `cover_letter_template.md`, `README.md`, `output/` skeleton
-- `scratch/answer_resume.py` (note scratch status â€” do not promote to architecture)
+- `scratch/` is not architecture (temporary probes only; deleted same session)
 
 **1B. Root Repo B â€” Sophron (separate git root, cognitive memory only):**
 - `README.md`, `SYSTEM_PROMPT_INJECTION.md`, `master_agent_config.json` (note stale `transcript_path` UUID pattern), `session_registry.json`, `.gitignore`

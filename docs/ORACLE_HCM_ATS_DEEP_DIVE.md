@@ -89,7 +89,7 @@ This document serves as the **permanent engineering bridge**. Any AI agent in an
 
 #### 7. E-Signature (`.apply-flow-block--apply-flow-e-signature`)
 - **Full Name Input:** `#fullName-5` (name: `fullName`).
-- **Interaction Protocol:** Focus, assign candidate full legal name (`Udaysagar Kandpal`), and dispatch `input`, `change`, and `blur` events.
+- **Interaction Protocol:** Focus, assign the candidate's full legal name (from profile truth — never a literal; defer if absent), and dispatch `input`, `change`, and `blur` events.
 
 ---
 
@@ -142,12 +142,12 @@ async function commitProfileItem(blockSelector) {
 | **9** | Background Digital Assistant (ODA) False Error Flags | Background modal `#oda-work-summary-text-area` has `.oj-invalid` in invisible DOM, triggering false positives. | Filter error queries for `isElementVisible()` and exclude `#oda-chat-widget` and `#oda-work-summary-dialog`. |
 | **10** | Legal Consent Modal Intercepting Pointer Events (Step 0) | Clicking `#legal-disclaimer-checkbox` or its label opens `.standard-apply-flow-agreement__dialog` modal, intercepting clicks to `NEXT`. | Target the modal's `button.app-dialog__footer-button` with text `AGREE`. Clicking `AGREE` closes the dialog, checks the box, and unblocks `NEXT`. |
 | **11** | Work Experience Tile Truncation by Oracle Native Parser | Oracle ATS natively omits Employer Country, Employer City, leaves Internal unselected, and flattens achievements into unformatted text. | Every single tile in Section 3 must be opened via Edit, Country set to "India" (using `:text-is('India')` exact match), City populated from candidate profile, Internal set to "No", and Achievements populated with structured bullet points (`• `). |
-| **12** | Inline Expanding Form Containers vs. Modal Dialogs (CX_1001) | In CX_1001, clicking Edit expands forms inline within the page layout rather than opening an `.app-dialog`. | Never constrain SAVE button locators to `.app-dialog`. Use `.save-btn, button:has-text('Save')`. |
+| **12** | Inline Expanding Form Containers vs. Modal Dialogs (CX_1001 observation; CX_1002 renders inline per line 311) | In CX_1001, clicking Edit expands forms inline within the page layout rather than opening an `.app-dialog`. | Never constrain SAVE button locators to `.app-dialog`. Use `.save-btn, button:has-text('Save')`. |
 | **13** | Education Combobox "Degree is required" Validation Failure | Naive `.fill("Bachelor's Degree")` fails to select the option in the reactive gridcell listbox, leaving Degree blank upon save. | Fill prefix (`Bachel`), wait 500ms, dispatch keyboard `ArrowDown` and `Enter`, and set Area of Study. |
 | **14** | Hidden Tile Edit Button Actionability Timeout (30s) | The edit pencil icon (`.apply-flow-profile-item-tile__edit-item-icon`) has 0 opacity until hovered, causing Playwright's `scroll_into_view_if_needed()` to wait 30s. | Dispatch native JavaScript click directly: `tile.evaluate(el => el.querySelector('.apply-flow-profile-item-tile__edit-item-icon').click())`. |
 | **15** | Blind Boolean Heuristic Fallback & Poisoned Learned Truth | Generic Yes/No questions (e.g. Work Authorization) lacking "interview" keywords defaulted to "No", which was then persisted to `auto_learned_truths`, corrupting future attempts. | Add explicit topic gates for Work Authorization, 18+ age, and sponsorship. Prevent non-grounded heuristic answers from being persisted into `auto_learned_truths`. |
 | **16** | General Experience Tier Option Matching Failure | Regex searched for `experience in/with/as <technology>`, defaulting `calc_val` to 0.0 on general experience prompts, picking "No Prior Experience". | Dynamically match candidate's total experience against option tiers and select the highest threshold `<= total_exp` (e.g. 9.8 years -> "At least 5 years of experience"). |
-| **17** | Ghost Dialog Trap (`.app-dialog` vs inline `.apply-flow__content-form`) | CX_1001 renders forms inline without `.app-dialog`, causing `.app-dialog:visible .app-dialog__header` queries to return empty and misclassifying Education tiles as Work Experience. | Detect Education modals by checking tile titles or visible inputs (`[id^='contentItemId']`, `[id^='areaOfStudy']`), and target inline containers directly. |
+| **17** | Ghost Dialog Trap (`.app-dialog` vs inline `.apply-flow__content-form`) | CX_1001 renders forms inline without `.app-dialog` (CX_1002 inline behavior noted at line 311), causing `.app-dialog:visible .app-dialog__header` queries to return empty and misclassifying Education tiles as Work Experience. | Detect Education modals by checking tile titles or visible inputs (`[id^='contentItemId']`, `[id^='areaOfStudy']`), and target inline containers directly. |
 | **18** | Unmapped Regional Diversity Combobox | Oracle demographic steps render country-specific dropdowns (e.g. `#IN-DFF-indiaMilitaryStatus-ATTRIBUTE16-8`) not covered by standard personal details handlers. | Delegate company-specific and regional survey fields to dedicated Nails (e.g. `JPMCNail`) that resolve military status, ethnicity, and gender from profile data. |
 
 ---
@@ -226,7 +226,7 @@ CompanySiteApply/
 └── nails/                         <-- Company-Specific Overrides (Nails)
     ├── base_nail.py               <-- Base nail hooks (matching, pre/post step, custom fields, answer overrides)
     └── oracle/
-        ├── jpmc_nail.py           <-- JPMorgan Chase CX_1001 specific surveys, questions & layout
+        ├── jpmc_nail.py           <-- JPMorgan Chase surveys, questions & layout (CX_1002 current)
         └── bristlecone_nail.py    <-- Bristlecone specific layout & honeypots
 ```
 
@@ -243,6 +243,11 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
 ### B. Standard Operating Procedure (SOP)
 
 ```
+> Illustrative runbook from one past session — names, cities, PINs, degrees,
+> tile counts, and artifact filenames below are examples, NOT defaults. Resolve
+> every value from the live profile; defer (`ACTION_REQUIRED`) when truth is
+> absent. Proof artifacts are per-section `{section}_audited_<ts>.png` plus the
+> profile's `screening_answers.json`, recorded in `section_proofs`.
 [Phase 1: Resume Tailoring]
     -> Generate exact 2-page tailored resume PDF & Cover Letter PDF for target role.
 [Section 1: Resume Import Hard Gate]
@@ -268,7 +273,7 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
     -> Verify Documents: Ensure tailored Resume PDF and Cover Letter PDF both display green checkmark and "REMOVE" button (click "Use" if pending).
     -> Verify Diversity: Ethnicity ("Asian"), Gender ("Male"), Military ("No").
     -> Verify E-Signature: Full Name ("Udaysagar Kandpal").
-    -> Capture full-page screenshot (`submission_review_page.png`) and write machine-readable `answers.json`.
+    -> Capture per-section proof (`{section}_audited_<ts>.png` into `section_proofs`).
     -> HARD STOP: Do NOT click SUBMIT. Halt for human principal architect review.
 ```
 
@@ -323,14 +328,14 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
 
 ### Trap 7: LinkedIn URL Truncation Defense
 - **Phenomenon:** The resume auto-parser frequently truncates candidate URLs in `siteLink-1` (e.g. `https://linkedin.com/in/udaykan` missing `dpal`).
-- **Remediation:** Inspect `input[name*='siteLink']` on Section 4. Cross-reference against candidate config `linkedin_profile_url`. If truncated or mismatched, explicitly overwrite with the canonical URL (`https://www.linkedin.com/in/udaykandpal`).
+- **Remediation:** Inspect `input[name*='siteLink']` on Section 4. Cross-reference against the candidate config's `linkedin_profile_url`. If truncated or mismatched, explicitly overwrite with the profile URL (never a hardcoded URL).
 
 ### Trap 8: Executive Single-Page Cover Letter Standard
 - **Phenomenon:** Flashy cover letters with HTML tables (`<table>`) or colorful callout boxes look informal and fail automated enterprise parsing.
 - **Remediation:** Adhere strictly to `docs/templates/PROFESSIONAL_COVER_LETTER_TEMPLATE.md`:
   - Clean executive business typography (A4 portrait, 1 page).
   - Header: Candidate Name, contact bar with pipe separators.
-  - Standard date line, recipient block, Re: line with Job ID.
+  - Standard date line, recipient block, `Subject:` line with requisition ID (plain-text companion uses `Re:`).
   - Salutation: "Dear Hiring Team,".
   - Concise opening and transition paragraph.
   - 4 clean indented bullet points with bold titles (e.g. *Distributed Event-Driven Architecture*, *Enterprise Data Architecture*).
@@ -370,7 +375,7 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
 
 ### Trap 15: Non-Negotiable Human Submission Gate
 - **Directive:** The autonomous agent must NEVER click `SUBMIT`.
-- **Protocol:** Populate all fields, verify 0 errors, ensure SUBMIT button is enabled, capture full-page screenshot (`section4_final_verified.png`), and halt with clear instructions for the human operator to perform final review and manual submission.
+- **Protocol:** Populate all fields, verify 0 errors, ensure SUBMIT button is enabled, capture full-page screenshot (into `artifacts/`), and halt with clear instructions for the human operator to perform final review and manual submission.
 
 ### Trap 16: Multi-Select Combobox Pill Containers (`.cx-multi-select-pill`)
 - **Phenomenon:** Fields like `Preferred Location` and `Top 2 programming languages` do not store selections in the `<input>` element value. The text input remains empty, and selecting options mounts individual `.cx-multi-select-pill__value` badges into a pill container.
@@ -380,7 +385,7 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
 ### Trap 17: Cascading Conditional Questionnaire Tree Loop
 - **Phenomenon:** Answering one question (e.g. `Relevant years of work experience` -> `At least 5 years of experience`) dynamically unhides secondary questions (`Primary area of expertise`, `AWS proficiency`), and selecting `Software Engineering` unhides tertiary questions (`Java Backend`, `Top 2 programming languages`).
 - **Root Cause:** Oracle Cloud HCM mounts conditional sub-questions reactively. Single-pass scripts that only evaluate questions once on page load miss all Level 2 and Level 3 questions, resulting in red errors (`This information is required.`, `Select at least 2 answers.`).
-- **Remediation:** Implement a multi-pass while-loop (up to 5 passes) that repeatedly scans for unanswered questions, passes them to the ATS Nail/AI resolver, and stops only when all visible questions are answered and active validation error count is 0.
+- **Remediation:** Implement a multi-pass while-loop (up to 4 passes, `max_passes = 4`) that repeatedly scans for unanswered questions, passes them to the ATS Nail/AI resolver, and stops only when all visible questions are answered and active validation error count is 0. The dispatcher additionally cascades re-heals (max 3) for questions revealed mid-heal.
 
 ### Trap 18: Work Experience Tile Alphabetical Sorting Phenomenon in CX_1002
 - **Phenomenon:** In Section 3 (`/apply/section/3`), the list of work experience tiles appears out of chronological order (e.g., Adobe 2016 appears before Cognizant 2026, and TCS 2021 appears at the bottom).
@@ -389,16 +394,23 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
 ### Trap 19: Knockout VM Reverse-Chronological Self-Healing Reordering
 - **Phenomenon:** Candidates and operators expect all experience cards to render in reverse-chronological order (newest to oldest, current job on top) both in Section 3 and on the Section 4 review screen.
 - **Root Cause:** The underlying Knockout.js ViewModel binds to `parent.forms`, an observableArray initialized from the backend REST query order. When the view model reloads, it defaults to the backend order unless sorted programmatically.
-- **Remediation:** Inspect `parent.forms` in Knockout. Sort the observableArray using a strict reverse-chronological comparator (`currentJobFlag === 'Y'` first, followed by `startDate` descending `dateB.localeCompare(dateA)`), and invoke `parent._buildTiles()`. This instantly re-renders the DOM tiles on Section 3 in reverse-chronological order and carries directly forward into Section 4 Review!
+- **Remediation:** Delegate to `section_agents/scripts/s3_experience_ordering.py`: parse visible tile date text to a numeric key (`YYYY*100+MM`, `Present` = 99999999), sort the Knockout `parent.forms` observableArray numerically, rebuild tiles, then re-sort raw DOM nodes the same way and verify descending order (`order_verified`). NEVER `localeCompare` `MM/YYYY` strings — that was the month-vs-year ordering bug (Phase 2 fix).
 
 ### Trap 20: Section 2 Multi-Select Language Pills & Combobox Deselection Protocol
 - **Phenomenon:** In Section 2, the multi-select question for top 2 programming languages renders `.cx-multi-select-pill` tags. Clicking an already-selected option inside the dropdown does not always toggle it off, or clicking adjacent buttons can inadvertently clear unintended pills.
 - **Root Cause:** Oracle HCM renders selected items as distinct DOM tags `<li class="cx-multi-select-pill__value cx-multi-select-pill__value--<lookupCode>">` containing an isolated `<button class="cx-multi-select-pill__value-remove">`.
 - **Remediation:** To reliably deselect an option (e.g. `PL/SQL`), target its specific pill remove button `.cx-multi-select-pill__value--<lookupCode> button.cx-multi-select-pill__value-remove` directly. Then open the dropdown and click the intended replacement option (`Python (numpy/pandas/scikit-learn)`), verifying that exactly the target pills (`JAVA`, `Python`) remain mounted.
 
-### Trap 21: Autonomous Visual AI Multimodal Auditing Architecture
-- **Architecture:** The agent captures full-page high-resolution screenshots of each section (`section_1_perfect_audit.png`, `section_2_perfect_audit.png`, `section_3_perfect_audit.png`, `section_4_perfect_audit.png`) and sends them to Gemini 3.8 Flash Vision (`google-genai` SDK) with round-robin credentials rotation.
-- **Verification Standard:**
+### Trap 21: Section Verification Architecture (VisualAIAuditor path SUPERSEDED)
+
+> Historical note: this trap originally prescribed Gemini Vision arbitration of
+> screenshots. That path is archived (`scripts/legacy_company_apply/`). Live
+> verification is deterministic: per-section screenshots
+> (`ApplyOrchestrator._capture_section_shot`), structured DOM readback
+> (`VisualVerifierSubAgent`), and the pre-submit `ORDER_UNVERIFIED` gate.
+> Never reintroduce model arbitration as a gate.
+
+- **Verification Standard (illustrative values from one past session — always resolve from the live profile; defer when truth is absent):**
   1. **Section 1:** Confirms candidate contact details, City (`Bengaluru`), and active Preferred Location pill (`86856-Platina Block 3`).
   2. **Section 2:** Confirms all radio buttons and pills are selected (`At least 5 years of experience`, `Software Engineering`, `Advanced / Expert` AWS, `Java Backend`, `JAVA`, `Python`), with 0 red validation errors.
   3. **Section 3:** Confirms Education tile is present, all 9 Experience tiles are arranged in strict reverse-chronological order (Cognizant -> Infosys -> TCS -> CL Educate -> Navyug -> Adobe -> IBM -> IRCTC -> NEC), with complete authentic bullet points and 0 red errors.

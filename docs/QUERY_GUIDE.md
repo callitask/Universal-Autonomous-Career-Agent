@@ -13,7 +13,7 @@ The codebase incorporates a dependency-free, two-layer dynamic knowledge retriev
    - **Location**: `knowledge/graph/nodes.json`, `knowledge/graph/edges.json`, `knowledge/graph/graph_index.json`
    - **Purpose**: Provides structured entity and relationship traversal across systems, guardrails, files, functions, and IPC channels.
    - **Scoping**: Explicit `repo` (`Repo_A` or `Repo_B`), `tier` (`core_engine`, `company_site_apply`, `documentation`, `agent_rules`, `schema_exemplar`, etc.), and `workspace_id`.
-   - **Supported Relations**: `IMPLEMENTS`, `ENFORCES`, `READS`, `WRITES`, `CALLS`, `CONTAINS_CHUNK`, `DOCUMENTED_BY`.
+   - **Supported Relations**: `CALLS`, `DEFINES`, `CONTAINS_CHUNK`, `IMPORTS`, `IMPLEMENTS`, `ENFORCES`, `READS`, `WRITES` (verified from live `edges.json`; unlisted relations have zero edges).
 
 2. **Layer V (Local BM25-Lite Vector Index)**:
    - **Location**: `knowledge/vectors/chunks.json`, `knowledge/vectors/idf.json`, `knowledge/vectors/index_meta.json`
@@ -64,7 +64,7 @@ To rescan both repositories, re-chunk, re-compute BM25 IDF weights, and atomical
 ```powershell
 python scripts/build_knowledge_index.py --build
 ```
-Execution takes < 3.0 seconds across 280+ files and 900+ graph nodes.
+Execution takes < 3.0 seconds across 360+ files and 2,200+ graph nodes (verified 2026-10-13: 368 files, 2324 nodes, 4950 edges, 964 chunks).
 
 ---
 

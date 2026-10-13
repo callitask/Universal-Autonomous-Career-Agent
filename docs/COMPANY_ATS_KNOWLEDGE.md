@@ -165,12 +165,16 @@ function scanFormErrors() {
 When applying to any company website (CompanySiteApply scope — distinct from the `core/` portal tree at `profiles/<profile>/output/applications/<Company>_<Role>/`):
 1. **Directory Structure**:
    ```
-   profiles/{profile_name}/APPLIED ON COMPANY WEBSITE/{Company_Name}/{Job_Role_Name}/
-   ├── answers.json                           # Full machine-readable record of form answers
-   ├── {Candidate_Name}_Resume.pdf            # Exact tailored resume submitted
-   ├── cover_letter.md                        # Master Markdown source of cover letter
-   └── {Candidate_Name}_Cover_Letter.pdf      # Typeset PDF submitted to portal
+   profiles/{profile_name}/company_site_apply/
+   ├── Cover_Letter.html                  # Rendered letter (Subject: ... Requisition ID: <id>)
+   ├── Cover_Letter.txt                   # Plain-text companion; content-verified to name the requisition ID
+   └── {Candidate_Name}_Cover_Letter.pdf  # Typeset PDF submitted to portal
+   profiles/{profile_name}/output/
+   ├── jpmc_job_matches.json              # Ranked search/match report (never the repo root)
+   ├── processed_ledger.json              # Deduplication ledger (READY / SUBMITTED statuses)
+   └── screening_answers.json             # Persisted brain-resolved Q&A (in company_site_apply/)
    ```
+   Per-application records resolve under `APPLIED ON COMPANY WEBSITE/` (see `documents_subagent.py`).
 2. **Profile Template Standards**:
    - Master generic templates live at `profiles/default_user/cover_letter_template.md`.
    - Candidate-specific base cover letters live at `profiles/{profile_name}/cover_letter.md`.
@@ -202,8 +206,11 @@ Tailoring for enterprise roles is strictly governed by [`STRATEGIC_RESUME_TAILOR
 
 ## 8. Mandatory Section 1 Resume Upload & Page-by-Page Audit Protocol
 
+> [!WARNING]
+> **Illustrative values below are from one past session, NOT defaults.** Title, city, PIN, degree, major, country, tile counts, and city spellings must always resolve from the live candidate profile (`candidate_config.json` / `resume.md` / `work_experience`). When ground truth is absent, the agent **defers** (`ACTION_REQUIRED` for the operator) — it never fills the literals below. See `docs/SECTION_IPC_ARCHITECTURE.md` §9 (Zero-Hardcoding Invariants) and §12 (verification addendum).
+
 ### A. Non-Negotiable Flow Gate
-When applying on company ATS portals (such as Oracle Cloud HCM `CX_1001`), the agent must **never** assume pre-filled data or skip Section 1:
+When applying on company ATS portals (such as Oracle Cloud HCM `CX_1002`), the agent must **never** assume pre-filled data or skip Section 1:
 1. **Resume Upload First**: Immediately upload the tailored 2-page resume PDF on Section 1 (`input.apply-flow-profile-import-awli__file-upload`).
 2. **Await Parse Banner**: Wait for `.apply-flow-profile-import-awli__success-message:has-text("Profile successfully imported.")`.
 3. **Sequential Page Verification**:
@@ -211,7 +218,7 @@ When applying on company ATS portals (such as Oracle Cloud HCM `CX_1001`), the a
    - **Section 2 (Questions)**: Disqualification questions + multiselect comboboxes via synthetic mouse events.
    - **Section 3 (Timeline)**: Audit and heal all 10 tiles. Heal missing Degree (`Bachelor's Degree`, `July 2015`, `India`, `Computer Science & Engineering`). For all 9 experience tiles, ensure Country (`India`), City (`Bangalore`/`Noida`/`Delhi`), Non-Internal (`No`), and bulleted achievements (`• `).
    - **Section 4 (Review & Supporting Docs)**: Verify Resume and Cover Letter have green checkmarks (`REMOVE` button visible). Verify Demographics and E-Signature.
-4. **Mandatory Review Gate**: STOP on Section 4. Save `submission_review_page.png` and `answers.json`. Do NOT click `SUBMIT`.
+4. **Mandatory Review Gate**: STOP on Section 4. Capture per-section proofs (`{section}_audited_<ts>.png`, `section_proofs`); failing gates report `SECTION_BLOCKED`/`ORDER_UNVERIFIED`, never false READY. Do NOT click `SUBMIT`.
 
 ---
 

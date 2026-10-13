@@ -188,19 +188,19 @@
 
 2. **Shared-First Extension (2026-10-07):** New portals, companies, and control types must extend the shared libraries (`CompanySiteApply/utils/dom_helpers.py` selectors/guards, `core/utils/` sanitizers/statuses, `screening_heuristics` keys) — never fork per-company workarounds. A fix that helps one company must automatically help the next: put it in the helper, wire the callers, pin it with a test. Per-company files (`nails/`, scrapers) carry only selectors and truth-gating, never copied logic.
 
-2. **Container-Isolated Scrolling:** Never issue page-level scroll commands when a modal or chatbot drawer is active. Scroll exclusively within the identified dialog container (`.chatbot_MessageContainer` on Naukri; `.jobs-easy-apply-modal` on LinkedIn).
+3. **Container-Isolated Scrolling:** Never issue page-level scroll commands when a modal or chatbot drawer is active. Scroll exclusively within the identified dialog container (`.chatbot_MessageContainer` on Naukri; `.jobs-easy-apply-modal` on LinkedIn).
 
-3. **Contenteditable Typing Standard:** When populating `contenteditable="true"` containers (Naukri chatbot, LinkedIn ProseMirror), never use `.fill()`. Always:
+4. **Contenteditable Typing Standard:** When populating `contenteditable="true"` containers (Naukri chatbot, LinkedIn ProseMirror), never use `.fill()`. Always:
    - Focus the element via `.click(force=True)`
    - Select all (`Control+A` / `Meta+A`)
    - Clear (`Backspace`)
    - Emit text via `page.keyboard.type(str(answer), delay=30)` or `page.keyboard.insert_text()`
 
-4. **Network Navigation Safety:** Never use `wait_until="networkidle"` for Naukri pages due to persistent telemetry WebSockets. Always use `wait_until="domcontentloaded"` paired with explicit selector polling.
+5. **Network Navigation Safety:** Never use `wait_until="networkidle"` for Naukri pages due to persistent telemetry WebSockets. Always use `wait_until="domcontentloaded"` paired with explicit selector polling.
 
-5. **No Dangling Blank Tabs:** Scripts must never navigate to `about:blank` as a final state and terminate. The browser session must remain active, focused on the relevant application page.
+6. **No Dangling Blank Tabs:** Scripts must never navigate to `about:blank` as a final state and terminate. The browser session must remain active, focused on the relevant application page.
 
-6. **Expanded UI Control Detection & Greedy Selector Prohibition:**
+7. **Expanded UI Control Detection & Greedy Selector Prohibition:**
    `detect_ui_control()` must recognize:
    - File uploaders (`input[type='file']`)
    - Date inputs (`input[type='date']`, `input.datePicker`)
@@ -211,35 +211,35 @@
    - Contenteditable text areas
    Never use greedy `div[class*='chip']` without filtering — it matches Naukri's `.chipMsg` branding logo. Strictly ignore `.chipMsg` to prevent false radio detection.
 
-7. **Single-Quote Safety in Selectors:** When injecting dynamic text into Playwright `:has-text()` selectors, always escape single quotes:
+8. **Single-Quote Safety in Selectors:** When injecting dynamic text into Playwright `:has-text()` selectors, always escape single quotes:
    ```python
    safe_opt = matched_option.replace("'", "\\'")
    f"div.radioItem:has-text('{safe_opt}')"
    ```
 
-8. **Browser Tab Hygiene & Non-Hijacking Execution:**
+9. **Browser Tab Hygiene & Non-Hijacking Execution:**
    `cleanup_browser_tabs(context, tracked_pages, active_page)` must track only Playwright pages created by discovery workers, and never blindly loop through `context.pages` closing user browsing tabs.
 
-9. **Lazy-Loaded Container Viewport Mounting Standard:**
+10. **Lazy-Loaded Container Viewport Mounting Standard:**
    Naukri profile sections (`#lazyEmployment`, `#lazyKeySkills`, `#lazyEducation`) defer child DOM card rendering until scrolled into the viewport. Any scraping or inspection script must execute `window.scrollTo(0, 1200)` and wait for DOM hydration before querying child cards, or the page will report 0 cards.
 
-10. **Strict Drawer Scoping for Chatbot Submit Actions:**
+11. **Strict Drawer Scoping for Chatbot Submit Actions:**
     The submit element inside the Naukri chatbot drawer is a `<div>` (`<div class="sendMsg" tabindex="0">Save</div>` inside `.sendMsgbtn_container .send`), NOT a `<button>`. Using broad `button:has-text('Save')` without drawer scoping causes accidental clicks on the background job bookmark button. Submit queries must target `.sendMsgbtn_container .send:not(.disabled) .sendMsg` strictly scoped inside `get_drawer()`.
 
-11. **Radio & Checkbox Target Standard:**
+12. **Radio & Checkbox Target Standard:**
     Single-select and multi-select choices in the Naukri chatbot drawer are structured with `.ssrc__radio-btn-container` and `.ssrc__checkbox-btn-container`. Direct clicks must target `label.ssrc__label` associated with `input.ssrc__radio` or `input.ssrc__checkbox` to reliably activate React state and enable the `.send` button container.
 
-12. **Invariant DOM vs. Dynamic Runtime Separation Standard:**
+13. **Invariant DOM vs. Dynamic Runtime Separation Standard:**
     All portal interactions and scrapers must strictly decouple invariant UI structure (HTML tags, CSS classes, container hierarchies, and data attributes like `data-job-id`) from runtime candidate/job data (designation strings, company names, experience years, CTC values). Scripts must never hardcode assumptions based on specific job listings.
 
-13. **Empirical Profile Edit Form Target Standard:**
+14. **Empirical Profile Edit Form Target Standard:**
     When automating profile modifications on `https://www.naukri.com/mnjuser/profile`, scripts must target empirical form components:
     - Resume Headline: `.resumeHeadline span.edit.icon` -> `textarea#resumeHeadlineTxt` (250 char limit) -> cancel `a.cancel-btn` / save `button.btn-dark-ot`.
     - Key Skills: `.keySkills span.edit.icon` -> `.suggester-input input` -> chip `.chip` -> save `button.btn-dark-ot`.
     - Employment: `#lazyEmployment .emp-list` with `span.edit` -> `form#employmentForm` -> `textarea#jobDescription` -> cancel `form#employmentForm a.cancel-btn` -> save `button#submitEmployment`.
     Never target un-scoped generic `.edit` icons across the page.
 
-14. **Strategic Resume Tailoring Governance Standard:**
+15. **Strategic Resume Tailoring Governance Standard:**
     All resume generation across direct company portals and job engines must strictly adhere to [`docs/STRATEGIC_RESUME_TAILORING.md`](./STRATEGIC_RESUME_TAILORING.md):
     - **Strategy Over Blind Keyword Stuffing**: Never blindly copy-paste text or buzzwords from the JD. Analyze the role archetype and align authentic candidate evidence.
     - **Dual-Identity Principle**: Maintain the unified balance between Senior Architectural Leadership (quantifiable interview metrics, team management, IT governance, credential IDs) and Modern Hands-On AI Velocity (GitHub Copilot, prompt engineering, unit test synthesis).
@@ -247,16 +247,17 @@
     - **Strict 2-Page Budget**: Must compile to exactly 2 pages on A4 format with zero page spillover.
     - **Single-Line Contact Header**: Candidate contact info (Phone, Email, Location, LinkedIn) MUST be rendered on **one single line** directly below the candidate's name (`**Phone:** +91-... | **Email:** ... | **Location:** ... | **LinkedIn:** ...`). Style with `white-space: nowrap;` and `8.0pt` to conserve vertical space and prevent multi-line header clutter.
 
-15. **Mandatory Section 1 Resume Upload & Page-by-Page Audit Hard Gate on Company ATS:**
-    When applying on enterprise ATS portals (Oracle Cloud HCM `CX_1001`, Workday, Greenhouse):
+16. **Mandatory Section 1 Resume Upload & Page-by-Page Audit Hard Gate on Company ATS:**
+    > All parenthetical values below are illustrative from one past session, NOT defaults. Resolve every field from the live profile; defer (`ACTION_REQUIRED`) when truth is absent.
+    When applying on enterprise ATS portals (Oracle Cloud HCM `CX_1002`, Workday, Greenhouse):
     - **Upload Tailored Resume First**: Never advance past Section 1 without uploading the tailored resume PDF to `input.apply-flow-profile-import-awli__file-upload`.
     - **Wait for Auto-Parse**: Must wait for `.apply-flow-profile-import-awli__success-message:has-text("Profile successfully imported.")` before inspecting or editing form fields.
     - **Sequential Healing Across Sections**:
-      - **Section 1**: Audit Personal Details (Title: "Mr.", Name, Phone, Address, Official City: "Bengaluru, Karnataka", PIN: "560100", LinkedIn).
-      - **Section 2**: Answer disqualification questions; handle multiselect comboboxes via synthetic mouse events (`mousedown`, `mouseup`, `click`).
-      - **Section 3**: Inspect all 10 tiles. Heal missing Degree ("Fields to fix: 1" -> "Bachelor's Degree", "July 2015", "India", "Computer Science & Engineering"). For all 9 verified career roles, ensure Country ("India"), City ("Bangalore"/"Noida"/"Delhi"), Non-Internal ("No"), and bulleted achievements (`• `).
+      - **Section 1**: Audit Personal Details (Title, Name, Phone, Address, City, PIN, LinkedIn) from profile truth.
+      - **Section 2**: Answer disqualification questions; handle multiselect comboboxes via synthetic mouse events (`mousedown`, `mouseup`, `click`). Failing sections retry 3x then halt as `SECTION_BLOCKED` — never advance past unverified required fields.
+      - **Section 3**: Inspect all tiles (count from `len(work_experience)`). Heal missing degree/major/country from profile truth with bullet-formatted achievements. Verify newest-first order at runtime (`order_verified`); re-sort on the review screen pre-submit.
       - **Section 4**: Verify supporting documents (Resume and Cover Letter both show green checkmarks and "REMOVE" buttons; click "Use" if pending). Verify Demographics and E-Signature.
-    - **Mandatory Submission Gate**: Always HALT on Section 4 before the `SUBMIT` button. Capture `submission_review_page.png` and save `answers.json`. Never click `SUBMIT` without human principal architect review.
+    - **Mandatory Submission Gate**: Always HALT on Section 4 before the `SUBMIT` button. Capture per-section proofs (`{section}_audited_<ts>.png`, `section_proofs`) — a failing gate reports `SECTION_BLOCKED`/`ORDER_UNVERIFIED`, never false READY. Never click `SUBMIT` without human principal architect review.
 
 ---
 
@@ -620,6 +621,7 @@ F:\JOB AI AGENT\
 │   ├── 04_job_discovery.py            # Batched job scraper + orchestrator
 │   ├── 05_apply_jobs.py               # Application engine + chatbot solver
 │   ├── generate_factual_tailored.py   # Resume tailoring + PDF generation
+│   ├── generate_professional_cover_letter.py # Cover letter PDF + Job-ID verification
 │   ├── continuous_career_agent.py     # Daemon 1: Discovery & application runner
 │   ├── ipc_watcher.py                 # Daemon 2: Asynchronous IPC signal relay
 │   ├── ipc_auto_resolver.py           # Standalone IPC auto-resolver utility
@@ -636,13 +638,21 @@ F:\JOB AI AGENT\
 │
 ├── CompanySiteApply/                  # On-demand direct company ATS application engine
 │   ├── cli.py                         # Interactive CLI runner for direct ATS applications
+│   ├── ai_brain_resolver.py           # Screening-question brain (IPC answer bridge)
+│   ├── cognitive_job_matcher.py       # Profile-grounded job scoring + country gate
+│   ├── apply_orchestrator.py          # Section dispatch with hard gates + per-section proofs
+│   ├── autonomous_job_agent.py        # 6-stage lifecycle controller
 │   ├── ats_arm.py                     # ATS orchestrator arm
 │   ├── ats_detector.py                # Portal platform detection engine
+│   ├── section_agents/                # Coordinators + discrete scripts/ + sub_agents/
+│   ├── ipc/                           # Section IPC bus (ipc_manager.py)
+│   ├── tests/                         # Regression suite (122 tests)
+│   ├── anatomy/                       # Portal anatomy models
 │   ├── fingers/                       # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
-│   ├── nails/                         # Company-specific ATS customizations (JPMC, Bristlecone)
+│   ├── nails/                         # Company-specific ATS customizations (nails/oracle: JPMC, Bristlecone)
 │   ├── CompanyScraper/                # Direct company career site scrapers
 │   ├── parser_doctor/                 # ATS resume parsing healing and review verification
-│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver (no hardcoded profiles)
+│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver, experience_matcher
 │
 ├── scripts/                           # Operational and maintenance utilities
 │   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles

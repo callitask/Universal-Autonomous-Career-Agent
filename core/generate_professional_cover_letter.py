@@ -101,7 +101,7 @@ COVER_LETTER_HTML_TEMPLATE = """<!DOCTYPE html>
 <body>
 
 <div class="header-name">{candidate_name}</div>
-<div class="contact-line">{location} &bull; {phone} &bull; {email} &bull; {linkedin}</div>
+<div class="contact-line">{contact_html}</div>
 <div class="divider"></div>
 
 <div class="date-line">{date_str}</div>
@@ -137,6 +137,60 @@ COVER_LETTER_HTML_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
+def build_contact_parts(*parts: str) -> list:
+    """Known contact parts only — empty/blank entries are dropped."""
+    return [str(p).strip() for p in parts if str(p or "").strip()]
+
+
+def clean_empty_job_id_refs(text: str) -> str:
+    """Strip empty requisition-ID parentheticals left by blank job_id.
+
+    Incident 2026-10-12 shipped "Re: Application for X (Job ID: )".
+    """
+    return (
+        text.replace(" (Requisition ID: )", "")
+        .replace("(Requisition ID: )", "")
+        .replace(" (Job ID: )", "")
+        .replace("(Job ID: )", "")
+    )
+
+
+def verify_cover_letter_job_id(target_dir_or_txt: str, job_id: str) -> bool:
+    """Confirm the rendered Cover_Letter.txt beside a PDF names the job_id.
+
+    Returns False when the companion txt is absent or the ID is missing —
+    callers must treat that letter as content-stale and regenerate.
+    """
+    if not job_id:
+        return False
+    try:
+        p = Path(str(target_dir_or_txt))
+        txt = p if p.is_file() else p / "Cover_Letter.txt"
+        if not txt.exists():
+            return False
+        return str(job_id) in txt.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def verify_cover_letter_job_title(target_dir_or_txt: str, job_title: str) -> bool:
+    """Confirm the rendered Cover_Letter.txt names the requisition title.
+
+    Incident 210788242: the letter carried the right ID but a wrong title
+    ("Work Summary") captured from a bare h1. Title mismatches regenerate.
+    """
+    if not job_title:
+        return False
+    try:
+        p = Path(str(target_dir_or_txt))
+        txt = p if p.is_file() else p / "Cover_Letter.txt"
+        if not txt.exists():
+            return False
+        return job_title.strip().lower() in txt.read_text(encoding="utf-8").lower()
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
 def generate_cover_letter_pdf(
     target_dir: str,
     candidate_name: str,
@@ -165,8 +219,19 @@ def generate_cover_letter_pdf(
         pdf_filename = f"{clean_name}_Cover_Letter.pdf"
 
     bullets_html = "\n  ".join([f"<li><strong>{b['title']}:</strong> {b['body']}</li>" for b in bullets])
-    
-    html_content = (COVER_LETTER_HTML_TEMPLATE
+
+    # Contact line from known parts only — never invent a location.
+    contact_parts = build_contact_parts(location, phone, email, linkedin)
+    contact_html = " &bull; ".join(contact_parts)
+    contact_txt = " | ".join(contact_parts)
+
+    if not job_id:
+        # Loud signal — a requisition-tailored letter without its requisition
+        # ID is mistailored (incident 2026-10-12: "(Job ID: )" shipped).
+        print("[CoverLetterGenerator] WARNING: empty job_id — reference lines will omit the ID.", flush=True)
+
+    html_content = clean_empty_job_id_refs(
+        COVER_LETTER_HTML_TEMPLATE
         .replace("{candidate_name}", candidate_name)
         .replace("{location}", location)
         .replace("{phone}", phone)
@@ -181,6 +246,7 @@ def generate_cover_letter_pdf(
         .replace("{opening_p}", opening_p)
         .replace("{transition_p}", transition_p)
         .replace("{bullets_html}", bullets_html)
+        .replace("{contact_html}", contact_html)
         .replace("{synthesis_p}", synthesis_p)
         .replace("{closing_p}", closing_p)
     )
@@ -191,8 +257,13 @@ def generate_cover_letter_pdf(
         return re.sub(r'<[^>]+>', '', text)
 
     bullets_txt = "\n".join([f"• {b['title']}: {b['body']}" for b in bullets])
-    txt_content = f"""{candidate_name}
-{location} | {phone} | {email} | {linkedin}
+    ref_line = (
+        f"Re: Application for {job_title} (Job ID: {job_id})"
+        if job_id
+        else f"Re: Application for {job_title}"
+    )
+    txt_content = clean_empty_job_id_refs(f"""{candidate_name}
+{contact_txt}
 ================================================================================
 
 {date_str}
@@ -201,7 +272,7 @@ def generate_cover_letter_pdf(
 {organization}
 {org_location}
 
-Re: Application for {job_title} (Job ID: {job_id})
+{ref_line}
 
 Dear Hiring Team,
 
@@ -217,7 +288,7 @@ Dear Hiring Team,
 
 Sincerely,
 {candidate_name}
-"""
+""")
     (target_path / "Cover_Letter.txt").write_text(txt_content, encoding="utf-8")
     
     pdf_out = target_path / pdf_filename
@@ -253,7 +324,7 @@ def generate_tailored_cover_letter(
     from datetime import date
     cand = candidate_data.get("candidate", candidate_data)
     name = str(cand.get("full_name") or "Candidate Name").strip()
-    loc = str(cand.get("city_state_country") or cand.get("location") or "India").strip()
+    loc = str(cand.get("city_state_country") or cand.get("location") or "").strip()
     phone = str(cand.get("phone") or cand.get("mobile_number") or "").strip()
     email = str(cand.get("email") or "").strip()
     linkedin = str(cand.get("linkedin_profile_url") or cand.get("linkedin") or "").replace("https://www.", "").replace("https://", "")

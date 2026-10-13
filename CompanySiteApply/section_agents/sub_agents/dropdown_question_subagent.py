@@ -10,6 +10,14 @@
 # Rationale: Guarantees 100% resolution for all non-pill dropdown questionnaire inputs with zero hardcoding.
 # Preventative Notes: Never hardcode programming languages or skills; dynamically match candidate profile.
 # ==============================================================================
+# [ENTRY #002]
+# Term: [PHASE4_DROPDOWN_QUESTIONS_IPC_DELEGATION]
+# Timestamp: 2026-10-12 21:38:00 +05:30
+# Issue / Context: Section 2 Dropdown questions needed IPCManager serialization for auditability.
+# Changes Made: Delegated heal() to s2_dropdown_questions.heal_dropdown_questions().
+# Rationale: Enables subagent independence and IPC integration.
+# Preventative Notes: Never bypass IPC serialization for active questions.
+# ==============================================================================
 
 import re
 import time
@@ -48,27 +56,56 @@ class DropdownQuestionSubAgent(BaseSectionAgent):
             unanswered = page.evaluate('''() => {
                 const rows = Array.from(document.querySelectorAll('.input-row, .app-form-item, .apply-flow-question-block, [class*="question-block"]'));
                 const missing = [];
+                const seenRow = new Set();
+                const rowLabel = r => {
+                    const label = r.querySelector('legend, label, .cx-form-label, p, h3, h4')?.innerText.trim() || "";
+                    return label;
+                };
                 for (const r of rows) {
                     if (r.offsetWidth === 0 && r.offsetHeight === 0) continue;
                     // Has combobox or dropdown
                     const cb = r.querySelector('input[role="combobox"], [class*="multi-select"], button.icon-dropdown-arrow, select');
                     if (!cb) continue;
-                    
+                    seenRow.add(r);
+
                     // Does it already have pills or input value?
                     const pills = r.querySelectorAll('.cx-multi-select-pill__value-text, .cx-multi-select-pill');
                     const hasPills = pills.length > 0;
                     const valInput = r.querySelector('input[role="combobox"], select');
                     const hasVal = valInput && valInput.value && valInput.value.trim().length > 0;
-                    
-                    // Check if required or has red error
-                    const label = r.querySelector('legend, label, .cx-form-label, p, h3, h4')?.innerText.trim() || "";
-                    const isRequired = label.includes('*') || r.className.includes('required');
+
+                    // Check if required: Oracle renders the red asterisk as an
+                    // EMPTY span (no literal '*' in text) + required label
+                    // class + aria-required on the input (incident 210788242).
+                    const label = rowLabel(r);
+                    const hasStar = r.querySelector('.input-row__label--required-star, .input-row__label--required, .text-color-red') !== null;
+                    const isAriaReq = r.querySelector('[aria-required="true"]') !== null;
+                    const isRequired = label.includes('*') || r.className.includes('required') || hasStar || isAriaReq;
                     const hasError = r.querySelector('.cx-message--error, .error, .alert-danger, [class*="error"], [aria-invalid="true"]') !== null;
-                    
+
                     if ((isRequired || hasError) && !hasPills && !hasVal) {
                         missing.push(label);
                     }
                 }
+                // Orphan sweep (incident 210788242): required comboboxes living
+                // outside the standard row containers (late-revealed rows).
+                const orphans = Array.from(document.querySelectorAll('input[role="combobox"], select')).filter(el => {
+                    if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
+                    const scope = el.closest('.input-row, .app-form-item, .apply-flow-question-block, [class*="question-block"], fieldset');
+                    if (scope && seenRow.has(scope)) return false;
+                    const holder = scope || el.parentElement;
+                    if (!holder) return false;
+                    const pills = holder.querySelectorAll('.cx-multi-select-pill__value-text, .cx-multi-select-pill');
+                    if (pills.length > 0) return false;
+                    if ((el.value || '').trim().length > 0) return false;
+                    const text = (holder.innerText || '');
+                    return text.includes('*') || /required/i.test(text);
+                });
+                orphans.forEach(el => {
+                    const holder = el.closest('.input-row, .app-form-item, .apply-flow-question-block, [class*="question-block"], fieldset') || el.parentElement;
+                    const label = holder ? (holder.querySelector('legend, label, .cx-form-label, p, h3, h4')?.innerText.trim() || holder.innerText.split('\\n')[0].trim()) : 'Unlabeled required combobox';
+                    missing.push(label || 'Unlabeled required combobox');
+                });
                 return missing;
             }''')
 
@@ -89,108 +126,15 @@ class DropdownQuestionSubAgent(BaseSectionAgent):
 
     def heal(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            from CompanySiteApply.ai_brain_resolver import AIBrainResolver
-            brain = AIBrainResolver.get_instance(candidate_data)
-
-            questions = page.locator(".input-row, .app-form-item, .apply-flow-question-block, [class*='question-block']").all()
-            healed_count = 0
-
-            for q in questions:
-                if not q.is_visible():
-                    continue
-
-                # Must have dropdown / combobox
-                toggle = q.locator("button.icon-dropdown-arrow, button[id*='toggle-button']").first
-                if toggle.count() == 0:
-                    continue
-
-                label_el = q.locator("legend, label, .cx-form-label, p, h3, h4").first
-                q_text = label_el.inner_text().strip() if label_el.count() > 0 else q.inner_text().strip()
-
-                # Determine required count (e.g. 'choose two' -> 2, 'choose three' -> 3, default 1)
-                req_count = 1
-                match_count = re.search(r'choose\s+(\w+)', q_text, re.IGNORECASE)
-                if match_count:
-                    word = match_count.group(1).lower()
-                    word_map = {"one": 1, "two": 2, "three": 3, "four": 4, "2": 2, "3": 3}
-                    req_count = word_map.get(word, 2)
-
-                # Check existing pills: if bad negative pill exists (e.g. 'not require') for a technical developer, remove it
-                is_tech = brain.knowledge_index.get("is_tech_candidate", True)
-                bad_pill_removed = False
-                if is_tech:
-                    bad_pill_removed = page.evaluate('''(el) => {
-                        const pills = Array.from(el.querySelectorAll('.cx-multi-select-pill, .cx-multi-select-pill__value-text'));
-                        let removed = false;
-                        for (const p of pills) {
-                            const txt = p.innerText.toLowerCase();
-                            if (txt.includes('not require') || txt.includes('not hands-on')) {
-                                const btn = p.querySelector('button, [aria-label*="Remove"]') || p.parentElement.querySelector('button, [aria-label*="Remove"]');
-                                if (btn) { btn.click(); removed = true; }
-                            }
-                        }
-                        return removed;
-                    }''', q.element_handle())
-                    if bad_pill_removed:
-                        time.sleep(0.5)
-
-                # Check if already answered with valid pills
-                pills_count = q.locator(".cx-multi-select-pill__value-text, .cx-multi-select-pill").count()
-                if pills_count >= req_count and not bad_pill_removed:
-                    continue
-
-                # Open the dropdown
-                toggle.click()
-                time.sleep(0.8)
-
-                # Fetch all available items
-                available_options = page.evaluate('''() => {
-                    const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-                    const items = Array.from(document.querySelectorAll('.cx-multi-select__list-item, [role="option"], li[role="option"]')).filter(isVis);
-                    return items.map(i => i.innerText.trim()).filter(Boolean);
-                }''')
-
-                # AI Brain resolves exact high-quality choices
-                resolution = brain.resolve_question(
-                    question_text=q_text,
-                    control_type="DROPDOWN_MULTI",
-                    options=available_options,
-                    req_count=req_count
-                )
-                target_choices = resolution.get("answer") or []
-                if isinstance(target_choices, str):
-                    target_choices = [c.strip() for c in target_choices.split(",") if c.strip()]
-
-                logger.info(f"[DropdownQuestionSubAgent] Brain resolved {q_text[:40]} -> {target_choices}")
-
-                # Select resolved options via DOM
-                select_res = page.evaluate('''(targets) => {
-                    const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-                    const items = Array.from(document.querySelectorAll('.cx-multi-select__list-item, [role="option"], li[role="option"]')).filter(isVis);
-                    const clicked = [];
-                    for (const target of targets) {
-                        const targetLower = target.trim().toLowerCase();
-                        const item = items.find(i => {
-                            const t = i.innerText.trim().toLowerCase();
-                            return t === targetLower || (targetLower.length > 2 && t.includes(targetLower)) || (t.length > 2 && targetLower.includes(t));
-                        });
-                        if (item && !clicked.includes(item.innerText.trim())) {
-                            item.click();
-                            clicked.push(item.innerText.trim());
-                        }
-                    }
-                    return { clicked };
-                }''', target_choices)
-
-                logger.info(f"[DropdownQuestionSubAgent] Clicks applied: {select_res}")
-                healed_count += 1
-                time.sleep(1.0)
-
+            from CompanySiteApply.section_agents.scripts.s2_dropdown_questions import heal_dropdown_questions
+            from CompanySiteApply.ipc.ipc_manager import get_effective_session_id
+            _sess = get_effective_session_id(candidate_data, None) or None
+            res = heal_dropdown_questions(page, candidate_data, session_id=_sess)
             verified = self.verify(page, candidate_data)
             return {
                 "success": verified,
                 "subagent": self.section_name,
-                "healed_count": healed_count,
+                "healed_count": res.get("healed_count", 0),
                 "verified": verified
             }
         except Exception as e:

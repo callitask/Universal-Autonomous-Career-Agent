@@ -22,14 +22,14 @@ Before executing ANY action, running ANY command, or touching ANY file:
 
 **0c. Read Core Operating Rules:**
 `F:\JOB AI AGENT\.agents\rules\`
-  ├── 00_user_cognitive_os.md              → Axioms 1-8 (empirical, zero-PII, dual-tier memory)
+  ├── 00_user_cognitive_os.md              → Axioms 1-5 (empirical, zero-PII, dual-tier memory)
   ├── 01_sophron_session_init.md           → Sophron sync & session handover
   ├── 02_career_agent_operational_rules.md → Rules 1-8: boundaries, starvation, purity, push-start
   └── 03_career_agent_session_profile_init.md → Profile init & talent architect protocol
 
 **0d. Read Architecture & Platform Documents:**
 `F:\JOB AI AGENT\docs\`
-  ├── WORKSPACE_RULES.md          → Directives 1-9, Guardrails P1, C1-C34, H1-H6, D1-D3
+  ├── WORKSPACE_RULES.md          → Directives 1-10, Guardrails P1, C1-C37, H1-H6, D1-D3
   ├── ARCHITECTURE_REFERENCE.md   → Dual-brain anatomy, IPC contracts, data schemas
   ├── PLATFORM_KNOWLEDGE.md       → Naukri/LinkedIn DOM patterns, SEO slugs, zero-comma rules
   └── GEMINI_WEB_AI_PROMPTS.md    → Prompt guidelines and evaluation rubrics

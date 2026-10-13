@@ -843,7 +843,7 @@ class OracleCloudFinger(BaseATSFinger):
                     clean_desc = re.sub(r'[â€¢•\r]', '', v.get("description", ""))
                     bullets = [b.strip() for b in clean_desc.split('\n') if b.strip()]
                 city = v.get("city") or cand.get("city") or ""
-                country = v.get("country") or cand.get("country") or "India"
+                country = v.get("country") or cand.get("country") or ""
                 experiences.append({
                     "employer": comp,
                     "title": v.get("designation", ""),
@@ -874,7 +874,7 @@ class OracleCloudFinger(BaseATSFinger):
                             bullets = [re.sub(r'^[•\-\*]\s*', '', b.strip()) for b in body.strip().split('\n') if b.strip()]
                             loc = meta.split('|')[0].strip() if '|' in meta else meta
                             city = loc.split(',')[0].strip()
-                            country = loc.split(',')[1].strip() if ',' in loc else 'India'
+                            country = loc.split(',')[1].strip() if ',' in loc else ''
                             experiences.append({
                                 "employer": company.strip(),
                                 "title": title.strip(),
@@ -897,7 +897,7 @@ class OracleCloudFinger(BaseATSFinger):
                 clean_desc = re.sub(r'[â€¢•\r]', '', desc)
                 bullets = [b.strip() for b in clean_desc.split('\n') if b.strip()]
                 city = v.get("city") or v.get("location") or cand.get("city") or ""
-                country = v.get("country") or cand.get("country") or "India"
+                country = v.get("country") or cand.get("country") or ""
                 experiences.append({
                     "employer": comp,
                     "title": v.get("designation", ""),
@@ -984,7 +984,7 @@ class OracleCloudFinger(BaseATSFinger):
         """
         target_school = str(edu_data.get("institution") or edu_data.get("school") or "").strip()
         target_degree = str(edu_data.get("degree") or "").strip()
-        target_country = str(edu_data.get("country") or "India").strip()
+        target_country = str(edu_data.get("country") or "").strip()
         target_major = str(edu_data.get("major") or edu_data.get("field_of_study") or "").strip()
         target_month = str(edu_data.get("end_month") or edu_data.get("graduated_month") or "").strip()
         target_year = str(edu_data.get("end_year") or edu_data.get("graduated_year") or "").strip()
@@ -1096,7 +1096,7 @@ class OracleCloudFinger(BaseATSFinger):
         - Formats Achievements into clean bullet points
         - Clicks SAVE
         """
-        target_country = str(exp_data.get("country") or "India").strip()
+        target_country = str(exp_data.get("country") or "").strip()
         target_city = exp_data.get("city") or exp_data.get("location") or ""
         bullets = exp_data.get("bullets") or exp_data.get("responsibilities") or exp_data.get("description") or []
 

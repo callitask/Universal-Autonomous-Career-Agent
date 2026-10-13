@@ -74,7 +74,7 @@ class AutonomousJobAgent:
             cand = self.candidate_data.get("candidate", self.candidate_data)
             self.profile_slug = cand.get("full_name", "candidate").lower().replace(" ", "_")
         else:
-            profile = profile_name or os.environ.get("CANDIDATE_PROFILE", "udaysagar_kandpal")
+            profile = profile_name or os.environ.get("CANDIDATE_PROFILE", "default_user")
             cfg_path = REPO_ROOT / "profiles" / profile / "candidate_config.json"
             if not cfg_path.exists():
                 cfg_path = REPO_ROOT / "profiles" / "default_user" / "candidate_config.json"
@@ -137,7 +137,9 @@ class AutonomousJobAgent:
         # Dynamic search location resolution
         active_loc = location
         if not active_loc:
-            if self.matcher.locations:
+            if getattr(self.matcher, "allowed_countries", None):
+                active_loc = self.matcher.allowed_countries[0]
+            elif self.matcher.locations:
                 active_loc = self.matcher.locations[0]
             else:
                 active_loc = ""
@@ -228,7 +230,7 @@ class AutonomousJobAgent:
         """
         job_id = target_job.get("job_id", "")
         job_title = target_job.get("title", "")
-        company = target_job.get("details", {}).get("company", "JPMorgan Chase & Co.")
+        company = target_job.get("details", {}).get("company", "")
         logger.info(f"[AutonomousJobAgent] === STAGE 4: Tailoring Documents for Role: {job_title} (ID: {job_id}) ===")
 
         # Resolve target document directory
@@ -242,12 +244,17 @@ class AutonomousJobAgent:
             "job_title": job_title,
             "company": company,
             "organization": company,
-            "location": target_job.get("location", "Bengaluru, India"),
+            "location": target_job.get("location", ""),
             "full_text": target_job.get("details", {}).get("full_text", "")
         }
 
         try:
-            pdf_path = generate_tailored_cover_letter(self.candidate_data, jd_data, str(target_dir))
+            from CompanySiteApply.utils.sync_bridge import call_sync_offloaded
+
+            def _generate() -> str:
+                return generate_tailored_cover_letter(self.candidate_data, jd_data, str(target_dir))
+
+            pdf_path = call_sync_offloaded(_generate)
             logger.info(f"[Stage 4] Freshly tailored cover letter generated at: {pdf_path}")
             return {
                 "success": True,
@@ -277,17 +284,30 @@ class AutonomousJobAgent:
         """
         job_id = target_job.get("job_id", "")
         site_code = "CX_1002"
-        apply_url = f"https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/{site_code}/job/{job_id}/apply"
+        job_url = f"https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/{site_code}/job/{job_id}"
         logger.info(f"[AutonomousJobAgent] === STAGE 5: Navigating & Dispatching Section Mini-Agents ===")
-        logger.info(f"[Stage 5] Target Application URL: {apply_url}")
+        logger.info(f"[Stage 5] Target Job URL: {job_url}")
 
-        if "/apply" not in page.url or job_id not in page.url:
-            await page.goto(apply_url, wait_until="domcontentloaded")
+        # Enter via the job page + APPLY NOW (bare .../apply deep links 404
+        # on Oracle CX without session form tokens).
+        if job_id not in page.url:
+            await page.goto(job_url, wait_until="domcontentloaded")
             await page.wait_for_timeout(4000)
+            try:
+                apply_btn = page.locator("button.apply-now-button:visible, button:has-text('APPLY NOW'):visible").first
+                if await apply_btn.count() > 0:
+                    await apply_btn.click()
+                    await page.wait_for_timeout(3000)
+            except Exception as nav_err:
+                logger.warning(f"[Stage 5] APPLY NOW click note: {nav_err}")
 
-        # Execute ApplyOrchestrator across Sections 1 -> 2 -> 3 -> 4
+        # Execute ApplyOrchestrator across Sections 1 -> 2 -> 3 -> 4.
+        # Orchestrator is sync Playwright: bridge offloads inside a loop.
         screenshot_path = screenshot_dir or (REPO_ROOT / "artifacts")
-        app_result = self.orchestrator.run(self.candidate_data, screenshot_dir=screenshot_path)
+        from CompanySiteApply.utils.sync_bridge import call_sync_offloaded
+        app_result = call_sync_offloaded(
+            self.orchestrator.run, self.candidate_data, screenshot_dir=screenshot_path
+        )
         logger.info(f"[Stage 5] ApplyOrchestrator Execution Status: {app_result.get('status')}")
         return app_result
 
@@ -324,7 +344,7 @@ class AutonomousJobAgent:
         self._record_in_ledger(
             job_id=job_id,
             title=title,
-            company=target_job.get("details", {}).get("company", "JPMorgan Chase & Co."),
+            company=target_job.get("details", {}).get("company", ""),
             score=target_job.get("score", 0),
             status="READY_FOR_HUMAN_SUBMISSION",
             proof_image=str(proof_file)

@@ -9,6 +9,14 @@
 # Rationale: Guarantees zero hardcoded domain strings and eliminates interference with dropdown selectors.
 # Preventative Notes: Never hardcode years of experience, skill names, or proficiency levels.
 # ==============================================================================
+# [ENTRY #002]
+# Term: [PHASE4_COMPETENCY_QUESTIONS_IPC_DELEGATION]
+# Timestamp: 2026-10-12 21:35:00 +05:30
+# Issue / Context: Section 2 Competency questions needed IPCManager serialization for auditability.
+# Changes Made: Delegated heal() to s2_competency_questions.heal_competency_questions().
+# Rationale: Enables subagent independence and IPC integration.
+# Preventative Notes: Never bypass IPC serialization for active questions.
+# ==============================================================================
 
 import re
 import time
@@ -61,9 +69,39 @@ class TechnicalCompetencySubAgent(BaseSectionAgent):
                 return missing;
             }''')
 
+            # Truth verification on answered rows (incident 210788242: a wrong
+            # pick is not an empty pick — emptiness-only audits pass it).
+            mismatched = []
+            try:
+                from CompanySiteApply.section_agents.scripts.s2_competency_questions import (
+                    scan_competency_rows,
+                )
+                from CompanySiteApply.ai_brain_resolver import AIBrainResolver
+                _rows = scan_competency_rows(page) or []
+                if _rows:
+                    _brain = AIBrainResolver.get_instance(candidate_data)
+                    for _r in _rows:
+                        _cur = (_r.get("current_value") or "").strip()
+                        if not _cur:
+                            continue
+                        _res = _brain.resolve_question(
+                            question_text=_r.get("question_text", ""),
+                            control_type="RADIO_PILL",
+                            options=_r.get("available_choices") or [],
+                        )
+                        _ans = str(_res.get("answer") or "").strip()
+                        _tl, _cl = _ans.lower(), _cur.lower()
+                        if _ans and not (_tl == _cl or _tl in _cl or _cl in _tl):
+                            mismatched.append(
+                                f"{_r.get('question_text', '')[:60]} shows '{_cur}' (truth '{_ans}')"
+                            )
+            except Exception as _de:
+                logger.debug(f"[TechnicalCompetencySubAgent] Truth-audit note: {_de}")
+
             return {
-                "is_valid": len(unanswered) == 0,
-                "unanswered_competency_questions": unanswered
+                "is_valid": len(unanswered) == 0 and len(mismatched) == 0,
+                "unanswered_competency_questions": unanswered,
+                "mismatched_answers": mismatched,
             }
         except Exception as e:
             logger.error(f"[TechnicalCompetencySubAgent] Audit error: {e}")
@@ -71,53 +109,15 @@ class TechnicalCompetencySubAgent(BaseSectionAgent):
 
     def heal(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            from CompanySiteApply.ai_brain_resolver import AIBrainResolver
-            brain = AIBrainResolver.get_instance(candidate_data)
-            healed_count = 0
-
-            questions = page.locator(".input-row, .app-form-item, .apply-flow-question-block, [class*='question-block']").all()
-            for q in questions:
-                if not q.is_visible():
-                    continue
-                pills = q.locator("button.cx-select-pill-section, button[role='radio']").all()
-                if len(pills) <= 2 or len(pills) > 15:
-                    continue
-
-                has_selected = any("selected" in (p.get_attribute("class") or "") or p.get_attribute("aria-checked") == "true" for p in pills)
-                if has_selected:
-                    continue
-
-                label_el = q.locator("legend, label, .cx-form-label, p, h3, h4").first
-                q_text = label_el.inner_text().strip() if label_el.count() > 0 else q.inner_text().strip()
-                pill_texts = [p.inner_text().strip() for p in pills]
-
-                # Resolve via AI Brain
-                resolution = brain.resolve_question(
-                    question_text=q_text,
-                    control_type="RADIO_PILL",
-                    options=pill_texts
-                )
-                target_ans = resolution.get("answer") or ""
-                logger.info(f"[TechnicalCompetencySubAgent] Brain resolved '{q_text[:40]}' -> '{target_ans}'")
-
-                # Match and click target pill
-                target_pill = None
-                for pill in pills:
-                    pt = pill.inner_text().strip()
-                    if pt.lower() == target_ans.lower() or target_ans.lower() in pt.lower() or pt.lower() in target_ans.lower():
-                        target_pill = pill
-                        break
-
-                if target_pill:
-                    target_pill.click()
-                    healed_count += 1
-                    time.sleep(0.4)
-
+            from CompanySiteApply.section_agents.scripts.s2_competency_questions import heal_competency_questions
+            from CompanySiteApply.ipc.ipc_manager import get_effective_session_id
+            _sess = get_effective_session_id(candidate_data, None) or None
+            res = heal_competency_questions(page, candidate_data, session_id=_sess)
             verified = self.verify(page, candidate_data)
             return {
                 "success": verified,
                 "subagent": self.section_name,
-                "healed_count": healed_count,
+                "healed_count": res.get("healed_count", 0),
                 "verified": verified
             }
         except Exception as e:

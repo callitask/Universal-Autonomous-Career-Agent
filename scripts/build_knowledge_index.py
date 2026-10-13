@@ -111,7 +111,20 @@ def is_allowed_path(rel_path: str, repo: str) -> bool:
         return False
     if norm.endswith(".log") or norm.endswith(".pyc") or norm.endswith(".tmp"):
         return False
+    if norm.endswith(".bak"):
+        return False
     if norm in ["scan_root.json", "scan_sophron.json", "desktop.ini"]:
+        return False
+    # Runtime IPC payloads rewrite on every run/test — never knowledge
+    # (Incident 2026-10-13: section_question.json alone kept --check red.)
+    if parts[-1] in ("section_question.json", "batch_section_question.json"):
+        return False
+    # DOM scrape snapshots may carry candidate PII and churn per run
+    # (exception: the Tier C catalog README, which is documentation)
+    if "inspections" in parts and parts[-1] != "README.md":
+        return False
+    # Screenshot/proof artifacts are binary evidence, not retrievable knowledge
+    if parts[0] == "artifacts":
         return False
     # Never index secrets / credentials (gitignored, may contain API keys)
     _lname = norm.lower()
@@ -144,7 +157,7 @@ def scan_repository_files(root: Path, repo_name: str) -> List[Tuple[Path, str]]:
         pruned = []
         for d in dirnames:
             if d in [".git", "__pycache__", ".pytest_cache", "output", "logs", "scratch", "knowledge",
-                     ".venv", "venv", "node_modules", "dist", "build"]:
+                     ".venv", "venv", "node_modules", "dist", "build", "artifacts"]:
                 continue
             if d.endswith(".egg-info"):
                 continue

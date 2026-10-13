@@ -43,20 +43,52 @@ class PreferredLocationSubAgent(BaseSectionAgent):
         except Exception:
             return False
 
+    def _find_location_block(self, page: Any) -> Any:
+        """Locate the preferred-location container across Oracle HCM variants.
+
+        Incident 210765001: CX_1002 renders the JET combobox as
+        input[name='preferredLocations'] inside generic layout containers —
+        the legacy .apply-flow-block--preferred-locations class is absent.
+        """
+        for selector in (
+            ".apply-flow-block--preferred-locations",
+            "[class*='preferred-location']",
+            "input[name='preferredLocations']",
+            "[id^='preferredLocations-']",
+        ):
+            try:
+                loc = page.locator(selector).first
+                if loc.count() > 0:
+                    return loc
+            except Exception:
+                continue
+        return None
+
     def audit(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            pref_block = page.locator(".apply-flow-block--preferred-locations, [class*='preferred-location']").first
-            if pref_block.count() == 0:
-                # No preferred locations block on this page/job
+            anchor = self._find_location_block(page)
+            if anchor is None:
+                # No preferred locations control on this page/job
                 return {"is_valid": True, "present": False, "pill_count": 0}
 
-            # Check selected pills
-            pills = page.evaluate('''() => {
-                const block = document.querySelector('.apply-flow-block--preferred-locations, [class*="preferred-location"]');
-                if (!block) return [];
-                const pillEls = Array.from(block.querySelectorAll('.cx-multi-select-pill__value-text, .cx-multi-select-pill'));
-                return pillEls.map(p => p.innerText.trim()).filter(Boolean);
-            }''')
+            pref_block = page.locator(".apply-flow-block--preferred-locations, [class*='preferred-location']").first
+            if pref_block.count() == 0:
+                # JET input variant: scope pill search to the input's container
+                pills = page.evaluate('''() => {
+                    const inp = document.querySelector("input[name='preferredLocations'], [id^='preferredLocations-']");
+                    if (!inp) return [];
+                    const scope = inp.closest('.cx-form-item, .standard-apply-flow-profile-block, .input-row, .app-form-item') || document;
+                    const pillEls = Array.from(scope.querySelectorAll('.cx-multi-select-pill__value-text, .cx-multi-select-pill'));
+                    return pillEls.map(p => p.innerText.trim()).filter(Boolean);
+                }''')
+            else:
+                # Check selected pills
+                pills = page.evaluate('''() => {
+                    const block = document.querySelector('.apply-flow-block--preferred-locations, [class*="preferred-location"]');
+                    if (!block) return [];
+                    const pillEls = Array.from(block.querySelectorAll('.cx-multi-select-pill__value-text, .cx-multi-select-pill'));
+                    return pillEls.map(p => p.innerText.trim()).filter(Boolean);
+                }''')
 
             # Check error messages
             errors = pref_block.locator(".cx-message--error, .error, .alert-danger, .cx-form-control__error-message, .oj-form-control-error-message").all_text_contents()
@@ -76,8 +108,8 @@ class PreferredLocationSubAgent(BaseSectionAgent):
 
     def heal(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            pref_block = page.locator(".apply-flow-block--preferred-locations, [class*='preferred-location']").first
-            if pref_block.count() == 0:
+            anchor = self._find_location_block(page)
+            if anchor is None:
                 return {"success": True, "subagent": self.section_name, "message": "No preferred location block present"}
 
             # Check existing pills
@@ -107,11 +139,29 @@ class PreferredLocationSubAgent(BaseSectionAgent):
             if job_locations:
                 pref_candidates.extend(job_locations)
 
-            # Click toggle button to open dropdown
-            toggle = pref_block.locator("button[id*='preferredLocations'][id$='-toggle-button'], button.icon-dropdown-arrow, button").first
-            if toggle.count() > 0:
-                toggle.click()
-                time.sleep(1.0)
+            # Open the dropdown: focus/click the JET input first (scar 2026-10-08 —
+            # the collapsed toggle button has zero width and swallows clicks),
+            # falling back to the toggle button on legacy markup.
+            opened = False
+            for opener in (
+                "input[name='preferredLocations']:visible",
+                "[id^='preferredLocations-']:visible",
+            ):
+                try:
+                    inp = page.locator(opener).first
+                    if inp.count() > 0 and inp.is_visible():
+                        inp.click()
+                        time.sleep(0.6)
+                        opened = True
+                        break
+                except Exception:
+                    continue
+            if not opened:
+                pref_block = page.locator(".apply-flow-block--preferred-locations, [class*='preferred-location']").first
+                toggle = pref_block.locator("button[id*='preferredLocations'][id$='-toggle-button'], button.icon-dropdown-arrow, button").first
+                if toggle.count() > 0:
+                    toggle.click()
+                    time.sleep(1.0)
 
             # Select matching option in dropdown
             selected_info = page.evaluate('''(searchTerms) => {
@@ -139,6 +189,14 @@ class PreferredLocationSubAgent(BaseSectionAgent):
 
             logger.info(f"[PreferredLocationSubAgent] Selection result: {selected_info}")
             time.sleep(1.0)
+
+            # Commit the selection (blur + Escape) so Oracle JET persists the
+            # pill to the draft model before any NEXT navigation re-renders.
+            try:
+                page.keyboard.press("Escape")
+                time.sleep(0.4)
+            except Exception:
+                pass
 
             # Verify pill creation
             verified = self.verify(page, candidate_data)

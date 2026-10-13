@@ -149,7 +149,7 @@ async def run_scraper(company: str,
 
 def main():
     parser = argparse.ArgumentParser(description="CompanyScraper CLI")
-    parser.add_argument("--company", type=str, default="jpmorgan", help="Target company name")
+    parser.add_argument("--company", type=str, default="", help="Target company name (required: jpmorgan | jpmc)")
     parser.add_argument("--keyword", type=str, default="", help="Job search keyword")
     parser.add_argument("--location", type=str, default="", help="Target location")
     parser.add_argument("--top", type=int, default=5, help="Number of top jobs to display")

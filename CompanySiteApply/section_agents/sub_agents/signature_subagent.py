@@ -35,7 +35,7 @@ class SignatureSubAgent(BaseSectionAgent):
             return True
         try:
             url = getattr(page, "url", "")
-            return "/apply/section/4" in url or "review" in url.lower() or "more-about-you" in url.lower()
+            return "/apply/section/4" in url or "/review" in url.lower() or "more-about-you" in url.lower()
         except Exception:
             return False
 

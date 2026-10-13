@@ -1,6 +1,6 @@
 # ACTIVE CONSTRAINT BLOCK - Read Before Every Action (Non-Negotiable)
-# Version: 1.3 | Updated: 2026-09-22 | Loaded: auto (global + workspace)
-# Token budget: ~200 tokens. Purposely minimal. Do NOT expand.
+# Version: 1.4 | Updated: 2026-10-13 | Loaded: auto (global + workspace)
+# Token budget: minimal. Do NOT expand beyond one-line amendments.
 
 ## 11 HARD GATES - Verify ALL before proceeding with any action:
 
@@ -50,6 +50,7 @@ Violation: Any agent re-introducing keyword gating in Python without IPC routing
 [C24] Card-Level Experience Band Gating: exp_text from SRP card MUST be parsed before deep scan. If card min_exp > candidate.total_experience_years + target_jobs.max_experience_gap_years → reject [experience_gap_gated]. ALL thresholds read from candidate_config.json — zero hardcoding in Python.
 [C32] Two-Stage Page Navigation Timeout Recovery (commit 60s + domcontentloaded 75s).
 [C34] Radio Chip Option-Constrained Resolution (proficiency tier matching + options[0] retry).
+[C35-C37 + CompanySiteApply gates] See WORKSPACE_RULES. CompanySiteApply additionally enforces: SECTION_BLOCKED (never advance past failing section), ORDER_UNVERIFIED (pre-submit order gate), allowed_countries hard gate. Details live in subsystem docs, not this block.
 
 ---
 ## QUICK REMINDER: The AG Brain is the SOLE talent strategist.

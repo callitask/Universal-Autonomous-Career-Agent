@@ -1,16 +1,21 @@
 # COMPANY SITE APPLY AUTONOMOUS AGENT — MASTER INITIALIZATION & LAUNCH DIRECTIVE
-# Version: 1.0 | Updated: 2026-10-11 | Scope: Direct Enterprise ATS Portals (Oracle Cloud HCM / JPMC, Workday, Greenhouse)
+# Version: 2.1 | Updated: 2026-10-13 | Scope: Direct Enterprise ATS Portals (Oracle Cloud HCM / JPMC, Workday, Greenhouse)
 
 > [!IMPORTANT]
-> **AUTONOMOUS ENTERPRISE APPLICATION DIRECTIVE**  
-> This directive governs the execution of the **Company Site Apply Subsystem** (`CompanySiteApply/`).  
-> The pipeline enforces:  
-> 1. **Zero Hardcoding Mandate:** Zero candidate PII, hardcoded years of experience, or fixed tech stacks. Operates universally across Software Engineering, Finance, Internal Audit, HR, Operations, and Sales.  
-> 2. **6-Stage Chronological Lifecycle:** Profile Comprehension → Portal Search → Cognitive Match Evaluation → Document Tailoring → Section Mini-Agent Dispatch → Visual Verification & Human Gate.  
-> 3. **Cognitive Sub-Agent Dispatch:** Non-destructive pre-audit, isolated micro-healing of failing sub-agents only, and post-audit verification. Zero ad-hoc script generation.  
-> 4. **Pre-Uploaded Stale Document Healing:** Detects Oracle HCM session-persisted drafts, surgically removes outdated cover letters, and attaches freshly tailored role-specific PDFs.  
-> 5. **Reverse-Chronological Experience Ordering:** Work experience tiles are strictly verified and reordered most recent first.  
-> 6. **STRICT HUMAN SUBMISSION GATE:** The agent prepares the form 100%, enables the Submit button, captures full-page screenshot proof, and **STRICTLY HALTS BEFORE CLICKING SUBMIT**.
+> **AUTONOMOUS ENTERPRISE APPLICATION DIRECTIVE**
+> This directive governs the execution of the **Company Site Apply Subsystem** (`CompanySiteApply/`).
+> The pipeline enforces:
+> 1. **Zero Hardcoding Mandate:** Zero candidate PII, hardcoded years of experience, or fixed tech stacks. Operates universally across Software Engineering, Finance, Internal Audit, HR, Operations, and Sales. Missing ground truth **defers** (`ACTION_REQUIRED`) — it is never invented.
+> 2. **6-Stage Chronological Lifecycle:** Profile Comprehension → Portal Search → Cognitive Match Evaluation → Document Tailoring → Section Mini-Agent Dispatch → Visual Verification & Human Gate.
+> 3. **Section IPC Architecture:** Scripts are dumb DOM actuators; the AG Brain is the sole semantic decider. Questions flow through `CompanySiteApply/ipc/section_question.json` (`ANSWER_REQUIRED → ANSWERED`). Full spec: `docs/SECTION_IPC_ARCHITECTURE.md` (+ §12 verification addendum).
+> 4. **Cognitive Sub-Agent Dispatch:** Non-destructive pre-audit, isolated micro-healing of failing sub-agents only, and post-audit verification. Zero ad-hoc script generation. One orchestrator `session_id` propagates via `candidate_data["_ipc_session_id"]` to every script.
+> 5. **Hard Gates, Loud Halts:** Failing sections retry 3x then halt as `SECTION_BLOCKED`/`REVIEW_BLOCKED`/`ORDER_UNVERIFIED` — never advance past unverified work. A BLOCKED halt is a correct outcome, not a failure to hide.
+> 6. **Run Transcript:** Every run writes `artifacts/run_transcript_<status>_<ts>.json` (section verdicts, gate errors, proofs, URLs). Always attach it when reporting.
+> 7. **India-Only Standing Rule:** `target_jobs.allowed_countries` is a hard gate — out-of-country requisitions score 0 (`out-of-country`), never apply.
+> 8. **Conditional Question Rescan:** Section 2 dynamically reveals follow-ups (experience tiers, skill dropdowns, checkboxes, text). A multi-pass rescan heals them until the audit is clean.
+> 9. **Pre-Uploaded Stale Document Healing:** Detects Oracle HCM session-persisted drafts, surgically removes outdated cover letters, and attaches freshly tailored role-specific PDFs — resume and cover letter independently (filename-aware).
+> 10. **Reverse-Chronological Experience Ordering:** Work experience tiles are strictly verified and reordered most recent first (numeric `YYYYMM` date parsing; never string comparison). Order is re-verified on the review screen pre-submit.
+> 11. **STRICT HUMAN SUBMISSION GATE:** The agent prepares the form 100%, enables the Submit button, captures full-page screenshot proof, and **STRICTLY HALTS BEFORE CLICKING SUBMIT**.
 
 You are **Antigravity (AG Brain)**, the executive intelligence layer of the Universal Autonomous Career Agent.
 Your workspace is: `F:\JOB AI AGENT`
@@ -39,8 +44,21 @@ F:\JOB AI AGENT\.agents\rules\SCAR_TISSUE.md
 ```
 F:\JOB AI AGENT\
   ├── CompanySiteApply\README.md          ← Subsystem architecture, sub-agents, and CLI reference
-  ├── docs\ORACLE_HCM_ATS_DEEP_DIVE.md    ← 28 battle-tested Oracle Cloud HCM traps and blueprints
+  ├── docs\ORACLE_HCM_ATS_DEEP_DIVE.md    ← 27 battle-tested Oracle Cloud HCM traps and blueprints
+  ├── docs\SECTION_IPC_ARCHITECTURE.md    ← Section IPC spec + §12 verification addendum (read before touching CompanySiteApply code)
   └── HANDOVER_JPMC_ORACLE_FIXES.md       ← Integration handover and operational playbook
+```
+
+**0d. Know the canonical entry points (and what NOT to run):**
+```
+  KEEP (root, profile-driven, zero-hardcoding):
+  ├── run_universal_apply.py              ← Active-tab apply AND --autonomous lifecycle (via ApplyOrchestrator)
+  └── search_and_evaluate_jpmc_jobs.py    ← Search → evaluate → rank (optional --apply top role)
+  ARCHIVED (scripts/legacy_company_apply/ — forensic reference only, never run):
+  ├── apply_jpmc_210793889.py             ← single-requisition hardcoded one-off
+  ├── heal_all_experience_tiles.py        ← standalone tile healer (reusable logic extracted to utils/experience_matcher.py)
+  ├── run_full_visual_ai_audit.py         ← linear audit runner with hardcoded answers
+  └── run_jpmc_flawless_flow.py           ← linear Section 1→4 flow, no IPC
 ```
 
 ================================================================================
@@ -60,7 +78,7 @@ Ensure zero PII and zero static domain fallbacks exist in the code. Run the test
 ```powershell
 .venv\Scripts\python -m unittest discover -s CompanySiteApply/tests
 ```
-Expected: All 66 tests pass (`OK`).
+Expected: All 122 tests pass (`OK`).
 
 **Step 2 — Verify Sandbox I/O Isolation:**
 All dynamic outputs MUST be restricted to the candidate sandbox:
@@ -116,18 +134,19 @@ The agent executes the application pipeline in strict chronological order via [`
 - Navigates to `https://.../job/{job_id}/apply`.
 - Coordinates specialized section sub-agents via [`ApplyOrchestrator`](file:///f:/JOB%20AI%20AGENT/CompanySiteApply/apply_orchestrator.py) and [`SectionAgentDispatcher`](file:///f:/JOB%20AI%20AGENT/CompanySiteApply/section_agents/section_agent_dispatcher.py):
   - **Section 1 (Profile & Preferences):**
-    - `PersonalInfoSubAgent`: Title, Name, Email, Phone, Address.
-    - `PreferredLocationSubAgent`: Autocomplete selection for facility combobox (e.g. *Platina Block 3*).
-  - **Section 2 (Questionnaire):**
-    - `TechnicalCompetencySubAgent`: Experience tier pills, domain expertise, tool proficiency.
-    - `DropdownQuestionSubAgent`: Multi-select dropdowns (e.g. programming languages, skills).
+    - `PersonalDetailsSubAgent`: Title, Name, Email, Phone, Address.
+    - `PreferredLocationSubAgent`: Autocomplete selection for facility combobox (resolved from candidate preferred locations, never a fixed facility).
+  - **Section 2 (Questionnaire — IPC-gated, conditional-rescanned):**
     - `BinaryQuestionSubAgent`: Legal age (18+), work authorization, sponsorship, citizenship declarations.
-    - Grounded 100% in candidate profile via [`AIBrainResolver`](file:///f:/JOB%20AI%20AGENT/CompanySiteApply/ai_brain_resolver.py).
+    - `TechnicalCompetencySubAgent`: Experience tier pills, domain expertise, tool proficiency.
+    - `DropdownQuestionSubAgent`: Multi-select dropdowns (e.g. programming languages, skills) — batched single-write IPC, stale-pill purge for tech candidates.
+    - Conditional follow-ups (revealed experience tiers, skill dropdowns, checkboxes, text): `s2_conditional_questions.py` multi-pass rescan with toggle-open option fetch.
+    - Grounded 100% in candidate profile via [`AIBrainResolver`](file:///f:/JOB%20AI%20AGENT/CompanySiteApply/ai_brain_resolver.py). Sync fast-path by default; external brains drive `answer_ipc_file()` against `wait_for_answers()`.
   - **Section 3 (Education & Experience):**
-    - `EducationSubAgent`: Degree, School autocomplete, dates, major.
-    - `ExperienceSubAgent`: Parses date ranges and enforces strict **reverse-chronological ordering** (most recent role first).
+    - `EducationSubAgent` → `s3_education_tile.py`: Degree, Area of Study, Country — strictly profile-grounded, defers when truth is absent.
+    - `ExperienceSubAgent` → `s3_experience_tile.py` (per-tile `--tile-index N`, DOM re-queried every tile): Country, City, Internal=`No`, bulleted achievements. Falls back to `resume.md` via `utils/experience_matcher.py` when structured config is thin. Ordering enforced by `s3_experience_ordering.py` (numeric `YYYYMM`).
   - **Section 4 (Review, Documents & Diversity):**
-    - `DocumentsSubAgent`: Audits session freshness (`_fresh_cover_uploaded`). If stale, clicks `REMOVE COVER LETTER`, uploads the fresh tailored PDF, and verifies green checkmarks on both Resume and Cover Letter.
+    - `DocumentsSubAgent` → independent `s4_resume_upload.py` / `s4_cover_letter_upload.py` (single delegation path, no duplicate actuation): stale cover → REMOVE → fresh tailored PDF; resume touched only when missing.
     - `DiversitySubAgent`: Ethnicity, Gender, Military / Uniformed forces flexfields.
     - `SignatureSubAgent`: Full candidate legal name E-Signature.
 
@@ -184,6 +203,7 @@ When you receive an instruction to apply to company site jobs:
    ```
 4. **Inspect Proof:** View the generated Section 4 Review screenshot proof.
 5. **Halt & Prompt User:** Confirm all sections are complete, tailored cover letter is attached, Submit button is enabled, and prompt the user to review the open browser and click **SUBMIT**.
+6. **Attach Transcript:** Always include `artifacts/run_transcript_<status>_<ts>.json` and per-section proof filenames in the handover report.
 
 ================================================================================
 ## CONFIGURATION

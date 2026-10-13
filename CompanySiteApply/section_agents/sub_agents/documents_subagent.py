@@ -24,6 +24,22 @@
 #   5. Surgical removal of pre-uploaded files with container transition verification to --waiting,
 #      followed by file attachment and transition to --filled with green checkmark.
 # Rationale: Zero stale cover letter retention; 100% role-accurate document matching.
+#
+# [ENTRY #003]
+# Term: [PHASE6_DOCUMENT_INDEPENDENCE_DELEGATION]
+# Timestamp: 2026-10-12 22:02:00 +05:30
+# Issue / Context: Document upload needed independent execution so that if only one document is stale,
+#                  the other is not redundantly processed.
+# Changes Made: Refactored heal() to delegate to s4_resume_upload and s4_cover_letter_upload scripts.
+# Rationale: Guarantees modular sub-section isolation and IPC traceability per Section IPC Architecture §3.
+# Preventative Notes: Always maintain stateful session freshness flags.
+# ==============================================================================
+# [ENTRY #004]
+# Term: [JOB_ID_EXTRACTION_PREVIEW_EXPANSION]
+# Timestamp: 2026-10-12 22:10:00 +05:30
+# Issue / Context: Oracle HCM candidate flow uses /jobs/preview/<id>/... which failed /job/<id> regex.
+# Changes Made: Expanded job_id extraction regex to support /(?:jobs?/preview/|job/|requisitions?/|preview/)(\d+).
+# Rationale: Guarantees correct requisition ID attribution for document tailoring across all Oracle HCM variants.
 # ==============================================================================
 
 import os
@@ -63,7 +79,7 @@ class DocumentsSubAgent(BaseSectionAgent):
         try:
             url = getattr(page, "url", "")
             url_str = str(url) if url and isinstance(url, str) else ""
-            return "/apply/section/4" in url_str or "review" in url_str.lower() or "more-about-you" in url_str.lower() or "/apply/section/1" in url_str
+            return "/apply/section/4" in url_str or "/review" in url_str.lower() or "more-about-you" in url_str.lower() or "/apply/section/1" in url_str
         except Exception:
             return False
 
@@ -73,7 +89,7 @@ class DocumentsSubAgent(BaseSectionAgent):
         url_str = str(url) if isinstance(url, str) else ""
         job_id = ""
         if url_str:
-            m_id = re.search(r'/job/([A-Za-z0-9_]+)', url_str)
+            m_id = re.search(r'/(?:jobs?/preview/|job/|requisitions?/|preview/)(\d+)', url_str)
             if m_id:
                 job_id = m_id.group(1).strip()
         if not job_id and isinstance(candidate_data, dict):
@@ -104,9 +120,10 @@ class DocumentsSubAgent(BaseSectionAgent):
 
         if not job_title and isinstance(candidate_data, dict):
             target_jobs = candidate_data.get("target_jobs") or {}
-            job_title = str(target_jobs.get("title") or target_jobs.get("job_title") or "Lead Software Engineer").strip()
+            job_title = str(target_jobs.get("title") or target_jobs.get("job_title") or "").strip()
 
-        company = "JPMorgan Chase & Co."
+        # Company resolved from portal URL or candidate hints only — never invented.
+        company = ""
         if url_str and ("jpmc" in url_str.lower() or "chase" in url_str.lower()):
             company = "JPMorgan Chase & Co."
         elif isinstance(candidate_data, dict):
@@ -216,94 +233,44 @@ class DocumentsSubAgent(BaseSectionAgent):
         5. Uploads resume if missing or requested.
         """
         try:
-            cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
             job_ctx = self._extract_job_context(page, candidate_data)
             job_id = job_ctx.get("job_id", "")
-            job_title = job_ctx.get("job_title", "")
-            company = job_ctx.get("company", "JPMorgan Chase & Co.")
             self._current_job_id = job_id
-
-            resume_path = self._resolve_target_file(cand, "resume", candidate_data, job_id=job_id)
-            cover_path = self._ensure_job_tailored_cover_letter(page, candidate_data, job_id, job_title, company)
 
             resume_updated = False
             cover_updated = False
+            cover_path = None
+            resume_path = None
 
-            def _has_elements(loc: Any) -> bool:
-                try:
-                    cnt = loc.count()
-                    if isinstance(cnt, (int, float)):
-                        return cnt > 0
-                    return bool(cnt)
-                except Exception:
-                    return False
+            # Modular Independent Actuator Scripts (Phase 6) — single execution path.
+            # Previously this method ALSO repeated the same upload/remove logic inline
+            # below (double set_input_files + double REMOVE), causing DOM races.
+            # Delegation is now the ONLY actuation path; inline duplication removed.
+            try:
+                from CompanySiteApply.section_agents.scripts.s4_resume_upload import heal_resume_upload
+                res_up = heal_resume_upload(page, candidate_data)
+                if res_up.get("uploaded"):
+                    resume_updated = True
+                    self._fresh_resume_uploaded = True
+                if res_up.get("resume_path"):
+                    resume_path = res_up.get("resume_path")
+                elif res_up.get("success"):
+                    # Already present — still counts as fresh for this session's audit.
+                    self._fresh_resume_uploaded = self._fresh_resume_uploaded or False
+            except Exception as re_e:
+                logger.debug(f"[DocumentsSubAgent] s4_resume_upload note: {re_e}")
 
-            # -----------------------------------------------------------------
-            # 1. RESUME ATTACHMENT
-            # -----------------------------------------------------------------
-            if resume_path and os.path.exists(resume_path):
-                target_res_name = os.path.basename(resume_path)
-                res_box = page.locator(".attachment-upload-button").filter(has_text=re.compile(r'resume', re.I)).first
-
-                needs_upload = False
-                if not _has_elements(res_box) or not res_box.is_visible():
-                    needs_upload = True
-                else:
-                    try:
-                        is_filled = res_box.evaluate("el => el.classList.contains('attachment-upload-button--filled')")
-                        if not is_filled:
-                            needs_upload = True
-                    except Exception:
-                        needs_upload = True
-
-                if needs_upload:
-                    res_input = res_box.locator("input[type='file'], input[name='attachment-upload']").first
-                    if _has_elements(res_input):
-                        logger.info(f"[DocumentsSubAgent] Uploading candidate resume: {target_res_name}")
-                        res_input.set_input_files(resume_path)
-                        resume_updated = True
-                        time.sleep(2.0)
-                        self._fresh_resume_uploaded = True
-
-            # -----------------------------------------------------------------
-            # 2. COVER LETTER ATTACHMENT (MANDATORY FRESH UPLOAD)
-            # -----------------------------------------------------------------
-            if cover_path and os.path.exists(cover_path):
-                target_cl_name = os.path.basename(cover_path)
-                cl_box = page.locator(".attachment-upload-button").filter(has_text=re.compile(r'cover', re.I)).first
-
-                if _has_elements(cl_box) and cl_box.is_visible():
-                    try:
-                        is_filled = cl_box.evaluate("el => el.classList.contains('attachment-upload-button--filled')")
-                    except Exception:
-                        is_filled = False
-                    remove_btn = cl_box.locator("button:has-text('REMOVE COVER LETTER'), button:has-text('Remove Cover Letter')").first
-
-                    # If already filled (pre-uploaded from earlier session or old application)
-                    if is_filled and _has_elements(remove_btn) and remove_btn.is_visible():
-                        logger.info(f"[DocumentsSubAgent] Pre-uploaded cover letter detected. Removing stale file...")
-                        remove_btn.click()
-                        time.sleep(1.5)
-                        try:
-                            cl_box.locator("input[type='file']").wait_for(state="attached", timeout=5000)
-                        except Exception:
-                            time.sleep(1.0)
-
-                    # Now container is waiting: upload the freshly tailored cover letter
-                    cl_input = cl_box.locator("input[type='file'], input[name='attachment-upload']").first
-                    if _has_elements(cl_input):
-                        logger.info(f"[DocumentsSubAgent] Uploading freshly tailored cover letter ({job_id} - {job_title}): {cover_path}")
-                        cl_input.set_input_files(cover_path)
-                        cover_updated = True
-                        # Poll up to 10 seconds for container to save and transition to filled state
-                        for _ in range(10):
-                            time.sleep(1.0)
-                            try:
-                                if cl_box.evaluate("el => el.classList.contains('attachment-upload-button--filled')"):
-                                    break
-                            except Exception:
-                                pass
-                        self._fresh_cover_uploaded = True
+            try:
+                from CompanySiteApply.section_agents.scripts.s4_cover_letter_upload import heal_cover_letter_upload
+                cov_up = heal_cover_letter_upload(page, candidate_data)
+                if cov_up.get("uploaded"):
+                    cover_updated = True
+                    self._fresh_cover_uploaded = True
+                    cover_path = cov_up.get("cover_path")
+                elif cov_up.get("deferred"):
+                    logger.info(f"[DocumentsSubAgent] Cover upload deferred: {cov_up.get('error')}")
+            except Exception as cl_e:
+                logger.debug(f"[DocumentsSubAgent] s4_cover_letter_upload note: {cl_e}")
 
             audit_res = self.audit(page, candidate_data)
             return {
@@ -343,8 +310,22 @@ class DocumentsSubAgent(BaseSectionAgent):
         tailored_file = self._resolve_target_file(cand, "cover_letter", candidate_data, job_id=job_id)
         if tailored_file and os.path.exists(tailored_file):
             if job_id and job_id in str(tailored_file):
-                logger.info(f"[DocumentsSubAgent] Found existing verified tailored cover letter for {job_id}: {tailored_file}")
-                return tailored_file
+                # Content check — filename match alone once shipped "(Job ID: )".
+                try:
+                    from core.generate_professional_cover_letter import (
+                        verify_cover_letter_job_id,
+                        verify_cover_letter_job_title,
+                    )
+                    from pathlib import Path as _P
+                    _parent = str(_P(tailored_file).parent)
+                    _id_ok = verify_cover_letter_job_id(_parent, job_id)
+                    _title_ok = not job_title or verify_cover_letter_job_title(_parent, job_title)
+                    if _id_ok and _title_ok:
+                        logger.info(f"[DocumentsSubAgent] Found existing verified tailored cover letter for {job_id}: {tailored_file}")
+                        return tailored_file
+                    logger.warning(f"[DocumentsSubAgent] Letter for {job_id} lacks Job ID/title in content — regenerating.")
+                except Exception:
+                    pass
             # Check if companion text or folder matches this job ID
             try:
                 txt_companion = Path(tailored_file).parent / "Cover_Letter.txt"
@@ -368,12 +349,13 @@ class DocumentsSubAgent(BaseSectionAgent):
                 target_dir = os.path.join(target_dir, "company_site_apply")
             os.makedirs(target_dir, exist_ok=True)
 
+            cand_location = str(cand.get("location") or cand.get("city") or "").strip()
             jd_data = {
-                "title": job_title or "Lead Software Engineer",
+                "title": job_title or "",
                 "job_id": job_id or "",
-                "company": company or "JPMorgan Chase & Co.",
-                "team": "Global Technology & Engineering",
-                "location": "Bengaluru, Karnataka, India"
+                "company": company or "",
+                "team": "",
+                "location": cand_location
             }
 
             gen_path = generate_tailored_cover_letter(candidate_data, jd_data, target_dir)

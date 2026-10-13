@@ -256,11 +256,46 @@ class SectionAgentDispatcher:
                 post_audits[agent.section_name] = {"is_valid": False, "error": str(e)}
                 all_valid = False
 
+        # 3b. Cascading second passes (Rank 1, 2026-10-13): healing one
+        # sub-agent can reveal conditional questions owned by another
+        # (incident 210765001: binary heal revealed the competency tier pill
+        # AFTER pre-audit). Re-heal newly-invalidated agents, up to 3 passes.
+        cascade_pass = 1
+        while not all_valid and cascade_pass < 3:
+            cascade_pass += 1
+            newly_invalid = [
+                a for a in sub_agents if not post_audits.get(a.section_name, {}).get("is_valid", False)
+            ]
+            if not newly_invalid:
+                break
+            logger.info(
+                f"[AI Brain] Cascade pass {cascade_pass}/3 for '{sec_key}': "
+                f"re-healing {[a.section_name for a in newly_invalid]}..."
+            )
+            for agent in newly_invalid:
+                try:
+                    h_res = agent.heal(page, candidate_data)
+                    healed_results[f"{agent.section_name}_cascade_{cascade_pass}"] = h_res
+                except Exception as e:
+                    logger.error(f"[AI Brain] Cascade heal error on '{agent.section_name}': {e}")
+                    healed_results[f"{agent.section_name}_cascade_{cascade_pass}"] = {"success": False, "error": str(e)}
+            all_valid = True
+            for agent in sub_agents:
+                try:
+                    ver_res = agent.audit(page, candidate_data)
+                    post_audits[agent.section_name] = ver_res
+                    if not ver_res.get("is_valid", False):
+                        all_valid = False
+                except Exception as e:
+                    post_audits[agent.section_name] = {"is_valid": False, "error": str(e)}
+                    all_valid = False
+
         return {
             "section": sec_key,
             "success": all_valid,
             "subagents_evaluated": sub_names,
             "subagents_healed": [a.section_name for a in agents_needing_heal],
+            "cascade_passes": cascade_pass,
             "pre_audits": pre_audits,
             "healed_results": healed_results,
             "post_audits": post_audits

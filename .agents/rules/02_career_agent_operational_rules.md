@@ -8,7 +8,7 @@ These rules are loaded automatically at every session start and before every pro
 
 1. **Automatic Documentation Ingestion**:
    Whenever this agent is started, or before executing any user command, running any Python script (python core/...), or making any code changes, the agent MUST immediately read and internalize the core documentation files in F:\JOB AI AGENT\docs\:
-    - F:\JOB AI AGENT\docs\WORKSPACE_RULES.md (Directives 1-9 and all 46 Bug Prevention Guardrails: 36 C + 6 H + 3 D + 1 P)
+    - F:\JOB AI AGENT\docs\WORKSPACE_RULES.md (Directives 1-10 and all 46 Bug Prevention Guardrails: 36 C + 6 H + 3 D + 1 P)
    - F:\JOB AI AGENT\docs\ARCHITECTURE_REFERENCE.md (Module anatomy, IPC contracts, data schemas)
    - F:\JOB AI AGENT\docs\PLATFORM_KNOWLEDGE.md (Naukri/LinkedIn DOM patterns, SEO slugs, zero-comma rules)
 2. **Universal Compliance**:
@@ -154,7 +154,7 @@ These rules are loaded automatically at every session start and before every pro
 1. **Strict Architectural Separation**:
    - `F:\JOB AI AGENT` houses two distinct, decoupled systems:
      * **Universal Autonomous Career Agent**: Operates in `core/`, `scripts/`, `profiles/`, and `docs/`. Governs job search, portal discovery, ATS tailoring, and application execution.
-     * **Sophron**: Operates in `Sophron/` (`Sophron/core/`, `Sophron/graph_memory/`, `Sophron/understanding_master/`). Governs meta-cognitive tracking, user psychological analysis, and session memory.
+     * **Sophron**: Operates in the sibling repo `F:\Sophron` (`core/`, `graph_memory/`, `understanding_master/`). Never a nested `Sophron/` folder. Governs meta-cognitive tracking, user psychological analysis, and session memory.
 2. **Zero Mixing / Cross-Pollination**:
    - Career Agent scripts MUST NEVER import from `Sophron/`, write to `Sophron/`, or depend on Sophron modules.
    - Sophron scripts MUST NEVER modify candidate profile configurations or interfere with job application loops.

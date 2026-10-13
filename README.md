@@ -72,18 +72,27 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │       └── apply_status.py            # Canonical APPLIED_*/FAILED statuses (shared)
 ├── CompanySiteApply/                  # On-demand direct company ATS application engine (human-gated)
 │   ├── cli.py                         # Interactive CLI runner for direct ATS applications
+│   ├── apply_orchestrator.py          # Section dispatcher with hard advance gates + per-section proofs
+│   ├── autonomous_job_agent.py        # 6-stage lifecycle: comprehend → search → rank → tailor → apply → gate
 │   ├── ats_arm.py                     # ATS orchestrator arm
 │   ├── ats_detector.py                # Portal platform detection engine
+│   ├── section_agents/                # Section coordinators + discrete IPC actuator scripts/ (9 files)
+│   ├── ipc/                           # Section IPC bus (ipc_manager.py; runtime section_question.json)
+│   ├── tests/                         # Regression suite (97 tests)
 │   ├── fingers/                       # Platform adapters: Oracle Cloud HCM, Workday, Greenhouse, generic
 │   ├── nails/oracle/                  # Company overrides: JPMC, Bristlecone (on top of Oracle finger)
 │   ├── CompanyScraper/                # Direct career-site scrapers (JPMorgan example) + cli_scraper.py
 │   ├── parser_doctor/                 # ATS resume parsing healing and review verification
-│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver (no hardcoded profiles)
+│   ├── anatomy/                       # Portal anatomy models (Oracle Cloud profile/timeline)
+│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver, experience_matcher
+├── run_universal_apply.py             # Canonical entry: active-tab apply + --autonomous lifecycle
+├── search_and_evaluate_jpmc_jobs.py   # Canonical entry: search → evaluate → rank (+ optional --apply)
 ├── scripts/                           # Operational and maintenance utilities
 │   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles
 │   ├── reevaluate_ledger.py           # Ledger re-evaluation reset utility (utf-8-sig BOM safe)
 │   ├── test_colab_connection.py       # Colab gateway diagnostic (120s finite timeout)
-│   └── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
+│   ├── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
+│   └── legacy_company_apply/          # Archived one-off scripts (forensic reference only, never run)
 ├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)
 ├── docs/                              # Technical blueprints, DOM catalogs & rules
 │   ├── WORKSPACE_RULES.md             # 10 directives & 46 bug prevention guardrails (36 C, 6 H, 3 D, 1 P)

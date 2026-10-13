@@ -87,6 +87,14 @@ class AIBrainResolver:
 
     def _persist_answer(self, record: Dict[str, Any]):
         """Persists a Q&A record atomically to screening_answers.json."""
+        last = self.history[-1] if self.history else None
+        if (
+            last
+            and last.get("question") == record.get("question")
+            and last.get("answer") == record.get("answer")
+            and last.get("control_type") == record.get("control_type")
+        ):
+            return  # Identical consecutive record — skip file churn.
         self.history.append(record)
         try:
             self.output_json_path.parent.mkdir(parents=True, exist_ok=True)
@@ -270,6 +278,23 @@ class AIBrainResolver:
         q_clean = question_text.strip()
         q_lower = q_clean.lower()
         options = options or []
+
+        # 0. Self-echo guard (incident 210788242): scanners sometimes emit an
+        #    OPTION pill's text as the question (label fallback). Answering an
+        #    option with itself flipped a correct tier pick to "No Prior
+        #    Experience" on a single-select group. Refuse loudly instead.
+        if q_clean and any(q_clean.lower() == str(o).strip().lower() for o in options):
+            record = {
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "question": q_clean,
+                "control_type": control_type,
+                "options": options,
+                "source": "REFUSED_SELF_ECHO",
+                "answer": None,
+                "rationale": "Question text matches one of its own options — scanner mis-extraction. Deferred to operator."
+            }
+            self._persist_answer(record)
+            return record
 
         # 1. Check exact match in ats_answers or auto_learned_truths
         cached_val = self._find_in_cached_truths(q_clean)
@@ -473,8 +498,10 @@ class AIBrainResolver:
             if best:
                 return best, f"Assigned proficiency rating '{best}' based on candidate experience profile."
 
-        # F. Regulatory & Binary Yes/No
-        if control_type == "BINARY_PILL" or len(options) == 2:
+        # F. Regulatory & Binary Yes/No — only when the options really are Yes/No.
+        # (len==2 alone once affirmed gibberish questions; incident follow-up.)
+        opt_norm = {str(o).strip().lower() for o in options}
+        if control_type == "BINARY_PILL" or opt_norm == {"yes", "no"}:
             if "18 years of age" in q_lower:
                 return "Yes", "Candidate is of legal working age (18+)."
             if "legally authorized" in q_lower or "authorized to work" in q_lower:
@@ -489,10 +516,10 @@ class AIBrainResolver:
                 return "No", "Standard background clearance declaration."
             return "Yes", "Default affirmative for standard screening verification."
 
-        # Default fallback: pick best match or first valid non-negative option
-        valid_options = [o for o in options if "not require" not in o.lower() and "none" not in o.lower()]
-        fallback = valid_options[0] if valid_options else (options[0] if options else "")
-        return fallback, "General option match based on candidate profile."
+        # Default fallback: DEFER. Blind-picking options[0] for unrecognized
+        # questions once flipped a correct answer to "No Prior Experience"
+        # (incident 210788242). Healers skip empty answers; audits flag them.
+        return "", "Unrecognized question with no profile grounding — deferred to operator."
 
     def _resolve_tier_pill(self, total_exp: float, options: List[str]) -> str:
         """Selects the exact experience bracket pill matching total_exp."""
@@ -544,3 +571,49 @@ class AIBrainResolver:
             return best_opt
 
         return None
+
+    # =========================================================================
+    # IPC FILE BRIDGE (async AG Brain switch — §2.2 state machine)
+    # =========================================================================
+
+    def answer_ipc_file(self) -> Dict[str, Any]:
+        """
+        Async AG Brain entry-point: read CompanySiteApply/ipc/section_question.json
+        when status == ANSWER_REQUIRED, resolve every question via resolve_question(),
+        and write back with status == ANSWERED.
+
+        This is the TRUE switch the section scripts wait on with
+        IPCManager.wait_for_answers(). The in-process heal_* fast-path
+        (write_questions → resolve_question → write_answers in one call) is kept
+        for single-process runs, but any external brain process can drive the same
+        file through this method without DOM access.
+        """
+        from CompanySiteApply.ipc.ipc_manager import IPCManager
+
+        ipc = IPCManager.from_file()
+        data = ipc.read()
+        if not data:
+            return {"success": False, "error": "IPC file missing"}
+        if data.get("status") != "ANSWER_REQUIRED":
+            return {"success": True, "skipped": True, "status": data.get("status"), "count": 0}
+        answered = []
+        for q in data.get("questions", []):
+            q_text = q.get("question_text", "")
+            f_type = q.get("field_type", "TEXT")
+            choices = q.get("available_choices") or []
+            try:
+                resolution = self.resolve_question(
+                    question_text=q_text,
+                    control_type=f_type if f_type != "DROPDOWN" else "DROPDOWN_MULTI",
+                    options=choices,
+                    req_count=2 if f_type in ("DROPDOWN", "COMBOBOX", "DROPDOWN_MULTI") else 1,
+                )
+                q["answer"] = resolution.get("answer")
+                q["answer_confidence"] = 1.0
+                q["answer_rationale"] = resolution.get("rationale")
+            except Exception as e:
+                q["answer"] = None
+                q["answer_rationale"] = f"BRIDGE_ERROR: {e}"
+            answered.append(q)
+        ipc.write_answers(answered)
+        return {"success": True, "status": "ANSWERED", "count": len(answered)}

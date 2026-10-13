@@ -260,3 +260,98 @@ all semantic job fit evaluations. Keyword lists in config are advisory context f
 - **Never repeat**: Never look for `.app-dialog` on Oracle HCM inline experience tiles. Never scroll or click subsequent tiles while an inline form is still open.
 
 
+
+## [2026-10-12] KNOCKOUT VM EXPERIENCE TILE SORT UNRELIABLE — USE DOM TEXT DATE PARSE
+- **File**: `CompanySiteApply/nails/oracle/jpmc_nail.py` → `reorder_experience_tiles()`, `experience_section_agent.py` → `_reorder_tiles_reverse_chronological()`
+- **What happened**: Both files sort tiles via Knockout VM `parent.forms.sort()` using `modA.startDate()` + `localeCompare()`. Oracle HCM stores `startDate` in mixed formats (`"03/2026"`, `"September 2021"`, `null`). Live run confirmed wrong order: Cognizant (current/03/2026) buried in the middle; TCS (09/2021) appeared after Navyug (06/2018).
+- **Correct behavior**: Parse visible tile text using regex (`(\d{2})\/(\d{4})` → YYYYMM integer). Re-insert DOM tiles via `tileList.appendChild(tile)`. Tiles with "Present" → sort value 999999 (always first). Spec in `docs/SECTION_IPC_ARCHITECTURE.md §4.1`.
+- **Never repeat**: Never use `startDate()` Knockout observable for sort. Never `localeCompare()` ATS portal date strings.
+
+## [2026-10-12] CONDITIONAL SECTION 2 QUESTIONS MISSED AFTER BINARY PILL FILL
+- **File**: `binary_question_subagent.py` → `heal()`, `questionnaire_section_agent.py`
+- **What happened**: After `BinaryQuestionSubAgent` answers 6 binary pills, a NEW question appears: "Please select the relevant years of work experience…" as a radio chip group. `heal()` exits after the first DOM scan and never re-scans. Confirmed unanswered in Section 4 screenshot.
+- **Correct behavior**: After ALL Section 2 primary sub-agents complete, run a 3-pass conditional rescan. Each pass re-queries DOM for newly visible required questions, writes to IPC, AG Brain answers, script fills. Repeat until no new questions found (max 3 passes). Spec in `docs/SECTION_IPC_ARCHITECTURE.md §3, §4.3`.
+- **Never repeat**: Never exit Section 2 after a single pass. Always run at least one conditional rescan.
+
+## [2026-10-12] TERMS MODAL BLOCKS SECTION 1 SUB-AGENTS — ORCHESTRATOR BLIND SPOT
+- **File**: `apply_orchestrator.py` → `run()` loop
+- **What happened**: `#applyFlowLegalDisclaimer` full-page Terms modal is active when Section 1 sub-agents are dispatched. `detect_current_section()` sees URL `/apply/section/1` correctly, but form elements have `offsetWidth: 0` under the modal. `PreferredLocationSubAgent.heal()` times out. The email handler at line 117 does NOT handle this modal.
+- **Correct behavior**: At top of every `while` iteration, before section detection, check for `#applyFlowLegalDisclaimer, .apply-flow-full-page-agreement`. If visible → click AGREE → wait for detach → `continue`. See `docs/SECTION_IPC_ARCHITECTURE.md §4.2`.
+- **Never repeat**: Never dispatch section sub-agents without first confirming no full-page modal is overlaid.
+
+## [2026-10-12] PREVIEW-URL COLLISION ROUTES SECTION 1 TO REVIEW
+- **File**: `apply_orchestrator.py` → `detect_current_section()` (+ `review`/`diversity`/`signature` `can_handle`)
+- **What happened**: Oracle URLs contain `/jobs/preview/<id>/`; naked `"review" in path` matched inside "preview", misrouting Section 1 (req 210780039) to Section 4 Review. Same flaw in three `can_handle` matchers and in job-ID regexes missing `/jobs/preview/`.
+- **Correct behavior**: Numbered sections first; keyword fallback requires the `/review` boundary; job-ID regex covers `jobs?/preview/|job/|requisitions?/|preview/`. Pinned by `tests/test_section_detection.py`.
+- **Never repeat**: Never substring-match `review`/`email` against full portal URLs without boundaries.
+
+## [2026-10-12] COVER LETTER SHIPPED WITH EMPTY `(Job ID: )`
+- **File**: `core/generate_professional_cover_letter.py` + `s4_cover_letter_upload.py` + `documents_subagent.py`
+- **What happened**: Letter generated before the preview-URL job-ID fix rendered `Re: Application for X (Job ID: )` and was uploaded as if tailored.
+- **Correct behavior**: Template omits the parenthetical when ID is empty (loud warning); every upload path verifies the companion `Cover_Letter.txt` names the requisition via `verify_cover_letter_job_id()` and regenerates on mismatch. Pinned by `tests/test_cover_letter_job_id.py`.
+- **Never repeat**: Never treat a tailored file as valid without content verification.
+
+## [2026-10-12] INDIA-ONLY ENFORCEMENT VIA `allowed_countries` HARD GATE
+- **File**: `cognitive_job_matcher.py` + `autonomous_job_agent.py` (Stage 2)
+- **What happened**: Location was 20 soft points, so Jersey City req 210776611 scored 80/100 and was applied despite `locations: ['Bangalore']`. Portal search also ran unfiltered ("Bangalore" matched no Oracle autocomplete suggestion).
+- **Correct behavior**: `target_jobs.allowed_countries` (e.g. `["India"]`) disqualifies out-of-country reqs at score 0 (`out-of-country`); absent key stays neutral. Stage 2 searches the allowed country first. Pinned by country-gate tests.
+- **Never repeat**: Never treat geography as bonus points when the candidate rule is a hard constraint.
+
+## [2026-10-13] ADVANCING PAST FAILED SECTIONS — `SECTION_BLOCKED` GATE
+- **File**: `apply_orchestrator.py` (`_heal_section_with_gate`) + `section_agent_dispatcher.py` (cascade passes)
+- **What happened**: Post-audit flagged an unanswered required pill on req 210765001; the orchestrator logged "Retrying..." and advanced anyway. Dispatcher healed each sub-agent once, abandoning questions revealed mid-heal.
+- **Correct behavior**: Retry each section 3x; on persistent failure halt with `SECTION_BLOCKED` (never advance). Dispatcher re-heals newly-invalidated agents (cascade, max 3). Pinned by gate + cascade tests.
+- **Never repeat**: Never advance on `success: False`. A BLOCKED halt is a correct outcome.
+
+## [2026-10-13] REVIEW SCREEN RE-RENDERS BACKEND ORDER — `ORDER_UNVERIFIED` GATE
+- **File**: `visual_verifier_subagent.py` + `review_section_agent.py` + `s3_experience_ordering.py`
+- **What happened**: Section 3→4 navigation re-mounts tiles in backend (alphabetical) order, discarding the in-session sort; the gate still reported READY.
+- **Correct behavior**: Re-sort on the review screen, verify descending runtime dates (`order_verified`); unverified order fails the gate loudly. Backend order resets every fresh login — re-sort in the submit session. Within one session, a Section 3 KO sort propagates into Section 4 (verified live 210788242) — still always re-verify on review, never assume.
+- **Never repeat**: Never claim sorted order without review-screen readback.
+
+## [2026-10-13] BARE DEEP LINKS 404 — SITE-ROOT SEARCH ENTRY
+- **File**: `jpmorgan_scraper.py` (`_ensure_search_page`)
+- **What happened**: Bare `.../sites/CX_1002/jobs` deep link 404s without search context; the URL-substring guard then scraped the error page.
+- **Correct behavior**: Enter via site root, verify the keyword widget is live (2 attempts), refuse loudly on persistent 404. Pinned by `tests/test_search_entry.py`.
+- **Never repeat**: Never navigate Oracle CX by deep link without verifying the widget rendered.
+
+## [2026-10-13] SCANNER EMITTED OPTION TEXT AS QUESTION — SELF-ECHO FLIP
+- **File**: `s2_*_questions.py` scans + `ai_brain_resolver.py` fallback
+- **What happened**: Req 210788242: label fallback emitted pill text "No Prior Experience" as the question; the brain echoed it back (`fallback → options[0]`); the click flipped a correct "At least 5 years" pick on the single-select group (proven by `screening_answers.json` + Section 2 proof).
+- **Correct behavior**: `question_hygiene.drop_option_titled_questions()` drops option-titled rows in all three healers; brain refuses self-echo (`REFUSED_SELF_ECHO`, answer None); unknown questions and non-Yes/No pairs defer instead of blind-picking. Pinned by `tests/test_answer_integrity.py`.
+- **Never repeat**: Never answer a question that is one of its own options. Never default-pick `options[0]`/`"Yes"` for unrecognized input.
+
+## [2026-10-13] ANSWERED-BUT-WRONG NEVER REVISITED + EMAIL ADVANCE UNGATED
+- **File**: `s2_competency_questions.py` (`scan_competency_rows` truth check), `s2_conditional_questions.py` (read-back), `apply_orchestrator.py` (email gate)
+- **What happened**: Req 210788242 showed a selected-but-wrong tier pick nobody re-checked (audits only looked for emptiness), and the email step advanced without confirming acceptance.
+- **Correct behavior**: Answered rows are re-resolved against brain truth and re-clicked on mismatch (audit flags `mismatched_answers` too); conditional pill/radio clicks require read-back match; email advances only with the address populated and the checkbox checked, else `SECTION_BLOCKED`.
+- **Never repeat**: Never audit for emptiness alone; never advance any step without verifying its own completion.
+
+## [2026-10-13] COORDINATOR-ONLY CODE NEVER EXECUTES LIVE
+- **File**: `review_section_agent.py` → `visual_verifier_subagent.py`
+- **What happened**: Req 210788242: reorder retry lived in `ReviewSectionAgent.heal()`, but the dispatcher routes "review" to 4 granular sub-agents — the coordinator fallback never fires. Same dead-code trap as the questionnaire 4-pass loop before it.
+- **Correct behavior**: Healing logic must live in the sub-agent the dispatcher actually calls (`VisualVerifierSubAgent.heal()` reorders + verifies with retry). After adding any coordinator logic, grep the dispatch mapping to prove it executes.
+- **Never repeat**: Never trust coordinator code paths without tracing the live dispatch route.
+
+## [2026-10-13] LATE-REVEALED REQUIRED WIDGETS + STALE RESUME PARITY
+- **File**: `apply_orchestrator.py` (`_section_has_visible_errors`), `dropdown_question_subagent.py` (orphan sweep), `s4_resume_upload.py` (filename-aware freshness)
+- **What happened**: Req 210788242: a required languages combobox revealed after the final audit sat empty with Oracle's red "required" text while the section reported PASS; resume uploads checked filled-state only, unlike cover letters.
+- **Correct behavior**: Gate-level independent error-text sweep blocks advance regardless of subagent verdicts; dropdown audit sweeps required comboboxes outside standard row containers; resume resolution prefers candidate-name newest-first and replaces filename-mismatched attachments.
+- **Never repeat**: Never let audits be the only eyes on a section; never check document presence without identity.
+
+## [2026-10-13] REQUIRED-STAR INVISIBLE TO TEXT CHECKS + UNSCOPED LISTBOX QUERIES
+- **File**: `dropdown_question_subagent.py`, `s2_conditional_questions.py`, `s2_dropdown_questions.py`, `questionnaire_section_agent.py`
+- **What happened**: Req 210788242 languages combobox: red asterisk renders as an EMPTY span (no literal `*` in text), `required` lives on the label class, `aria-required` on the input — all three audit layers checked literal text only and passed an empty required field. Separately, global listbox queries collided with 9 SPA toggles and the ODA chatbot listbox.
+- **Correct behavior**: Required = literal `*` OR star-span/label-required class OR `aria-required` (all scans + tripwire); listbox discovery scoped via the row input's `aria-controls` with ODA exclusion and row/global fallbacks.
+- **Never repeat**: Never check required-ness by text alone on Oracle JET; never query listboxes globally on an SPA.
+
+## [2026-10-13] COVER TITLE FROM BARE H1 + REVIEW REORDER SINGLE-SHOT
+- **File**: `s4_cover_letter_upload.py`, `generate_professional_cover_letter.py`, `review_section_agent.py`
+- **What happened**: Req 210788242: title selector included bare `h1`, capturing a JD section header ("Work Summary") into the letter; review-screen reorder ran once and its failure ended the run.
+- **Correct behavior**: Strict job-title selectors only; defer synthesis when the title is unknown; companion-txt title verification (`verify_cover_letter_job_title`) triggers regeneration on mismatch; review reorder retries 3x with per-attempt diagnostics in the heal result.
+- **Never repeat**: Never read titles from bare heading tags; never single-shot a render-sensitive reorder.
+
+## [2026-10-13] SYNC GENERATOR INSIDE ASYNC LOOP — THREAD OFFLOAD- **File**: `autonomous_job_agent.py` Stage 4 + `s4_cover_letter_upload.py` on-demand synthesis → shared `utils/sync_bridge.py`
+- **What happened**: `generate_tailored_cover_letter()` (sync_playwright) crashed inside `--autonomous`'s event loop; the fallback note swallowed it and the stale letter survived. Stage 5's `orchestrator.run()` had the identical latent crash, plus a bare `.../apply` deep-link 404 on entry.
+- **Correct behavior**: Single tested `call_sync_offloaded()` bridge for all sync-in-async calls (never inline idiom copies); Stage 5 enters via job page + APPLY NOW click. Shared `save_match_report()` helper also replaced duplicated untested writes (one copy had an out-of-scope `cfg_path` NameError).
+- **Never repeat**: Never call sync Playwright code from async flows without the bridge. Never duplicate untested I/O across launchers. Never deep-link Oracle `.../apply`.

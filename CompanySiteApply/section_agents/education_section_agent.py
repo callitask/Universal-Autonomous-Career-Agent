@@ -9,6 +9,14 @@
 # Rationale: Eliminates ad-hoc scripting for education anomalies and guarantees zero side effects on Work Experience.
 # Preventative Notes: Never interact with experience tiles when operating in this agent.
 # ==============================================================================
+# [ENTRY #002]
+# Term: [PHASE5_EDUCATION_TILE_IPC_DELEGATION]
+# Timestamp: 2026-10-12 21:52:00 +05:30
+# Issue / Context: Education section needed isolated sub-section execution and IPC serialization.
+# Changes Made: Updated heal() to delegate to s3_education_tile.heal_education_tile().
+# Rationale: Guarantees modular sub-section isolation and IPC traceability.
+# Preventative Notes: Never interact with experience tiles when operating in this agent.
+# ==============================================================================
 
 import time
 import logging
@@ -102,7 +110,23 @@ class EducationSectionAgent(BaseSectionAgent):
         """
         Surgically heals the Education section.
         Opens modal if needed, fills missing fields with autocomplete handling, and clicks SAVE.
+        Delegates to s3_education_tile script.
         """
+        try:
+            from CompanySiteApply.section_agents.scripts.s3_education_tile import heal_education_tile
+            from CompanySiteApply.ipc.ipc_manager import get_effective_session_id
+            _sess = get_effective_session_id(candidate_data, None) or None
+            res = heal_education_tile(page, candidate_data, session_id=_sess)
+            if res.get("success"):
+                verified = self.verify(page, candidate_data)
+                return {"success": verified, "section": self.section_name, "saved": True, "verified": verified}
+            if res.get("deferred"):
+                # Profile lacks education truth — fall through to inline handler which
+                # defers field-by-field instead of inventing credentials.
+                logger.info(f"[EducationSectionAgent] Tile script deferred: {res.get('error')}")
+        except Exception as e:
+            logger.debug(f"[EducationSectionAgent] s3_education_tile note: {e}")
+
         try:
             cand = candidate_data.get("candidate", candidate_data)
             edu_list = cand.get("education") or candidate_data.get("education") or []

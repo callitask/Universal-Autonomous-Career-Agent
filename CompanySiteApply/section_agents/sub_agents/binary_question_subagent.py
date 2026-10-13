@@ -8,6 +8,14 @@
 # Rationale: Guarantees grounded-truth resolution for binary decisions with zero hardcoding.
 # Preventative Notes: Never default to guessing without profile/ground-truth fallback.
 # ==============================================================================
+# [ENTRY #002]
+# Term: [PHASE4_BINARY_QUESTIONS_IPC_DELEGATION]
+# Timestamp: 2026-10-12 21:32:00 +05:30
+# Issue / Context: Section 2 Binary questions needed IPCManager serialization for auditability.
+# Changes Made: Delegated heal() to s2_binary_questions.heal_binary_questions().
+# Rationale: Enables subagent independence and IPC integration.
+# Preventative Notes: Never bypass IPC serialization for active questions.
+# ==============================================================================
 
 import time
 import logging
@@ -69,54 +77,15 @@ class BinaryQuestionSubAgent(BaseSectionAgent):
 
     def heal(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            from CompanySiteApply.ai_brain_resolver import AIBrainResolver
-            brain = AIBrainResolver.get_instance(candidate_data)
-            healed_count = 0
-
-            questions = page.locator(".input-row, .app-form-item, .apply-flow-question-block, [class*='question-block']").all()
-            for q in questions:
-                if not q.is_visible():
-                    continue
-                pills = q.locator("button.cx-select-pill-section, button[role='radio']").all()
-                if len(pills) != 2:
-                    continue
-                pill_texts = [p.inner_text().strip() for p in pills]
-                pill_lower = [pt.lower() for pt in pill_texts]
-                if "yes" not in pill_lower or "no" not in pill_lower:
-                    continue
-
-                has_selected = any("selected" in (p.get_attribute("class") or "") or p.get_attribute("aria-checked") == "true" for p in pills)
-                if has_selected:
-                    continue
-
-                label_el = q.locator("legend, label, .cx-form-label, p, h3, h4").first
-                q_text = label_el.inner_text().strip() if label_el.count() > 0 else q.inner_text().strip()
-
-                # Resolve via AI Brain
-                resolution = brain.resolve_question(
-                    question_text=q_text,
-                    control_type="BINARY_PILL",
-                    options=pill_texts
-                )
-                target_choice = str(resolution.get("answer") or "no").strip().lower()
-                logger.info(f"[BinaryQuestionSubAgent] Brain resolved '{q_text[:40]}' -> '{target_choice}'")
-
-                target_pill = None
-                for p in pills:
-                    if p.inner_text().strip().lower() == target_choice:
-                        target_pill = p
-                        break
-
-                if target_pill:
-                    target_pill.click()
-                    healed_count += 1
-                    time.sleep(0.3)
-
+            from CompanySiteApply.section_agents.scripts.s2_binary_questions import heal_binary_questions
+            from CompanySiteApply.ipc.ipc_manager import get_effective_session_id
+            _sess = get_effective_session_id(candidate_data, None) or None
+            res = heal_binary_questions(page, candidate_data, session_id=_sess)
             verified = self.verify(page, candidate_data)
             return {
                 "success": verified,
                 "subagent": self.section_name,
-                "healed_count": healed_count,
+                "healed_count": res.get("healed_count", 0),
                 "verified": verified
             }
         except Exception as e:

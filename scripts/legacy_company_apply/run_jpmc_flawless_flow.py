@@ -31,7 +31,7 @@ from typing import Dict, Any, Optional, List
 from playwright.sync_api import sync_playwright
 
 from CompanySiteApply.nails.oracle.jpmc_nail import JPMCNail
-from core.visual_ai_auditor import VisualAIAuditor
+from scripts.legacy_company_apply.visual_ai_auditor import VisualAIAuditor
 
 REPO_ROOT = Path(__file__).resolve().parent
 

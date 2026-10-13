@@ -116,7 +116,17 @@ class TestSubAgents(unittest.TestCase):
     def test_visual_verifier_subagent_human_gate_enforcement(self):
         agent = VisualVerifierSubAgent()
         mock_page = MagicMock()
-        mock_page.evaluate.return_value = []
+        mock_page.evaluate.side_effect = [
+            [],  # errors
+            {  # structured readback, newest-first order
+                "experience_tiles": [
+                    ["Senior Associate", "Cognizant", "03/2026 - Present"],
+                    ["Consultant", "Infosys", "02/2024 - 02/2026"],
+                ],
+                "education_tiles": [],
+                "documents": [],
+            },
+        ]
         mock_btn = MagicMock()
         mock_btn.count.return_value = 1
         mock_btn.first = mock_btn
@@ -125,8 +135,34 @@ class TestSubAgents(unittest.TestCase):
 
         res = agent.audit(mock_page, {})
         self.assertTrue(res["is_valid"])
+        self.assertTrue(res["chronological_order_correct"])
         self.assertTrue(res["human_gate_active"])
         self.assertFalse(res["submit_clicked"])
+
+    def test_visual_verifier_rejects_scrambled_review_order(self):
+        agent = VisualVerifierSubAgent()
+        mock_page = MagicMock()
+        mock_page.evaluate.side_effect = [
+            [],  # errors
+            {  # alphabetical backend order (incident 2026-10-13)
+                "experience_tiles": [
+                    ["Software Engineer", "Adobe India Pvt. Ltd.", "06/2016 - 01/2017"],
+                    ["Senior Associate", "Cognizant", "03/2026 - Present"],
+                ],
+                "education_tiles": [],
+                "documents": [],
+            },
+        ]
+        mock_btn = MagicMock()
+        mock_btn.count.return_value = 1
+        mock_btn.first = mock_btn
+        mock_btn.is_disabled.return_value = False
+        mock_page.locator.return_value = mock_btn
+
+        res = agent.audit(mock_page, {})
+        self.assertFalse(res["is_valid"])
+        self.assertFalse(res["chronological_order_correct"])
+        self.assertTrue(any("ORDER_UNVERIFIED" in e for e in res["errors"]))
 
     def test_documents_subagent_preuploaded_stale_detection(self):
         agent = DocumentsSubAgent()

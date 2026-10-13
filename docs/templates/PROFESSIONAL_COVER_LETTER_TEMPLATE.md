@@ -29,7 +29,7 @@ Top enterprise hiring committees and executive engineering directors prioritize:
   - Bullets: `9.5pt`, Line Height: `1.4`
   - Sign-off Name: `10.5pt`, Bold (`#1B365D`)
 * **Page Margins (A4):**
-  - Top: `12mm` | Bottom: `12mm` | Left: `16mm` | Right: `16mm`
+  - Top: `14mm` | Bottom: `14mm` | Left: `18mm` | Right: `18mm`
 
 ---
 
@@ -37,7 +37,7 @@ Top enterprise hiring committees and executive engineering directors prioritize:
 
 ```
 [CANDIDATE FULL NAME]
-[City, State, Country] • [Phone] • [Email] • [LinkedIn URL]
+[Known contact parts only, `•`-joined — blank parts are dropped, never invented]
 --------------------------------------------------------------------------------
 
 [Date: Month Day, Year]
@@ -46,7 +46,11 @@ Technology Hiring Team | [Business Unit / Department]
 [Company Name]
 [City, State, Country]
 
-Re: Application for [Exact Job Title] (Job ID: [Requisition ID])
+PDF header: `Subject: Application for [Exact Job Title] (Requisition ID: [Requisition ID])`
+(updated 2026-10-13; previously `Re:` — reserved for replies).
+Plain-text companion: `Re: Application for [Exact Job Title] (Job ID: [Requisition ID])`
+— the parenthetical is omitted entirely when the ID is unknown, and the
+companion `.txt` is content-verified to name the requisition before upload.
 
 Dear Hiring Team,
 
@@ -77,6 +81,6 @@ Sincerely,
 ---
 
 ## 4. Automation & Lifecycle Protocol
-1. **Dynamic Generation:** When applying to a new requisition, generate both `Cover_Letter.txt` and `Udaysagar_Kandpal_Cover_Letter.pdf` strictly following this template.
+1. **Dynamic Generation:** When applying to a new requisition, generate `Cover_Letter.html`, `Cover_Letter.txt`, and `{Candidate_Name}_Cover_Letter.pdf` strictly following this template (filename derives from the candidate name — never a hardcoded name).
 2. **Portal Replacement Guardrail:** In applicant portals (such as Oracle Cloud HCM), always check for existing attachments (`REMOVE COVER LETTER`). If present, trigger removal first, accept confirmation, verify the container is cleared, and upload the freshly rendered PDF.
 3. **Verification:** Inspect Section 4 to confirm the newly uploaded PDF is displayed with active checkmark and 0 errors.

@@ -87,6 +87,45 @@ class TestAutonomousJobAgent(unittest.TestCase):
         self.assertEqual(res_neg["status"], "NEGATIVE_KEYWORD_GATED")
         self.assertEqual(res_neg["score"], 0)
 
+    def test_cognitive_job_matcher_country_gate(self):
+        # 1. Candidate with allowed_countries: ["India"]
+        cand_with_gate = dict(self.tech_candidate)
+        cand_with_gate["target_jobs"] = dict(self.tech_candidate["target_jobs"])
+        cand_with_gate["target_jobs"]["allowed_countries"] = ["India"]
+        matcher_with_gate = CognitiveJobMatcher(cand_with_gate)
+
+        # US req rejected at 0 with reason "out-of-country"
+        job_us = {
+            "job_id": "9001",
+            "title": "Lead Software Engineer - Java",
+            "location": "Jersey City, NJ, United States",
+            "full_text": "Lead Software Engineer role with Java and AWS in Jersey City."
+        }
+        res_us = matcher_with_gate.evaluate_job(job_us)
+        self.assertEqual(res_us["score"], 0)
+        self.assertFalse(res_us["is_eligible"])
+        self.assertEqual(res_us["status"], "DISQUALIFIED")
+        self.assertIn("out-of-country", res_us["reasons"])
+
+        # Indian req unaffected
+        job_in = {
+            "job_id": "9002",
+            "title": "Lead Software Engineer - Java",
+            "location": "Bengaluru, Karnataka, India",
+            "full_text": "Lead Software Engineer role with Java, Spring Boot, Microservices, and Kafka in Bengaluru."
+        }
+        res_in = matcher_with_gate.evaluate_job(job_in)
+        self.assertTrue(res_in["is_eligible"])
+        self.assertGreaterEqual(res_in["score"], 70)
+        self.assertNotIn("out-of-country", res_in["reasons"])
+
+        # Absent-key neutral (backward compatible)
+        cand_no_gate = dict(self.tech_candidate)
+        matcher_no_gate = CognitiveJobMatcher(cand_no_gate)
+        res_neutral = matcher_no_gate.evaluate_job(job_us)
+        self.assertGreater(res_neutral["score"], 0)
+        self.assertNotIn("out-of-country", res_neutral["reasons"])
+
     @patch("CompanySiteApply.autonomous_job_agent.JPMorganScraper.search_jobs", new_callable=AsyncMock)
     def test_stage_2_filter_already_applied(self, mock_search):
         agent = AutonomousJobAgent()

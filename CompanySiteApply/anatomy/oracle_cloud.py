@@ -132,7 +132,7 @@ class OracleEducationSectionSurface(SectionSurface):
 
             target_school = str(target.get("institution") or target.get("school") or "").strip()
             target_degree = str(target.get("degree") or "").strip()
-            target_country = str(target.get("country") or "India").strip()
+            target_country = str(target.get("country") or "").strip()
             target_major = str(target.get("major") or target.get("field_of_study") or "").strip()
 
             # 1. Open modal if not already open

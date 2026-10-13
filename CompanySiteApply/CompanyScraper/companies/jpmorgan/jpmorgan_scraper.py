@@ -52,6 +52,46 @@ class JPMorganScraper(BaseCompanyScraper):
     def portal_type(self) -> str:
         return self.config.get("portal_type", "oracle_cloud_hcm")
 
+    async def _ensure_search_page(self, page: Any, site_root: str, selectors: Dict[str, Any]) -> bool:
+        """Guarantee a live search widget before typing.
+
+        Returns True when the keyword input is present and the page title is
+        not an Oracle 404. Returns False (loud, no scraping) otherwise.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        async def _widget_live() -> bool:
+            try:
+                title = (await page.title()) or ""
+                if "page not found" in title.lower():
+                    return False
+                kw = page.locator(selectors.get("keyword_input", "#keyword")).first
+                return await kw.count() > 0 and await kw.is_visible()
+            except Exception:
+                return False
+
+        if await _widget_live():
+            return True
+        for attempt in (1, 2):
+            try:
+                await page.goto(site_root, wait_until="domcontentloaded")
+                await page.wait_for_timeout(3000)
+            except Exception as e:
+                logger.warning(f"[JPMorganScraper] Site-root navigation attempt {attempt} failed: {e}")
+                continue
+            if await _widget_live():
+                return True
+        try:
+            title = await page.title()
+        except Exception:
+            title = "<unreadable>"
+        logger.error(
+            f"[JPMorganScraper] Search page unavailable (title={title!r}, url={getattr(page, 'url', '')}). "
+            "Refusing to scrape an error page."
+        )
+        return False
+
     async def search_jobs(self,
                           page: Any,
                           keyword: str,
@@ -61,15 +101,15 @@ class JPMorganScraper(BaseCompanyScraper):
         Executes a targeted search query on JPMC Oracle HCM portal with interactive location suggestion.
         """
         site_code = self.config.get("site_code", "CX_1002")
-        base_url = f"https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/{site_code}/jobs"
-        
-        # Navigate to jobs page if not already on the jobs search page
-        if "/jobs" not in page.url or "/my-profile" in page.url:
-            await page.goto(base_url, wait_until="domcontentloaded")
-            await page.wait_for_timeout(3000)
-
+        site_root = f"https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/{site_code}/"
         selectors = self.config["selectors"]
-        
+
+        # Entry via the site root (incident 2026-10-13): Oracle CX rejects the
+        # bare .../jobs deep link with "Page not found" when no search context
+        # exists. The searchable widget lives on the site home page.
+        if not await self._ensure_search_page(page, site_root, selectors):
+            return []
+
         # 1. Fill keyword
         kw_el = page.locator(selectors.get("keyword_input", "#keyword")).first
         if await kw_el.count() > 0:

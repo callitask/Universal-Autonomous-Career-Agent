@@ -56,9 +56,9 @@ async def run_autonomous_lifecycle(args, candidate_data, cdp_endpoint):
             print("[Universal Apply Runner] Could not evaluate jobs.")
             return {"status": "EVALUATION_FAILED"}
 
-        # Save match results
-        out_file = ROOT / "jpmc_job_matches.json"
-        out_file.write_text(json.dumps(ranked_jobs, indent=2), encoding="utf-8")
+        # Save match results into the candidate's sandbox (never the repo root)
+        from CompanySiteApply.utils.match_report import save_match_report
+        out_file = save_match_report(ROOT / "profiles" / agent.profile_slug / "output", ranked_jobs)
         print(f"[Universal Apply Runner] Saved job match report to {out_file}")
 
         best_job = ranked_jobs[0]
@@ -100,6 +100,7 @@ def main():
 
     print(f"[Universal Apply Runner] Loading candidate profile from: {cfg_path}")
     candidate_data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    candidate_data["profile"] = args.profile
 
     cdp_endpoint = args.cdp_url or candidate_data.get("candidate", {}).get("cdp_url") or "http://127.0.0.1:9222"
 
