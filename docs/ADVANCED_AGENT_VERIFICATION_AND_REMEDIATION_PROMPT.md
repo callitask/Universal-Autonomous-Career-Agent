@@ -15,7 +15,7 @@
     - Treat git roots, commits, and concerns separately. Never commit both repos in one command. Never import across repos (`core/` must never import Sophron; Sophron must never drive job-application loops). Knowledge is split by `domain`: `agent_structure` (agent code/docs, updated on agent dev, free from personal intelligence) vs `personal_intelligence` (human + AI session learning, updated every AI session regardless of model — Antigravity, Muse, Claude — with `agent_model` + `software` logged). Document the boundary explicitly in every map you produce.
 
 2. **Profiles are volatile dynamic data, never source of truth.**
-   - `profiles/<live_profile>/` (`anshika_garg/`, `bharat_pandey/`, `suresh_chaudhary/`, `udaysagar_kandpal/`, any future folder) contains input + output that can be created, changed, deleted, or replaced per selected profile at any time.
+   - `profiles/<live_profile>/` (any future folder) contains input + output that can be created, changed, deleted, or replaced per selected profile at any time.
    - **You may read ONLY `profiles/default_user/`** (schema blueprint: `candidate_config.json`, `resume.md`, `cover_letter_template.md`, `README.md`, `output/` skeleton) to learn input shape and output conventions.
     - **Forbidden:** reading live profile configs/resumes/ledgers/CSVs to justify engine changes; copying any live name, email, phone, city, PIN, CTC, title, or company into code, docs, rules, graph nodes, or vector chunks; editing anything under `profiles/<live>`. Engine code must stay generic via `ProfileContext` + `candidate_config.json` + `screening_heuristics`. Respect `.gitignore` (`profiles/`, `*.log`, scan leftovers; Sophron lives in its own sibling repo).
 
@@ -51,7 +51,7 @@ You must walk the tree file-by-file. No sampling. For **every** `.py`, `.md`, `.
   - `parser_doctor/`: `__init__.py`, `line_wrap_healer.py`, `education_healer.py`, `review_verifier.py`
   - `utils/`: `__init__.py`, `dom_helpers.py`, `honeypot_guard.py`, `config_resolver.py`, `experience_matcher.py`, `match_report.py`, `question_hygiene.py`, `sync_bridge.py`, `company_workspace.py`
   - `inspections/`: gitignored runtime DOM snapshots (count varies; never copy PII out)
-  - `tests/`: 19 files, 159 tests (re-count via `grep def test_` including `async def test_`)
+  - `tests/`: 20 files, 164 tests (re-count via `grep def test_` including `async def test_`)
   - Docs: `README.md`, `SCOPE_OF_EDIT.md`
 - `scripts/`: `build_knowledge_index.py`, `reevaluate_ledger.py`, `test_colab_connection.py`, `phase_4_run.ps1`, plus `legacy_company_apply/` (archived one-offs, never run)
 - `docs/`: `WORKSPACE_RULES.md`, `ARCHITECTURE_REFERENCE.md`, `PLATFORM_KNOWLEDGE.md`, `GEMINI_WEB_AI_PROMPTS.md`, `REFERENCE_DEPLOYMENT_GUIDE.md`, `COMPANY_ATS_KNOWLEDGE.md`, `ORACLE_HCM_ATS_DEEP_DIVE.md`, `STRATEGIC_RESUME_TAILORING.md`, `UNIVERSAL_ATS_REVERSE_ENGINEERING_PLAYBOOK.md`, `KNOWLEDGE_GRAPH_CHANGELOG.md`, `DEPRECATED_SYSTEMS_CHANGELOG.md`, plus this brief

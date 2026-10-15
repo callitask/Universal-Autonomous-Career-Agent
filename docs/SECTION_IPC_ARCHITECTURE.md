@@ -32,7 +32,7 @@ This file is the shared message bus between Python (Playwright browser scripts) 
 {
   "session_id": "<uuid4 generated at orchestrator start>",
   "job_id": "<job requisition ID, e.g. 210780039>",
-  "profile": "<profile folder name, e.g. udaysagar_kandpal>",
+  "profile": "<profile folder slug, e.g. first_last>",
   "section": "<section_1 | section_2 | section_3 | section_4>",
   "subsection": "<personal_details | preferred_location | binary_questions | competency_questions | conditional_questions | experience_tile_N | education_tile | documents | diversity | signature>",
   "page_number": 1,
@@ -156,13 +156,15 @@ After `binary_questions`, `competency_questions`, and `dropdown_questions` compl
 | `linkedin_url` | `JPMCNail` LinkedIn normalization (inline, no discrete script) | Verify LinkedIn link not truncated by Oracle resume parser. Non-IPC. |
 | `visual_verify` | `VisualVerifierSubAgent` (no discrete script) | Full-page screenshot → saved to `artifacts/` (Operations root) + structured DOM readback with `ORDER_UNVERIFIED` pre-submit gate. |
 
-**Document Upload Independence Rule (structured-layout contract, 2026-10-14):**
-- Inputs (profile-agnostic): `profiles/<slug>/company_site_apply/<Slug>/resumes|cover_letters` (+ `resume.md`, `cover_letters/BASE.md`).
-- Outputs: `profiles/<slug>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with FIXED `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` (Stem = Title-Cased profile, e.g. `udaysagar_kandpal` → `Udaysagar_Kandpal`) mirrored flat AND inside `resume/` + `cover_letters/` subfolders, plus role `Cover_Letter.txt`/`.html`. No job-id filename suffixes — multiple jobs per company and same-title different-IDs coexist by folder, not by filename.
-- `resume_upload` and `cover_letter_upload` are callable independently.
+**Document Upload Independence Rule (structured-layout contract, 2026-10-14; tailoring gate 2026-10-15):**
+- Inputs (profile-agnostic): `profiles/<slug>/company_site_apply/<Slug>/` (root `README.md`-only + `resumes/BASE.md` + `cover_letters/BASE.md`).
+- Outputs: `profiles/<slug>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with FIXED `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` (Stem = Title-Cased profile slug, e.g. `first_last` → `First_Last`) mirrored flat AND inside `resume/` + `cover_letters/` subfolders, plus role `Cover_Letter.txt`/`.html`. No job-id filename suffixes — multiple jobs per company and same-title different-IDs coexist by folder, not by filename.
+- `resume_upload` and `cover_letter_upload` are callable independently (both accept `--job-id`).
 - Each checks its own state BEFORE acting:
   - Resume: `[data-automation-id*='resume'], input[type='file'][accept*='pdf']` — check `.attachment-upload-button--filled` state.
   - Cover letter: same pattern but keyed on `[data-automation-id*='cover']`.
+- DOM display filenames are NEVER trusted (every requisition shares the fixed name): every run executes **remove-if-filled + upload + verify** — role-folder `Cover_Letter.txt` must pass Job-ID + title checks for the active `job_id`, the role PDF must exist and satisfy `pdf.st_mtime >= txt.st_mtime - 5.0`, and the upload is credited only to the active `(_ipc_session_id, job_id)` via `_fresh_cover_uploaded`.
+- If Stage 4 tailoring failed (`_tailoring_failed` / `_skip_document_upload`): remove any stale draft, upload NOTHING, and return `REVIEW_BLOCKED` (`blocked_reason: TAILORING_BLOCKED`, `skip_retry: True`) with the missing document + fix command — while diversity, signature, and visual verification still complete in the same pass.
 - If both are stale, scripts run sequentially (cover letter first, then resume — because cover letter removal can trigger page re-renders).
 - Session freshness flag `_fresh_cover_uploaded` and `_fresh_resume_uploaded` are stored in IPC `session_id` context.
 
@@ -386,7 +388,7 @@ If this session ends before full implementation:
 1. Re-read `ACTIVE_CONSTRAINT_BLOCK.md` + `SCAR_TISSUE.md` (mandatory).
 2. Check which Phase (§7) was last completed — grep for `# Phase N COMPLETE` comments in modified files.
 3. Resume from the next uncompleted phase.
-4. Before writing any code: run `python -m unittest discover -s CompanySiteApply/tests` — all 159 must pass (plus 7 cover-letter-id tests in `tests/`, 10 knowledge tests).
+4. Before writing any code: run `python -m unittest discover -s CompanySiteApply/tests` — all 164 must pass (plus 7 cover-letter-id tests in `tests/`, 10 knowledge tests).
 5. After each phase: run tests again. Regression = stop and investigate before continuing.
 6. This document is the canonical spec. Do not deviate without updating it first.
 

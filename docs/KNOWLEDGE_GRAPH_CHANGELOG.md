@@ -93,3 +93,8 @@ Whenever a new system is built, a bug is caught, or an architecture is modified,
 * **Action:** Moved all runtime data to sibling `Operations JOB AI AGENT/` (4 live profiles byte-verified, artifacts, inspections, IPC bus) behind `utils/runtime_paths.py` + env override; added answer-integrity guards (option-title drop, self-echo refusal, deferral fallback, wrong-pick correction, email gate, honest review status); full 35-file md sweep with 3 parallel auditors; suite at 138 (point-in-time; current: 142 per 2026-10-14 structured-layout fix).
 * **Context:** Runtime data inside the code tree risked commit leaks and clutter; blind fallbacks caused a wrong-tier selection on a live run.
 * **Decision:** Code repo holds code + blueprint only; every run leaves a transcript; counts re-verified by grep + test run.
+
+## Phase 13 Knowledge Index Upgrade: Operations Scan + async def + Legacy Exclusion (2026-10-15)
+* **Action:** `get_live_profile_names()` scans repo + Operations profile roots (`Serial: 004`); chunker and AST extraction handle `async def`/`AsyncFunctionDef`; `legacy_company_apply/` excluded from both gate lists; `test_08` pins the exclusion.
+* **Context:** Privacy tests were blind to Operations live profiles; async lifecycle code was unchunked/unindexed; archived one-offs polluted retrieval.
+* **Decision:** Profile roots, artifact dirs, and grammar forms must be added in every parallel gate list; `test_08` guards the exclusion.

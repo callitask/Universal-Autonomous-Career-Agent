@@ -17,6 +17,17 @@
 # Preventative Notes: Slugs are alphanumeric only (no spaces/&/punctuation)
 #                     so shell globs and OCR-style matchers never break.
 #                     Never seed live PII into the default_user blueprint.
+#
+# [ENTRY #002]
+# Term: [BASE_RESUME_MD_READER]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: resumes/BASE.md was seeded but never read — matching/Q&A
+#                  only read profile resume.md (write-only decoration).
+# Changes Made: resolve_base_resume_md() — company workspace BASE.md first
+#               (placeholder-guarded), profile resume.md fallback. Readers in
+#               experience_matcher + oracle_cloud_finger use it.
+# Rationale: Company-framed bases must actually ground matching.
+# Preventative Notes: Never read a BASE.md containing blueprint placeholders.
 # ==============================================================================
 
 """Per-company workspace contract for CompanySiteApply document resolution."""
@@ -171,6 +182,51 @@ def ensure_company_workspace(
                 except OSError:
                     pass
     return workdir
+
+
+def _is_real_base_md(path: Path) -> bool:
+    """Non-empty BASE.md without unedited blueprint placeholders."""
+    try:
+        if not path.is_file() or path.stat().st_size == 0:
+            return False
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if not text.strip():
+            return False
+        return "[FIRSTNAME LASTNAME]" not in text
+    except OSError:
+        return False
+
+
+def resolve_base_resume_md(
+    candidate_data: Optional[Dict[str, Any]] = None,
+    company: str = "",
+) -> str:
+    """Company-first markdown resume lookup (Gap 1 closure).
+
+    Order: company_site_apply/<Slug>/resumes/BASE.md (real content only)
+    -> profiles/<slug>/resume.md. Returns "" when neither is usable.
+    """
+    if company and str(company).strip().lower() not in ("company", "unknown", ""):
+        try:
+            for root in resolve_company_roots(candidate_data, str(company)):
+                base = Path(root) / "resumes" / "BASE.md"
+                if _is_real_base_md(base):
+                    return str(base)
+        except Exception:
+            pass
+    try:
+        from CompanySiteApply.utils.config_resolver import resolve_search_roots
+        roots = [str(r) for r in resolve_search_roots(candidate_data)]
+    except Exception:
+        roots = [os.getcwd()]
+    for root in roots:
+        md_path = Path(root) / "resume.md"
+        if _is_real_base_md(md_path):
+            return str(md_path)
+        csa = Path(root) / "company_site_apply" / "resume.md"
+        if _is_real_base_md(csa):
+            return str(csa)
+    return ""
 
 
 def resolve_company_roots(

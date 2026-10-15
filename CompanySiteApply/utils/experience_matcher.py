@@ -125,11 +125,22 @@ def match_experience_entry(
 
 def load_resume_experience_map(
     candidate_data: Optional[Dict[str, Any]] = None,
+    company: str = "",
 ) -> Dict[str, Dict[str, Any]]:
-    """Locate resume.md via search roots and parse it. Returns {} if absent.
+    """Locate resume markdown via search roots and parse it. Returns {} if absent.
 
-    Mirrors the oracle_cloud_finger.py resume.md lookup (root + "/resume.md").
+    Gap 1: company workspace resumes/BASE.md is tried first (via
+    resolve_base_resume_md); legacy root resume.md loop stays as fallback.
     """
+    try:
+        from CompanySiteApply.utils.company_workspace import resolve_base_resume_md
+        base_md = resolve_base_resume_md(candidate_data, company or "")
+        if base_md:
+            parsed = parse_resume_experiences(base_md)
+            if parsed:
+                return parsed
+    except Exception:
+        pass
     try:
         from CompanySiteApply.utils.config_resolver import resolve_search_roots
 

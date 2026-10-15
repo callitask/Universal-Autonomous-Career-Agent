@@ -1,5 +1,6 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT — MASTER INITIALIZATION & LAUNCH DIRECTIVE
 # Version: 3.0 | Updated: 2026-09-18 | Key change: Multi-daemon architecture, IPC monitoring loop, ledger management
+# Supersession notice (2026-10-15): the ACTIVE canonical prompts are `.agents/README.md` (v4.3, 3-daemon Batch v2.0 pipeline) and `COMPANY_SITE_APPLY_PROMPT_v1.md` (v2.3, CompanySiteApply). This file is retained as a historical flow reference; where it conflicts, the canonical prompts win. Live profiles resolve under `F:\Operations JOB AI AGENT\profiles\` (below, bare `profiles/$TARGET_PROFILE` paths mean the active profile root wherever it resolves).
 
 > [!WARNING]
 > **HISTORICAL SPECIFICATION NOTICE — PRE-BATCH ARCHITECTURE V2.0**  

@@ -16,12 +16,12 @@ Compliance is mandatory regardless of whether the user explicitly mentions the d
 ---
 
 ### STEP 2 — Identify Active Candidate Profile
-1. Inspect `F:\JOB AI AGENT\profiles` to determine the target candidate directory:
+1. Inspect `F:\Operations JOB AI AGENT\profiles` to determine the target candidate directory:
     - If the user specifies a profile (e.g. `john_doe`), use `profiles/<specified_profile>`.
-   - If unspecified, check the most recently active profile or default reference:
-     * Canonical template & schema blueprint: `profiles/default_user`
-     * Active candidate directory: `profiles/udaysagar_kandpal`
-2. Recognize the dynamic sandbox boundary:
+   - If unspecified, auto-discover the sole live profile (excluding the blueprint below); with zero or multiple profiles, halt and ask:
+      * Canonical template & schema blueprint: `F:\JOB AI AGENT\profiles\default_user`
+      * Active candidate directory: `F:\Operations JOB AI AGENT\profiles\<profile_slug>`
+2. Recognize the dynamic sandbox boundary and the CompanySiteApply structured workspace layout (`company_site_apply/<Slug>/` root `README.md`-only + `resumes/BASE.md` + `cover_letters/BASE.md`; outputs `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/`):
    - `profiles/<profile>/output/` is the dynamic runtime sandbox storing `processed_ledger.json`, `applications_tracker.csv`, `search_manifest.json`, and tailored resumes.
    - Modifying candidate profile data has NOTHING to do with developing core engine code. When refactoring engine code, edit `core/` or `scripts/`, never corrupting candidate data.
 

@@ -81,7 +81,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── ats_detector.py                # Portal platform detection engine
 │   ├── section_agents/                # Coordinators (5) + scripts/ (9 discrete actuators) + sub_agents/ (12)
 │   ├── ipc/                           # Section IPC bus (ipc_manager.py; runtime section_question.json)
-│   ├── tests/                         # Regression suite (159 tests)
+│   ├── tests/                         # Regression suite (164 tests)
 │   ├── fingers/                       # Platform adapters: Oracle Cloud HCM, Workday, Greenhouse, generic
 │   ├── nails/oracle/                  # Company overrides: JPMC, Bristlecone (on top of Oracle finger)
 │   ├── CompanyScraper/                # Direct career-site scrapers (JPMorgan example) + cli_scraper.py

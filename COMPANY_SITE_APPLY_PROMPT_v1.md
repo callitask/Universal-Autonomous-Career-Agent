@@ -1,5 +1,5 @@
 # COMPANY SITE APPLY AUTONOMOUS AGENT — MASTER INITIALIZATION & LAUNCH DIRECTIVE
-# Version: 2.2 | Updated: 2026-10-14 | Scope: Direct Enterprise ATS Portals (Oracle Cloud HCM / JPMC, Workday, Greenhouse)
+# Version: 2.3 | Updated: 2026-10-15 | Scope: Direct Enterprise ATS Portals (Oracle Cloud HCM / JPMC, Workday, Greenhouse)
 
 > [!IMPORTANT]
 > **AUTONOMOUS ENTERPRISE APPLICATION DIRECTIVE**
@@ -9,7 +9,7 @@
 > 2. **6-Stage Chronological Lifecycle:** Profile Comprehension → Portal Search → Cognitive Match Evaluation → Document Tailoring → Section Mini-Agent Dispatch → Visual Verification & Human Gate.
 > 3. **Section IPC Architecture:** Scripts are dumb DOM actuators; the AG Brain is the sole semantic decider. Questions flow through `CompanySiteApply/ipc/section_question.json` (`ANSWER_REQUIRED → ANSWERED`). Full spec: `docs/SECTION_IPC_ARCHITECTURE.md` (+ §12 verification addendum).
 > 4. **Cognitive Sub-Agent Dispatch:** Non-destructive pre-audit, isolated micro-healing of failing sub-agents only, and post-audit verification. Zero ad-hoc script generation. One orchestrator `session_id` propagates via `candidate_data["_ipc_session_id"]` to every script.
-> 5. **Hard Gates, Loud Halts:** Failing sections retry 3x then halt as `SECTION_BLOCKED`/`REVIEW_BLOCKED`/`ORDER_UNVERIFIED` — never advance past unverified work. A BLOCKED halt is a correct outcome, not a failure to hide.
+> 5. **Hard Gates, Loud Halts:** Failing sections retry 3x then halt as `TAILORING_BLOCKED`/`SECTION_BLOCKED`/`REVIEW_BLOCKED`/`ORDER_UNVERIFIED`/`ACTION_REQUIRED` — never advance past unverified work. Intentionally skipped steps carry `skip_retry=True` (no retries). A BLOCKED halt is a correct outcome, not a failure to hide.
 > 6. **Run Transcript:** Every run writes `artifacts/run_transcript_<status>_<ts>.json` (section verdicts, gate errors, proofs, URLs). Always attach it when reporting.
 > 7. **India-Only Standing Rule:** `target_jobs.allowed_countries` is a hard gate — out-of-country requisitions score 0 (`out-of-country`), never apply.
 > 8. **Conditional Question Rescan:** Section 2 dynamically reveals follow-ups (experience tiers, skill dropdowns, checkboxes, text). A multi-pass rescan heals them until the audit is clean.
@@ -81,7 +81,7 @@ Ensure zero PII and zero static domain fallbacks exist in the code. Run the test
 ```powershell
 .venv\Scripts\python -m unittest discover -s CompanySiteApply/tests
 ```
-Expected: All 159 tests pass (`OK`).
+Expected: All 164 tests pass (`OK`).
 
 **Step 2 — Verify Sandbox I/O Isolation:**
 All dynamic outputs MUST be restricted to the candidate sandbox in the sibling
@@ -158,7 +158,7 @@ The agent executes the application pipeline in strict chronological order via [`
 ### Stage 6: Visual Audit, Human Submission Gate, & Ledger Persistence
 - **Command / Method:** `await agent.stage_6_verify_and_gate(page, best_job, app_res)`
 - Captures full-page high-resolution screenshot proof to `artifacts/`.
-- Records application status as `READY_FOR_HUMAN_SUBMISSION` in `processed_ledger.json`.
+- Records the exact run status in `processed_ledger.json` — `READY_FOR_HUMAN_SUBMISSION` when verified, or the exact blocked status (`TAILORING_BLOCKED`/`SECTION_BLOCKED`/`REVIEW_BLOCKED`/`ORDER_UNVERIFIED`/`ACTION_REQUIRED`) otherwise, never false READY.
 - **STRICTLY HALTS BEFORE CLICKING SUBMIT.**
 - Displays screenshot proof and summary to user for human review and final submission.
 

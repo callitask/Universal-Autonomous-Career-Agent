@@ -855,14 +855,29 @@ class OracleCloudFinger(BaseATSFinger):
             if experiences:
                 return experiences
 
-        # Source 1: Check resume.md
+        # Source 1: Check resume markdown — company workspace BASE.md first
+        # (Gap 1), then legacy root resume.md loop.
+        try:
+            from CompanySiteApply.utils.company_workspace import resolve_base_resume_md
+            from CompanySiteApply.utils.application_docs import resolve_company_name
+            _co = ""
+            try:
+                _co = resolve_company_name(candidate_data, candidate_data, "")
+            except Exception:
+                _co = ""
+            _base_md = resolve_base_resume_md(
+                candidate_data if isinstance(candidate_data, dict) else None, _co)
+            _roots = [_base_md] if _base_md else []
+        except Exception:
+            _roots = []
+            _co = ""
         try:
             from CompanySiteApply.utils.config_resolver import resolve_search_roots
-            roots = resolve_search_roots(candidate_data if isinstance(candidate_data, dict) else None)
+            roots = _roots + resolve_search_roots(candidate_data if isinstance(candidate_data, dict) else None)
         except Exception:
-            roots = [os.getcwd()]
+            roots = _roots + [os.getcwd()]
         for r in roots:
-            res_md_path = os.path.join(r, "resume.md")
+            res_md_path = r if r.endswith(".md") else os.path.join(r, "resume.md")
             if os.path.exists(res_md_path):
                 try:
                     with open(res_md_path, "r", encoding="utf-8") as f:

@@ -9,7 +9,7 @@
 ### STEP 0 — Initialize Write Guard, Register Session, Detect Multitasking
 - Your current session UUID is available from your system context (it is the `conversation_id` in the conversation metadata).
 - The active transcript path is always:
-  `C:\Users\7303150607\.gemini\antigravity\brain\<SESSION_UUID>\.system_generated\logs\transcript.jsonl`
+  `%USERPROFILE%\.gemini\antigravity\brain\<SESSION_UUID>\.system_generated\logs\transcript.jsonl`
 
 **Run immediately at session start (before any read or write):**
 ```python
@@ -68,7 +68,7 @@ Read the following files IN ORDER to prime yourself with the Architect's cogniti
 - Open `F:\Sophron\master_agent_config.json`.
 - Check `paths.transcript_path`. If the UUID in the path does NOT match the current session UUID, update it:
   ```json
-  "transcript_path": "C:\\Users\\7303150607\\.gemini\\antigravity\\brain\\<CURRENT_UUID>\\.system_generated\\logs\\transcript.jsonl"
+  "transcript_path": "%USERPROFILE%\\.gemini\\antigravity\\brain\\<CURRENT_UUID>\\.system_generated\\logs\\transcript.jsonl"
   ```
 - This fixes the #1 root cause of Sophron failure: stale session pointer.
 
@@ -99,7 +99,7 @@ At every significant milestone during the session, you MUST autonomously:
   "schema_version": "2.0",
 
   "CONTEXT_CLASSIFICATION": {
-    "data_subject": "<USER | AGENT_CAREER | AGENT_SOPHRON | PROFILE_ANSHIKA | PROFILE_UDAYSAGAR | PROJECT_NEW>",
+    "data_subject": "<USER | AGENT_CAREER | AGENT_SOPHRON | PROFILE_<SLUG> | PROJECT_NEW>",
     "workspace_origin": "<career_agent | sophron_architecture | new_project_X | global>",
     "rule_tier": "<UNIVERSAL_AXIOM | WORKSPACE_RULE | PROFILE_SPECIFIC | SESSION_SPECIFIC>",
     "is_cross_project_applicable": "<true|false>",
@@ -196,7 +196,7 @@ print("graph_index.json rebuilt.")
   "turn_id": "TURN-<NN>",
   "timestamp": "<ISO8601>",
   "schema_version": "2.0",
-  "data_subject": "<USER | AGENT_CAREER | AGENT_SOPHRON | PROFILE_ANSHIKA | PROFILE_UDAYSAGAR | PROJECT_NEW>",
+  "data_subject": "<USER | AGENT_CAREER | AGENT_SOPHRON | PROFILE_<SLUG> | PROJECT_NEW>",
   "workspace_origin": "<career_agent | sophron_architecture | new_project_X | global>",
   "context": "<One sentence: what we were working on at this turn>",
   "context_transition": {

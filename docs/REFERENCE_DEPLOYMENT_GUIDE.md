@@ -4,7 +4,7 @@
 **Document Version:** 4.1 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC, C24-C34 Guardrails & 2026-10-14 Structured-Layout Contract
 **Last Updated:** 2026-10-14
 
-> Operations layout (2026-10-14): live data (profiles, artifacts, inspections, ipc, logs) lives under `F:\Operations JOB AI AGENT\` (env-overridable via `JOB_AGENT_OPERATIONS`); the repo keeps code + the `default_user` blueprint only. Credentials (`gemini_credentials.json` / `colab_credentials.json`) are gitignored with `engine_enabled=false`. CompanySiteApply document contract — inputs `profiles/<slug>/company_site_apply/<Slug>/resumes|cover_letters`, outputs `profiles/<slug>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/`/`cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes, profile-agnostic, uploaders exact-path-first). Suite: 159 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests.
+> Operations layout (2026-10-14): live data (profiles, artifacts, inspections, ipc, logs) lives under `F:\Operations JOB AI AGENT\` (env-overridable via `JOB_AGENT_OPERATIONS`); the repo keeps code + the `default_user` blueprint only. Credentials (`gemini_credentials.json` / `colab_credentials.json`) are gitignored with `engine_enabled=false`. CompanySiteApply document contract — inputs `profiles/<slug>/company_site_apply/<Slug>/` (root `README.md`-only + `resumes/BASE.md` + `cover_letters/BASE.md`), outputs `profiles/<slug>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/`/`cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes, profile-agnostic, uploaders exact-path-first). Suite: 164 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests.
 
 ---
 
@@ -17,7 +17,7 @@ chrome.exe --remote-debugging-port=9222 --user-data-dir="C:\ChromeProfiles\<Cand
 - **Why:** Each candidate gets completely isolated cookies, session tokens, canvas fingerprints, and local storage. Zero cross-contamination between profiles.
 - **Log into LinkedIn and Naukri** manually in the launched Chrome window.
 
-### Step 2: Prepare Candidate Resume
+### Step 2: Prepare Candidate Resume (live profiles live under `F:\Operations JOB AI AGENT\profiles\`)
 Place the candidate's factual reverse-chronological resume in `profiles/<CandidateName>/resume.md`.
 
 **Strict Resume Rules:**
@@ -25,7 +25,7 @@ Place the candidate's factual reverse-chronological resume in `profiles/<Candida
 - **Length:** 1-2 pages maximum
 - **Formatting:** Single-column, left-aligned, bullet-pointed quantifiable impact
 
-### Step 3: Configure Candidate Truth Ledger
+### Step 3: Configure Candidate Truth Ledger (under `F:\Operations JOB AI AGENT\profiles\`)
 Edit `profiles/<CandidateName>/candidate_config.json`:
 
 ```json

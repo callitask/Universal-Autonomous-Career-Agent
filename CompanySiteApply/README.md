@@ -72,7 +72,7 @@ CompanySiteApply/
 │   ├── education_healer.py         # Fixes swapped degree vs. college mappings
 │   └── review_verifier.py          # Coordinates DOM-level pre-submit verification
 │
-├── tests/                          # Automated regression test suite (159 tests)
+├── tests/                          # Automated regression test suite (164 tests)
 │   ├── test_autonomous_job_agent.py# Lifecycle & matching test suite
 │   ├── test_ai_brain_resolver.py   # Screening Q&A dynamic deduction tests
 │   ├── test_sub_agents.py          # Granular sub-agent audit & heal tests
@@ -168,11 +168,14 @@ Oracle HCM shows a full-page Terms & Conditions agreement (`#applyFlowLegalDiscl
 Resume/cover resolution is company-first: `company_site_apply/<CompanySlug>/`
 (e.g. `JPMorganChase`) is created on demand by
 `CompanySiteApply/utils/company_workspace.py` (`ensure_company_workspace()`),
-seeded from the master `resume.md`, and searched before the flat directory
-(`resolve_company_roots()`). Slugs are alphanumeric (`company_slug()` strips
-`&`, spaces, and `Co/Inc/Ltd` suffixes). Inputs live here: base `resume.md`
-plus `cover_letters/BASE.md` and `resumes/` — auto-provisioned at Stage 4
-start for every profile identically.
+seeded from the master `resume.md` into `resumes/BASE.md`, and searched before
+the flat directory (`resolve_company_roots()`). Slugs are alphanumeric
+(`company_slug()` strips `&`, spaces, and `Co/Inc/Ltd` suffixes). Inputs live
+here: root `README.md`-only plus `resumes/BASE.md` and
+`cover_letters/BASE.md` — auto-provisioned at Stage 4 start for every profile
+identically. The resume-markdown lookup (`resolve_base_resume_md()`) reads the
+company `resumes/BASE.md` first (placeholder-guarded) before the profile
+`resume.md`, so company-framed bases actually ground experience matching.
 
 **Future company agents:** call `ensure_company_workspace(candidate_data,
 company)` at run start — the workspace (plus `cover_letters/`, `resumes/`,
@@ -200,11 +203,15 @@ profiles/<slug>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/
 └── Cover_Letter.html
 ```
 
-- **Stem** is Title-Cased per underscore part (`profile_stem()`; e.g.
-  `udaysagar_kandpal` → `Udaysagar_Kandpal`), preferring candidate
-  `full_name` so any new profile works identically.
+- **Stem** is the Title-Cased profile slug (`profile_stem()` prefers the
+  folder identity, e.g. `first_last` → `First_Last`, `full_name` fallback
+  only) — stable across renames so one role folder never forks two stems.
 - **Company** never resolves to the literal `"company"`
-  (`resolve_company_name()` in `application_docs.py`).
+  (`resolve_company_name()` in `application_docs.py`, portal-aware default,
+  empty when truly unknown so the generator refuses loudly).
+- **Recipient block is AG-Brain-owned**: `AIBrainResolver.resolve_recipient_header()`
+  arbitrates company/city/team from ranked evidence; conflicts and unknowns
+  refuse (`REFUSED_RECIPIENT_UNVERIFIED`) and callers defer.
 - Multiple jobs per company and same-title different-IDs coexist via
   `<Role>_<jobid>` folders. No per-req filename suffixes for upload.
 
@@ -220,12 +227,17 @@ and future path resolution flows through it. The repo keeps code + the
 `engine_enabled=false` (disabled) and are gitignored.
 
 ### L. Document Upload Independence — Exact-Path-First (Section 4)
-Resume and cover letter uploads are fully independent, and both try the exact
+Resume and cover letter uploads are fully independent (both accept `--job-id`), and both try the exact
 structured role path FIRST (`application_doc_paths()` for
 `APPLIED/.../<Company>/<Role>_<jobid>/` with FIXED names — no glob):
-- `s4_cover_letter_upload.py` — exact role path first (verified Job ID + title against the role folder); stale cover (not uploaded this session for this job) → REMOVE first → upload fresh PDF. Glob newest-first is legacy fallback only.
+- `s4_cover_letter_upload.py` — exact role path first (verified Job ID + title against the role folder, plus PDF `st_mtime >= txt st_mtime - 5.0`); stale cover (not uploaded this session for this job) → REMOVE first → upload fresh PDF. DOM display filenames are never trusted. Glob newest-first is legacy fallback only. If Stage 4 tailoring failed (`_tailoring_failed`), removes any stale draft, uploads NOTHING, and returns `REVIEW_BLOCKED` (`skip_retry=True`) with missing document + fix command.
 - `s4_resume_upload.py` — exact role path first; if resume present → skip. Glob fallback is resume-constrained (`*token*resume*.pdf`) and skips `APPLIED` trees for base inputs.
 - Each script is callable independently. Stale cover but present resume → ONLY cover letter re-uploaded.
+
+### M. Tailoring Gate, Session Walls & Portal Submit Gates (2026-10-15)
+- Fill-everything/upload-nothing: Stage 4 failure stamps `_tailoring_failed` on `best_job` + `candidate_data`; Section 4 still completes diversity/signature/visual, then halts `REVIEW_BLOCKED`. Stage 6 and the ledger propagate blocked statuses and never report ready. Re-upload surgically via the `s4_*_upload.py --job-id` scripts.
+- Mid-run login/session walls halt immediately as `SECTION_BLOCKED` (`SESSION_EXPIRED_OR_LOGIN_REQUIRED`) instead of looping to `MAX_STEPS_EXCEEDED`.
+- Submit is human-only on every portal: Greenhouse `advance_step` (like Oracle) requires explicit `allow_submit=True`, which agents never pass.
 
 ---
 

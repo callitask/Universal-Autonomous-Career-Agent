@@ -482,6 +482,33 @@ class ApplyOrchestrator:
                     if agree.count() > 0 and agree.first.is_visible():
                         agree.first.click()
                         time.sleep(0.5)
+                    # Gap 4 (PIN parity with oracle_cloud_finger._fill_pin_step):
+                    # if the gate transitioned to OTP/PIN verification, fill a
+                    # provided PIN or halt loudly as OTP_PIN_REQUIRED.
+                    try:
+                        _pin_boxes = page.locator("input[id^='pin-code-']")
+                        _pin_n = _pin_boxes.count() if _pin_boxes else 0
+                    except Exception:
+                        _pin_n = 0
+                    if _pin_n == 6:
+                        _pin_val = str(candidate_data.get("verification_pin") or "").strip()
+                        if _pin_val:
+                            try:
+                                for _i in range(6):
+                                    page.locator(f"#pin-code-{_i+1}").first.fill(_pin_val[_i] if _i < len(_pin_val) else "")
+                                time.sleep(0.5)
+                            except Exception:
+                                pass
+                        else:
+                            return self._blocked_result(
+                                section, curr_url,
+                                {"success": False, "status": "SECTION_BLOCKED",
+                                 "blocked_reason": "OTP_PIN_REQUIRED",
+                                 "error": "ACTION_REQUIRED: OTP/PIN verification required — "
+                                          "provide candidate_data['verification_pin'] and re-run.",
+                                 "skip_retry": True},
+                                visited_stages, section_proofs, screenshot_dir,
+                            )
                     # Gate: never advance past an unaccepted email/terms step.
                     try:
                         _email_ok = (

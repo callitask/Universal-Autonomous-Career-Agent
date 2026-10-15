@@ -257,8 +257,8 @@
       - **Section 1**: Audit Personal Details (Title, Name, Phone, Address, City, PIN, LinkedIn) from profile truth.
       - **Section 2**: Answer disqualification questions; handle multiselect comboboxes via synthetic mouse events (`mousedown`, `mouseup`, `click`). Failing sections retry 3x then halt as `SECTION_BLOCKED` — never advance past unverified required fields.
       - **Section 3**: Inspect all tiles (count from `len(work_experience)`). Heal missing degree/major/country from profile truth with bullet-formatted achievements. Verify newest-first order at runtime (`order_verified`); re-sort on the review screen pre-submit.
-      - **Section 4**: Verify supporting documents (Resume and Cover Letter both show green checkmarks and "REMOVE" buttons; click "Use" if pending). Verify Demographics and E-Signature.
-    - **Mandatory Submission Gate**: Always HALT on Section 4 before the `SUBMIT` button. Capture per-section proofs (`{section}_audited_<ts>.png`, `section_proofs`) — a failing gate reports `SECTION_BLOCKED`/`ORDER_UNVERIFIED`, never false READY. Never click `SUBMIT` without human principal architect review.
+      - **Section 4**: Verify supporting documents (Resume and Cover Letter both show green checkmarks and "REMOVE" buttons; click "Use" if pending). DOM display filenames are never trusted — remove-if-filled + upload + content/mtime verify every run. If Stage 4 tailoring failed, remove any stale draft, upload NOTHING, and halt as `REVIEW_BLOCKED` (`blocked_reason: TAILORING_BLOCKED`, `skip_retry: True`) with missing document + fix command. Verify Demographics and E-Signature.
+    - **Mandatory Submission Gate**: Always HALT on Section 4 before the `SUBMIT` button. Capture per-section proofs (`{section}_audited_<ts>.png`, `section_proofs`) — a failing gate reports `TAILORING_BLOCKED`/`SECTION_BLOCKED`/`REVIEW_BLOCKED`/`ORDER_UNVERIFIED`, never false READY. Submit is human-only on every portal (finger adapters require explicit `allow_submit=True`, which agents never pass). Never click `SUBMIT` without human principal architect review. Mid-run login/session walls halt immediately as `SECTION_BLOCKED` (`SESSION_EXPIRED_OR_LOGIN_REQUIRED`).
 
 ---
 
@@ -366,7 +366,7 @@ These are specific bugs that were discovered and fixed. If you ever modify these
 **Rule:** Non-technical domain roles (Finance, Operations, Accounting, Legal, Supply Chain) frequently list software tools like "SQL database", "Accounting Software", or "Python scripting". The Incompatible Vertical hard gate in `evaluate_job_match()` must inspect the job title first. If the job title aligns with the candidate's core domain, technical tools mentioned in the JD must NOT trigger an out-of-domain tech vertical rejection.
 
 ### P1: Codebase Purity Enforcer (Runtime Candidate-Agnostic Guarantee)
-**Rule:** No candidate PII, candidate names, compensation values, or hardcoded profile paths may exist inside `core/*.py`. The codebase must remain 100% generic and candidate-agnostic. All scripts must verify this via `ctx.verify_codebase_purity()` on startup. Any purity violation triggers an immediate fatal runtime halt.
+**Rule:** No candidate PII, candidate names, compensation values, or hardcoded profile paths may exist inside root `*.py`, `core/*.py`, `scripts/*.py`, `CompanySiteApply/**/*.py`, or `tests/*.py` (live slugs from both Operations and repo profile roots are forbidden as `default="<slug>"` literals). The codebase must remain 100% generic and candidate-agnostic. All scripts must verify this via `ctx.verify_codebase_purity()` on startup. Any purity violation triggers an immediate fatal runtime halt.
 
 ### C10: Chatbot Submit Element Scoping (Div vs Button Trap)
 **Rule:** The submit element inside the Naukri chatbot drawer is `<div class="sendMsg" tabindex="0">Save</div>` inside `.sendMsgbtn_container .send`. Using broad `button:has-text('Save')` without drawer scoping causes Playwright to click the background job bookmark button instead of submitting the application. Submit queries must target `.sendMsgbtn_container .send:not(.disabled) .sendMsg` strictly scoped inside `get_drawer()`.
@@ -647,7 +647,7 @@ F:\JOB AI AGENT\
 │   ├── ats_detector.py                # Portal platform detection engine
 │   ├── section_agents/                # Coordinators + discrete scripts/ + sub_agents/
 │   ├── ipc/                           # Section IPC bus (ipc_manager.py)
-│   ├── tests/                         # Regression suite (159 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests)
+│   ├── tests/                         # Regression suite (164 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests)
 │   ├── anatomy/                       # Portal anatomy models
 │   ├── fingers/                       # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
 │   ├── nails/                         # Company-specific ATS customizations (nails/oracle: JPMC, Bristlecone)

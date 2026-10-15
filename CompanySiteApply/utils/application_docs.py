@@ -35,20 +35,40 @@ from typing import Any, Dict, Optional, Tuple
 
 def profile_stem(candidate_data: Optional[Dict[str, Any]] = None,
                  profile_slug: str = "") -> str:
-    """Fixed filename stem: Title-Cased per underscore part.
+    """Fixed filename stem: Title-Cased profile slug.
 
     udaysagar_kandpal -> Udaysagar_Kandpal (first letter capital, rest kept).
-    Prefers candidate full_name when available so new profiles work identically.
+    Gap 2: the slug is canonical (stable folder identity); candidate
+    full_name is fallback only. A rename-proof stem must follow the folder,
+    never display metadata — otherwise two identities collide in one role
+    folder (incident: Name_ vs Someone_ stubs in profiles/someone/).
     """
-    name = ""
+    slug = ""
     if isinstance(candidate_data, dict):
-        cand = candidate_data.get("candidate", candidate_data)
+        for key in ("profile", "_ipc_profile"):
+            val = candidate_data.get(key)
+            if val and isinstance(val, str) and val.strip():
+                slug = val.strip()
+                break
+        if not slug:
+            cand = candidate_data.get("candidate", {})
+            if isinstance(cand, dict):
+                for key in ("profile_name", "profile"):
+                    val = cand.get(key)
+                    if val and isinstance(val, str) and val.strip():
+                        slug = val.strip()
+                        break
+    if not slug:
+        slug = str(profile_slug or "").strip()
+    name = slug.replace("_", " ")
+    if not name.strip():
+        cand = candidate_data.get("candidate", candidate_data) \
+            if isinstance(candidate_data, dict) else {}
+        name = ""
         if isinstance(cand, dict):
             name = str(cand.get("full_name") or cand.get("name") or "").strip()
-        if not name:
+        if not name and isinstance(candidate_data, dict):
             name = str(candidate_data.get("full_name") or "").strip()
-    if not name and profile_slug:
-        name = str(profile_slug).strip().replace("_", " ")
     tokens = [t for t in re.split(r"[^A-Za-z0-9]+", name or "") if t]
     if not tokens:
         tokens = [str(profile_slug or "candidate").strip() or "candidate"]

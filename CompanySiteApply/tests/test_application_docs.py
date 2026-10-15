@@ -22,6 +22,15 @@ class TestStructuredLayout(unittest.TestCase):
         self.assertEqual(profile_stem({"profile": "new_user_test"}, "new_user_test"),
                          "New_User_Test")
 
+    def test_slug_wins_over_full_name(self):
+        # Gap 2: folder identity is canonical — a differing full_name must
+        # not fork a second stem inside one role folder.
+        self.assertEqual(
+            profile_stem({"profile": "someone",
+                          "candidate": {"full_name": "Name Nobody"}},
+                         "someone"),
+            "Someone")
+
     def test_company_never_literal(self):
         self.assertNotEqual(resolve_company_name({"details": {"company": ""}}, {}, ""), "company")
         self.assertEqual(resolve_company_name({"details": {"company": ""}}, {}, "https://jpmc.fa.oraclecloud.com/x"),

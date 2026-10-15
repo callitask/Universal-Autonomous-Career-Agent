@@ -162,19 +162,23 @@ function scanFormErrors() {
 
 ## 5. Artifact & File Organization Standards
 
-When applying to any company website (CompanySiteApply scope — distinct from the `core/` portal tree at `profiles/<profile>/output/applications/<Company>_<Role>/`):
-1. **Directory Structure**:
+When applying to any company website (CompanySiteApply scope — distinct from the `core/` portal tree at `profiles/<profile>/output/applications/<Company>_<Role>/`; live profiles resolve under `F:\Operations JOB AI AGENT\profiles\`):
+1. **Directory Structure** (structured-layout contract: root `README.md`-only + `resumes/BASE.md` + `cover_letters/BASE.md`; fixed `<Stem>` names; DOM filenames never trusted — remove-if-filled + upload + content/mtime verify; tailoring failure skips upload and halts `REVIEW_BLOCKED`):
    ```
-   profiles/{profile_name}/company_site_apply/
-   ├── Cover_Letter.html                  # Rendered letter (Subject: ... Requisition ID: <id>)
-   ├── Cover_Letter.txt                   # Plain-text companion; content-verified to name the requisition ID
-   └── {Candidate_Name}_Cover_Letter.pdf  # Typeset PDF submitted to portal
+   profiles/{profile_name}/company_site_apply/<CompanySlug>/
+   ├── README.md                          # workspace root holds this file only
+   ├── resumes/BASE.md                    # company-framed base resume
+   └── cover_letters/BASE.md              # company base letter
+   profiles/{profile_name}/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/
+   ├── <Stem>_Resume.pdf / <Stem>_Cover_Letter.pdf   # FIXED names (+ resume/ + cover_letters/ mirrors)
+   └── Cover_Letter.html / Cover_Letter.txt          # role-specific companions (Job ID + title verified)
    profiles/{profile_name}/output/
    ├── jpmc_job_matches.json              # Ranked search/match report (never the repo root)
-   ├── processed_ledger.json              # Deduplication ledger (READY / SUBMITTED statuses)
+   ├── processed_ledger.json              # Deduplication ledger (READY / SUBMITTED / *_BLOCKED statuses)
    └── screening_answers.json             # Persisted brain-resolved Q&A (in company_site_apply/)
    ```
    Per-application records resolve under `APPLIED ON COMPANY WEBSITE/` (see `documents_subagent.py`).
+2. **Submission gates (all portals):** final submission is human-only — finger adapters (Oracle, Greenhouse, Workday) require explicit `allow_submit=True`, which agents never pass.
 2. **Profile Template Standards**:
    - Master generic templates live at `profiles/default_user/cover_letter_template.md`.
    - Candidate-specific base cover letters live at `profiles/{profile_name}/cover_letter.md`.

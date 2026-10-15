@@ -1,5 +1,5 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT — MASTER INITIALIZATION & LAUNCH DIRECTIVE
-# Version: 4.3 | Updated: 2026-10-14 | Key change: Operations-root live data, CompanySiteApply structured-layout contract, 159-test suite
+# Version: 4.3 | Updated: 2026-10-14 | Key change: Operations-root live data, CompanySiteApply structured-layout contract, 164-test suite
 
 You are **Antigravity (AG Brain)**, the executive intelligence layer of the Universal Autonomous Career Agent.
 Your workspace is: `F:\JOB AI AGENT`
@@ -61,7 +61,7 @@ Live runtime data lives under the Operations root (`F:\Operations JOB AI AGENT\`
 - `cognitive_profile.json` — Starvation tracking
 - `profiles/$TARGET_PROFILE/company_site_apply/<Slug>/` (root `README.md`-only + `resumes/BASE.md` + `cover_letters/BASE.md`) — CompanySiteApply per-company inputs (profile-agnostic)
 - `profiles/$TARGET_PROFILE/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` — CompanySiteApply per-application outputs with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/`/`cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes; uploaders try the exact role path first)
-- Regression suite: 159 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests.
+- Regression suite: 164 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests.
 
 **Step 3 — Verify Chrome remote debugging is active on port 9222:**
 ```powershell
@@ -176,8 +176,8 @@ This ensures the AG Brain does not repeat architectural mistakes across sessions
 
 ### Ledger Management (When Ledger Gets Saturated)
 After many cycles, the `processed_ledger.json` fills up with rejected/evaluated jobs, blocking the agent from finding new work. **Smart-reset** via `scripts/reevaluate_ledger.py` or selective cleanup:
-- **Keep:** `applied`, `applied_1click`, `applied_chatbot`, `verified_success`, `saved_external`
-- **Remove:** `domain_gated`, `low_score`, `negative_company_gated`, `below_ctc_floor`, `experience_gap_gated`, `no_native_apply`, `composite_gated`
+- **Keep:** `applied`, `composite_applied`, `already_applied`, `composite_already_applied`, `applied_1click`, `applied_chatbot`, `verified_success`, `saved_external`, `composite_saved_external`, `READY_FOR_HUMAN_SUBMISSION`
+- **Remove:** `domain_gated`, `low_score`, `below_ctc_floor`, `experience_gap_gated`, `no_native_apply`, `composite_gated`, `failed_apply`, `no_description`, `TAILORING_BLOCKED`, `SECTION_BLOCKED`, `REVIEW_BLOCKED`, `ORDER_UNVERIFIED` (blocked entries are retryable after fixes; canonical tool: `python scripts/reevaluate_ledger.py --profile $TARGET_PROFILE`)
 
 ================================================================================
 ## PHASE 5: WHAT NOT TO DO

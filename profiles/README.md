@@ -39,7 +39,7 @@ profiles/
 Duplicate the `default_user/` folder and name the new folder using lowercase snake_case (`firstname_lastname`):
 ```powershell
 # Example in PowerShell:
-Copy-Item -Recurse profiles/default_user profiles/<candidate_slug>
+Copy-Item -Recurse profiles/default_user "F:\Operations JOB AI AGENT\profiles\<candidate_slug>"
 ```
 
 ### Step 2: Fill in the 2 Prerequisite Files

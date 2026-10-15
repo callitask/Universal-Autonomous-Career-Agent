@@ -34,6 +34,16 @@ from CompanySiteApply.ipc.ipc_manager import (
 logger = logging.getLogger(__name__)
 
 
+def _tile_company(page: Any, candidate_data: Any) -> str:
+    """Portal company for company-aware resume fallback (Gap 1)."""
+    try:
+        from CompanySiteApply.utils.application_docs import resolve_company_name
+        return resolve_company_name(
+            candidate_data, candidate_data, getattr(page, "url", "") or "")
+    except Exception:
+        return ""
+
+
 def heal_single_experience_tile(
     page: Any,
     candidate_data: Dict[str, Any],
@@ -90,7 +100,8 @@ def heal_single_experience_tile(
                     load_resume_experience_map,
                     match_experience_entry,
                 )
-                _rmap = load_resume_experience_map(candidate_data)
+                _rmap = load_resume_experience_map(
+                    candidate_data, _tile_company(page, candidate_data))
                 _m = match_experience_entry(tile_text, _rmap)
                 if _m:
                     best_match = {

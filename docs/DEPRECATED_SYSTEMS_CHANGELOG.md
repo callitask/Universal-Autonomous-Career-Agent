@@ -43,3 +43,9 @@
 * **When:** Guardrail C4 Fix
 * **Reason:** Direct `open("w")` on `candidate_config.json` resulted in corrupted/empty files if the daemon crashed during the write operation.
 * **Replaced With:** Atomic `.tmp` file write followed by `os.replace()`.
+
+## 8. Legacy Company-Site One-Off Scripts (`scripts/legacy_company_apply/`)
+* **Removed From:** Active execution (archived 2026-10-12 via `git mv`, history preserved).
+* **When:** Section IPC architecture migration.
+* **Reason:** Single-requisition hardcoded scripts (`apply_jpmc_210793889.py`, `heal_all_experience_tiles.py`, `run_full_visual_ai_audit.py`, `run_jpmc_flawless_flow.py`) bypassed the orchestrator, gates, and IPC. Forensic reference only — never run.
+* **Replaced With:** `run_universal_apply.py` (active-tab + `--autonomous`) and `search_and_evaluate_jpmc_jobs.py`. Excluded from the knowledge index (`legacy_company_apply` gate lists).

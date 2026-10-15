@@ -32,7 +32,7 @@ These rules are loaded automatically at every session start and before every pro
      * cognitive_profile.json (runtime synthesized domain taxonomy)
    - CompanySiteApply flow (2026-10-14 structured-layout contract, profile-agnostic — any new slug, same flow):
      * inputs: `company_site_apply/<Slug>/` (root `README.md`-only + `resumes/BASE.md` + `cover_letters/BASE.md`)
-     * outputs: `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/` + `cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes; uploaders try the exact role path first)
+     * outputs: `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/` + `cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes; uploaders never trust DOM draft display names and execute remove-if-filled + upload + content/mtime verify on every run (or skip upload and halt as REVIEW_BLOCKED if Stage 4 tailoring failed))
 2. **Developer Separation of Concerns**:
    - The engine code lives in core/, docs/, and scripts/.
    - **Scanning or modifying profiles/ has nothing to do with developing, upgrading, or editing the agent code.**
@@ -137,7 +137,7 @@ These rules are loaded automatically at every session start and before every pro
    - The **AG Brain (Antigravity AI model)** is the **sole decider, talent strategist, and cognitive authority**.
 2. **Session Push-Start Protocol**:
    - At the beginning of EVERY new session, or whenever the user indicates a profile to work on, the AG Brain MUST execute this push-start sequence before launching any scripts:
-     1. **Profile Identification**: Check which candidate profile in `profiles/` is targeted (e.g. `profiles/udaysagar_kandpal/`, or user-specified).
+     1. **Profile Identification**: Check which candidate profile in `F:\Operations JOB AI AGENT\profiles\` is targeted (auto-discovered live profile, or user-specified).
      2. **Deep Resume Analysis**: Read `profiles/<profile>/resume.md` end-to-end. Analyze it deeply as a human talent architect—internalizing total years of experience, core technical stack, domain depth, leadership scope, and career trajectory.
      3. **Push-Start Configuration**: Inspect and intelligently update `profiles/<profile>/candidate_config.json` with authentic, high-yield talent parameters:
         * `target_jobs.target_roles`: Authentic titles matching the candidate's exact seniority and vertical.

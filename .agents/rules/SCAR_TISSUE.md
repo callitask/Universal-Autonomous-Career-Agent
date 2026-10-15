@@ -416,3 +416,26 @@ all semantic job fit evaluations. Keyword lists in config are advisory context f
 - **What happened**: Pre-edit safety checkpoint `a54646b` pushed to `origin/main`. Applied the merged Gemini audit's PATCH_01/PATCH_02 with corrections: plain URLs (M-2), spaced exits (M-3), disk-true edits (M-4), guardrail count kept at 46 (NEW-6), flags on `candidate_data` not `candidate_config` (NEW-1), `--job-id` actually implemented (NEW-2). Rejected M-1 (braces/docstrings present). Fixed self-caused green-suite breaks (mock-truthy login wall, `re` alias typo, stale archive test asserting pre-contract behavior).
 - **Correct behavior**: Fill-everything/upload-nothing/defer-loudly lifecycle; Operations auto-discovery CLI; Greenhouse submit gated; session walls halt; purity scans root launchers. Gates green: 159 CompanySiteApply + 7 cover-id + 10 knowledge OK, index FRESH, purity `(True, [])`, phase_4 end-to-end pass. Changes held uncommitted for principal sign-off.
 - **Never repeat**: Never apply merged-audit diffs without disk-verifying every hunk, flag name, CLI contract, and count first.
+
+## [2026-10-15] NEW-1 CANDIDATE_DATA (NOT CANDIDATE_CONFIG)
+- **File**: `autonomous_job_agent.py`
+- **What happened**: `AutonomousJobAgent` stores config on `self.candidate_data`; a `candidate_config` attribute does not exist. Stage 4 failure flags must propagate into `self.candidate_data` (and `best_job`) to reach `ApplyOrchestrator`.
+- **Never repeat**: Never invent attribute names — grep the class before wiring cross-object flags.
+
+## [2026-10-15] NEW-3 GATE EVERY PORTAL SUBMIT
+- **File**: `fingers/greenhouse_finger.py` (`advance_step`)
+- **What happened**: The Greenhouse adapter clicked Submit with no human gate while Oracle required explicit `allow_submit=True`.
+- **Correct behavior**: All ATS finger adapters gate final submission behind `allow_submit: bool = False`; agents never pass True.
+- **Never repeat**: Every new portal adapter gets the submit gate on day one.
+
+## [2026-10-15] NEW-7 PURITY MUST SCAN ROOT RUNNERS
+- **File**: `core/utils/profile_context.py` (`verify_codebase_purity`)
+- **What happened**: The scanner covered subdirectories only, so the hardcoded `--profile` default in the repo-root launcher was invisible to Guardrail P1.
+- **Correct behavior**: Scan root `*.py` plus live slugs from both Operations and repo profile roots as forbidden `default="<slug>"` tokens.
+- **Never repeat**: Entry-point files are the highest-risk hardcoding site — always in scan scope.
+
+## [2026-10-15] OPERATIONS FALLBACK CREATES REPO DIRS IN TESTS
+- **File**: `utils/runtime_paths.py` (`resolve_profile_dir`) + unit tests
+- **What happened**: `resolve_profile_dir()` falls back to the repo tree when the Operations profile dir is absent, so tests recreated `profiles/someone/` on disk.
+- **Correct behavior**: Unit tests pre-create the profile directory inside their temp Operations root (and point `JOB_AGENT_OPERATIONS` there).
+- **Never repeat**: Never assume resolver fallback in tests — isolate profile I/O to temp roots.

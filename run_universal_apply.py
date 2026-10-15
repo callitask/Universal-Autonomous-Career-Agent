@@ -89,7 +89,44 @@ def _resolve_candidate_profile(profile_arg: str | None, config_arg: str | None) 
 def run_active_page_apply(args, candidate_data, cdp_endpoint):
     orchestrator = ApplyOrchestrator(cdp_url=cdp_endpoint)
     artifacts_dir = _artifacts_dir()
-    
+
+    # Gap 4: Active-Tab mode never scraped the open requisition — populate
+    # job_id/title/company from the live tab (best-effort, never fatal) so
+    # Section 4 verification always has the active requisition context.
+    try:
+        from CompanySiteApply.ats_arm import ATSArm
+        import re as _re_tab
+        _arm = ATSArm(cdp_url=cdp_endpoint)
+        try:
+            _page = _arm.connect()
+            _url = str(getattr(_page, "url", "") or "")
+            if not candidate_data.get("job_id") and not candidate_data.get("_ipc_job_id"):
+                _m = (_re_tab.search(r'requisition[iI]d=(\d+)', _url)
+                      or _re_tab.search(r'/(?:jobs?/preview/|job/|requisitions?/|preview/)(\d+)', _url))
+                if _m:
+                    candidate_data["job_id"] = _m.group(1)
+                    candidate_data["_ipc_job_id"] = _m.group(1)
+            _tj = candidate_data.get("target_jobs")
+            if isinstance(_tj, dict) and not str(_tj.get("title") or "").strip():
+                try:
+                    _t = _page.locator(
+                        ".job-title, [class*='requisition-title'], "
+                        "[data-bind*='jobTitle' i]").first
+                    if _t.count() > 0 and _t.is_visible():
+                        _tj["title"] = _t.inner_text().strip()[:160]
+                except Exception:
+                    pass
+            if not candidate_data.get("company_name") and _url and (
+                    "jpmc" in _url.lower() or "chase" in _url.lower()):
+                candidate_data["company_name"] = "JPMorgan Chase & Co."
+        finally:
+            try:
+                _arm.disconnect()
+            except Exception:
+                pass
+    except Exception as _tab_e:
+        print(f"[Universal Apply Runner] Active-tab context note: {_tab_e}")
+
     print(f"[Universal Apply Runner] Connecting to CDP at {cdp_endpoint} (Active Tab Apply Mode)...")
     result = orchestrator.run(candidate_data, screenshot_dir=artifacts_dir)
     print("\n[Application Execution Result]:")

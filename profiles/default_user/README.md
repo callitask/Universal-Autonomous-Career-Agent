@@ -18,7 +18,7 @@ This directory is the **universal starter blueprint** for onboarding candidates 
 1. **Do not run the agent directly on `default_user`.** The core engine explicitly skips this folder during candidate auto-discovery.
 2. **Copy this folder** to create a new candidate sandbox:
    ```powershell
-   Copy-Item -Recurse profiles/default_user profiles/<candidate_firstname_lastname>
+   Copy-Item -Recurse profiles/default_user "F:\Operations JOB AI AGENT\profiles\<candidate_firstname_lastname>"
    ```
 3. **Open the copied folder and edit the two prerequisite files**:
    - `candidate_config.json`

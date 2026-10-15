@@ -1,7 +1,7 @@
 # Universal Autonomous Career Agent — Setup & Execution Guide
 
-> **Document Version:** 4.2 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC, Structured Role Outputs & 46 Guardrails  
-> **Last Updated:** 2026-10-14  
+> **Document Version:** 4.3 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC, Structured Role Outputs, Tailoring Gate & 46 Guardrails  
+> **Last Updated:** 2026-10-15  
 > **Proprietary Notice:** Confidential and Proprietary. Copyright (c) 2026 Amitsagar Kandpal. All Rights Reserved. No public license granted.
 
 Welcome to the **Universal Autonomous Career Agent** (`F:\JOB AI AGENT`). This system is an enterprise-grade, multi-agent autonomous pipeline engineered to execute end-to-end job discovery, cognitive profile synthesis, factual resume tailoring, and automated ATS application submission across platforms including LinkedIn and Naukri.
@@ -12,7 +12,7 @@ This guide details environment setup, candidate profile sandboxing, cognitive co
 
 ## 1. Core Architecture & System Capabilities
 
-- **Guardrail P1 (Codebase Purity Enforcer):** Automatically verifies at runtime via `ctx.verify_codebase_purity()` that zero candidate PII, compensation numbers, or hardcoded profile directory names exist within `core/*.py`. The codebase remains 100% candidate-agnostic.
+- **Guardrail P1 (Codebase Purity Enforcer):** Automatically verifies at runtime via `ctx.verify_codebase_purity()` that zero candidate PII, compensation numbers, or hardcoded profile directory names exist within root `*.py`, `core/`, `scripts/`, `CompanySiteApply/`, and `tests/`. The codebase remains 100% candidate-agnostic.
 - **Dynamic Startup & Profile Auto-Discovery:** Dynamically discovers the active candidate profile from `profiles/` at runtime, making `--profile` optional across all scripts, and conducts pre-flight CDP port 9222 diagnostics before automation starts.
 - **Multi-Profile Sandboxing:** Dynamically loads candidate parameters, taxonomy skills, and credentials from `profiles/<profile_name>/` at runtime with zero code hardcoding. Multiple candidate profiles run independently without collision.
 - **Empirical DOM Invariant vs. Dynamic Runtime Separation:** Decouples invariant layout tags, classes, and attributes from candidate-specific and job-specific runtime data, ensuring resilient scraping across portal releases.
@@ -82,7 +82,7 @@ F:\JOB AI AGENT\
 │   ├── ats_detector.py                   # Portal platform detection engine
 │   ├── section_agents/                   # Coordinators + discrete scripts/ + sub_agents/
 │   ├── ipc/                              # Section IPC bus (ipc_manager.py)
-│   ├── tests/                            # Regression suite (159 tests)
+│   ├── tests/                            # Regression suite (164 tests)
 │   ├── anatomy/                          # Portal anatomy models
 │   ├── fingers/                          # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
 │   ├── nails/                            # Company-specific ATS customizations (nails/oracle: JPMC, Bristlecone)
@@ -170,12 +170,12 @@ If you prefer hosted Gemini API execution, export your API key before launching:
 
 ---
 
-## 4. Configuring Candidate Profiles
+## 4. Configuring Candidate Profiles (live profiles live under `F:\Operations JOB AI AGENT\profiles\`)
 
-The agent supports any number of candidate profiles inside `profiles/`.
+The agent supports any number of candidate profiles inside the Operations `profiles/` root.
 
 ### Step 4.1: Create Profile Sandbox Directory
-Create a folder inside `profiles/` (e.g., `profiles/john_doe/`).
+Create a folder inside `F:\Operations JOB AI AGENT\profiles\` (e.g., `F:\Operations JOB AI AGENT\profiles\john_doe\`).
 
 ### Step 4.2: Populate `resume.md`
 Add the candidate's master resume in markdown format (`profiles/<candidate_name>/resume.md`):
@@ -254,6 +254,12 @@ All applications are tracked in `profiles/<profile_name>/output/applications_tra
 |:---|:---|
 | `VERIFIED_SUCCESS` | Application successfully submitted and confirmed via DOM ledger check. |
 | `SUBMITTED_SUCCESSFULLY` | Application successfully submitted via standard confirmation screen. |
+| `READY_FOR_HUMAN_SUBMISSION` | CompanySiteApply form 100% complete and verified; halted before human-clicked Submit. |
+| `TAILORING_BLOCKED` | CompanySiteApply Stage 4 tailoring failed/refused; form filled, document upload skipped, `REVIEW_BLOCKED` with missing document + fix command. |
+| `SECTION_BLOCKED` | A section failed verification after retries (or mid-run login wall: `SESSION_EXPIRED_OR_LOGIN_REQUIRED`). |
+| `REVIEW_BLOCKED` | Section 4 Review failed verification; not ready, fix flagged items and re-run. |
+| `ORDER_UNVERIFIED` | Experience order could not be verified newest-first on review screen. |
+| `ACTION_REQUIRED` | Missing ground truth deferred to the operator (never invented). |
 | `REQUIRES_MANUAL_INTERVENTION` | Form encountered an unresolvable required field; logged for manual review. |
 | `REDIRECT_EXTERNAL` | Job requires external company portal application (Workday, Taleo, etc.). |
 | `DOMAIN_GATED` | Rejected during Stage 1 due to negative keywords or out-of-domain title. |

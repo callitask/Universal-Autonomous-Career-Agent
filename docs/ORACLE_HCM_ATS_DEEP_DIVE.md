@@ -200,12 +200,14 @@ The final submission button in Oracle Cloud HCM Candidate Experience has the fol
 
 ### C. Application Artifact Archiving Protocol
 > **Output-path split (by design):** this CompanySite tree (`APPLIED ON COMPANY WEBSITE/`) is separate from the portal-pipeline tree (`profiles/<profile>/output/applications/<Company>_<Role>/` used by `core/` for Naukri/LinkedIn). Never mix them.
+> **Live root:** `F:\Operations JOB AI AGENT\profiles\<slug>\` (repo keeps code + blueprint only).
 Every submitted application must generate a localized archive under:
-`profiles/<candidate>/APPLIED ON COMPANY WEBSITE/<Company>/<Job Role>/` containing:
+`profiles/<candidate>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` containing:
 - `answers.json`: Complete snapshot of form answers, field entries, timestamps, URLs, and confirmation text.
 - `submission_confirmation.png`: Full-page screenshot of the `/my-profile` confirmation state.
-- `resume.md` and `resume.pdf`: Exact tailored resume submitted to the portal.
-- `cover_letter.pdf`: Tailored cover letter attached to the application.
+- `<Stem>_Resume.pdf` + `<Stem>_Cover_Letter.pdf`: FIXED names (flat canonical) mirrored in `resume/` + `cover_letters/` subfolders — the exact files submitted to the portal.
+- `Cover_Letter.html` / `Cover_Letter.txt`: role-specific companions (Job ID + title verified).
+- Blocked runs record `TAILORING_BLOCKED` / `SECTION_BLOCKED` / `REVIEW_BLOCKED` / `ORDER_UNVERIFIED` in the ledger (never ready); mid-run login walls halt as `SECTION_BLOCKED` (`SESSION_EXPIRED_OR_LOGIN_REQUIRED`).
 
 ---
 

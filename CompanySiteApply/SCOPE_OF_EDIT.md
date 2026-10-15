@@ -68,11 +68,15 @@ class NewPlatformFinger(BaseATSFinger):
         # Implement field filling using DOMHelpers.set_input_value_native()
         return {"success": True}
 
-    def advance_step(self, page: Any) -> Tuple[bool, str]:
-        # Click Next/Submit, then verify via the shared guard (never assume success).
+    def advance_step(self, page: Any, allow_submit: bool = False) -> Tuple[bool, str]:
+        # Click Next, then verify via the shared guard (never assume success).
+        # HUMAN-GATE RULE: never click Submit-type buttons here. If the step's
+        # only forward button submits the application, return
+        # (False, "Human gate: operator submits manually") unless the caller
+        # passes allow_submit=True explicitly (Oracle/Greenhouse parity).
         import time
         before_url = getattr(page, "url", "")
-        page.locator("button:has-text('Next'), button[type='submit']").first.click()
+        page.locator("button:has-text('Next')").first.click()
         time.sleep(2.0)
         advanced, errors = DOMHelpers.verify_step_advanced(page, before_url)
         if advanced:

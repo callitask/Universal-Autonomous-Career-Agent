@@ -28,6 +28,7 @@
 
 import time
 import logging
+import re
 from typing import Any, Dict, List, Optional
 from CompanySiteApply.section_agents.base_section_agent import BaseSectionAgent
 
@@ -101,34 +102,63 @@ class ExperienceSectionAgent(BaseSectionAgent):
             _sess = get_effective_session_id(candidate_data, None)
 
             healed_count = 0
-            exp_idx = 0
+            # Gap 3: track healed tiles by employer key, not position — Oracle
+            # JET re-sorts tiles after SAVE, so a positional counter can
+            # re-edit one tile and skip another.
+            healed_keys = set()
             # Bound by candidate truth count + small headroom for stale extra tiles.
             cand_exp = self._get_candidate_experiences(candidate_data)
             max_tiles = max(len(cand_exp), 1) + 2
 
-            while exp_idx < max_tiles:
+            for _pass in range(max_tiles * 2):
+                # Dismiss any lingering inline edit modal before opening next.
+                try:
+                    _open = page.locator(
+                        "input[id^='employerName']:visible, "
+                        "input[name='employerName']:visible").count() > 0
+                    if _open:
+                        _cancel = page.locator(
+                            ".save-btn:visible ~ button:has-text('CANCEL'), "
+                            "button:has-text('CANCEL'):visible, "
+                            "button.cancel-btn:visible").first
+                        try:
+                            if _cancel.count() > 0 and _cancel.is_visible():
+                                _cancel.click()
+                                time.sleep(1.0)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 tiles = page.locator(".apply-flow-profile-item-tile").all()
+                _edu = re.compile(
+                    r"\b(bachelor|master'?s?|b\.?tech|m\.?tech|mba|degree|education|"
+                    r"university|college|school|diploma)\b", re.IGNORECASE)
                 exp_tiles = []
                 for t in tiles:
                     try:
                         tile_text = t.inner_text().strip()
                     except Exception:
                         continue
-                    if any(k in tile_text.lower() for k in ["degree", "education", "bachelor", "master"]):
+                    if _edu.search(tile_text):
                         continue
-                    exp_tiles.append(t)
-
-                if exp_idx >= len(exp_tiles):
+                    exp_tiles.append((t, tile_text.split("\n")[0].strip().lower()))
+                pending = [(t, k) for (t, k) in exp_tiles if k not in healed_keys]
+                if not pending:
                     break
-
-                res = heal_single_experience_tile(page, candidate_data, tile_index=exp_idx, session_id=_sess or None)
+                # Heal the first unhealed tile by key; re-query next pass.
+                _target_key = pending[0][1]
+                _idx_now = next(
+                    (i for (i, (_, k)) in enumerate(exp_tiles) if k == _target_key), 0)
+                res = heal_single_experience_tile(page, candidate_data, tile_index=_idx_now, session_id=_sess or None)
                 if res.get("success"):
                     healed_count += 1
+                    healed_keys.add(str(res.get("employer") or _target_key).split("\n")[0].strip().lower() or _target_key)
                 elif res.get("deferred"):
-                    logger.warning(f"[ExperienceSectionAgent] Tile {exp_idx} deferred: {res.get('error')}")
+                    logger.warning(f"[ExperienceSectionAgent] Tile '{_target_key}' deferred: {res.get('error')}")
                     break
-                exp_idx += 1
                 time.sleep(0.5)
+                if healed_count >= max_tiles:
+                    break
 
             # Enforce reverse-chronological ordering
             self._reorder_tiles_reverse_chronological(page)
