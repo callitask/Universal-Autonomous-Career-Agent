@@ -177,6 +177,9 @@ class TestKnowledgeIndex(unittest.TestCase):
         )
         for name in live:
             self.assertNotIn(f"profiles/{name}/candidate_config.json", repo_a_text, f"live config indexed: {name}")
+        for c in chunks_data:
+            if c.get("repo") == "Repo_A":
+                self.assertNotIn("legacy_company_apply", c.get("path", ""), "Archived legacy_company_apply scripts must not be indexed")
 
     def test_09_tier_boost_core_over_generic(self):
         """Assert tier boost keeps engine chunks competitive vs generic docs."""

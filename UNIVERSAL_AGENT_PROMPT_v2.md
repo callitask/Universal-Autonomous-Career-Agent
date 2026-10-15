@@ -37,7 +37,7 @@ F:\JOB AI AGENT\.agents\rules\SCAR_TISSUE.md
 **0c. Read Core Operating Rules:**
 ```
 F:\JOB AI AGENT\.agents\rules\
-  ├── 00_user_cognitive_os.md              ← Axioms 1-8 (empirical, zero-PII, dual-tier memory)
+  ├── 00_user_cognitive_os.md              ← Axioms 1-5 (empirical, zero-PII, dual-tier memory)
   ├── 01_sophron_session_init.md           ← Sophron sync & session handover
   ├── 02_career_agent_operational_rules.md ← Rules 1-8: boundaries, starvation, purity, push-start
   └── 03_career_agent_session_profile_init.md ← Profile init & talent architect protocol
@@ -207,18 +207,12 @@ Get-Content -Tail 10 "profiles/$TARGET_PROFILE/output/applications_tracker.csv"
 ### Ledger Management (When Ledger Gets Saturated)
 After many cycles, the `processed_ledger.json` fills up with rejected/evaluated jobs, blocking the agent from finding new work. **Smart-reset** to free up capacity without re-applying to already-submitted jobs:
 
-**Keep:** `qualified`, `composite_qualified`, `saved_external`, `composite_saved_external`  
-**Remove:** `domain_gated`, `low_score`, `negative_company_gated`, `below_ctc_floor`, `no_native_apply`, `composite_gated`
+**Keep:** `applied`, `composite_applied`, `already_applied`, `composite_already_applied`, `applied_1click`, `applied_chatbot`, `verified_success`, `saved_external`, `composite_saved_external`, `READY_FOR_HUMAN_SUBMISSION`  
+**Remove:** `domain_gated`, `low_score`, `below_ctc_floor`, `experience_gap_gated`, `no_native_apply`, `composite_gated`, `failed_apply`, `no_description`, `TAILORING_BLOCKED`, `SECTION_BLOCKED`, `REVIEW_BLOCKED`, `ORDER_UNVERIFIED` (blocked entries are retryable after fixes)
 
 ```python
-import json, shutil
-filepath = 'profiles/$TARGET_PROFILE/output/processed_ledger.json'
-shutil.copy2(filepath, filepath.replace('.json', '_backup.json'))
-ledger = json.load(open(filepath, encoding='utf-8'))
-KEEP = {'qualified', 'composite_qualified', 'saved_external', 'composite_saved_external'}
-new_ledger = {k: v for k, v in ledger.items() if (v.get('status') if isinstance(v, dict) else '') in KEEP}
-json.dump(new_ledger, open(filepath, 'w', encoding='utf-8'), indent=2)
-print(f'Reset: {len(ledger)} -> {len(new_ledger)} entries')
+# Always use the canonical ledger reset utility (resolves Operations root + preserves applied & negative companies):
+# python scripts/reevaluate_ledger.py --profile $TARGET_PROFILE
 ```
 
 ### Pagination Tuning
@@ -286,7 +280,7 @@ TARGET_PROFILE = <your_profile_folder_name>
 
 Change `TARGET_PROFILE` to switch candidates. The agent will automatically ingest that profile's config and resume, verify the environment, and launch the full pipeline — zero manual changes to any script required.
 
-**Profile folders live at:** `F:\JOB AI AGENT\profiles\<profile_name>\`
+**Profile folders live at:** `F:\Operations JOB AI AGENT\profiles\<profile_name>\` (with blueprint `default_user` at `F:\JOB AI AGENT\profiles\default_user\`)
 
 ================================================================================
 ## SESSION END PROTOCOL

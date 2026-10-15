@@ -15,6 +15,18 @@
 #               6. Visual Audit, Human Submission Gate, & Ledger Persistence.
 # Rationale: Complete autonomous intelligence from discovery to verified application ready for human submission.
 # Preventative Notes: Never click SUBMIT on Section 4; strict Human Submission Gate mandatory.
+#
+# [ENTRY #002]
+# Term: [DECISION1_TAILORING_BLOCKED_PROPAGATION]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: Stage 4 tailoring failure only warned while Stages 5-6
+#                  proceeded and the ledger recorded READY anyway.
+# Changes Made: _tailoring_blocked() stamps flags on BOTH best_job and
+#               self.candidate_data (never a nonexistent candidate_config);
+#               stage_5 mirrors runner flags in; stage_6 records/propagates
+#               the exact blocked status with ready_for_submission False.
+# Rationale: Fill everything, upload nothing unverified, halt loudly.
+# Preventative Notes: Never report READY when any stage reports blocked.
 # ==============================================================================
 
 import os
@@ -293,6 +305,33 @@ class AutonomousJobAgent:
     # =========================================================================
     # STAGE 4: REQUISITION DOCUMENT TAILORING
     # =========================================================================
+    def _tailoring_blocked(self, target_job: Dict[str, Any],
+                           job_id: str, err_msg: str) -> Dict[str, Any]:
+        """Stamp tailoring-failure flags on BOTH best_job AND candidate_data.
+
+        Decision 1 (Revised): Stage 5 still fills all non-document fields;
+        Section 4 skips document upload and halts REVIEW_BLOCKED. The flags
+        travel on best_job (runner overlay) and self.candidate_data (what
+        the orchestrator actually receives). Uses self.candidate_data — NOT
+        a nonexistent candidate_config attribute (audit NEW-1).
+        """
+        fix_cmd = (
+            "Fix tailoring input/header for job "
+            f"{job_id or '?'} then run: .venv\\Scripts\\python "
+            "CompanySiteApply/section_agents/scripts/s4_cover_letter_upload.py "
+            f"--profile {self.profile_slug} --job-id {job_id or ''}".strip()
+        )
+        for carrier in (target_job, self.candidate_data):
+            if isinstance(carrier, dict):
+                carrier["_tailoring_failed"] = True
+                carrier["_tailoring_error"] = err_msg
+                carrier["_skip_document_upload"] = True
+                carrier["_missing_document"] = "cover_letter"
+                carrier["_fix_command"] = fix_cmd
+        return {"success": False, "error": err_msg,
+                "status": "TAILORING_BLOCKED",
+                "missing_document": "cover_letter", "fix_command": fix_cmd}
+
     def stage_4_tailor_documents(self, target_job: Dict[str, Any]) -> Dict[str, Any]:
         """
         Stage 4: Generates role-specific docs directly into the structured
@@ -351,8 +390,9 @@ class AutonomousJobAgent:
         if not verdict.get("success"):
             logger.error(f"[Stage 4] Recipient header refused by AG Brain: "
                          f"{verdict.get('error')}")
-            return {"success": False,
-                    "error": f"ACTION_REQUIRED: {verdict.get('error')}"}
+            return self._tailoring_blocked(
+                target_job, job_id,
+                f"ACTION_REQUIRED: {verdict.get('error')}")
         company = verdict["company"]
         team = verdict["hiring_team"]
         job_city = verdict["location"]
@@ -429,10 +469,7 @@ class AutonomousJobAgent:
             }
         except Exception as e:
             logger.error(f"[Stage 4] Failed to generate tailored cover letter: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            return self._tailoring_blocked(target_job, job_id, str(e))
 
     # =========================================================================
     # STAGE 5: SECTION MINI-AGENT DISPATCH & FORM FILLING
@@ -452,6 +489,15 @@ class AutonomousJobAgent:
         job_url = f"https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/{site_code}/job/{job_id}"
         logger.info(f"[AutonomousJobAgent] === STAGE 5: Navigating & Dispatching Section Mini-Agents ===")
         logger.info(f"[Stage 5] Target Job URL: {job_url}")
+
+        # Decision 1: mirror runner-stamped tailoring flags from best_job
+        # into the candidate_data the orchestrator actually receives.
+        if isinstance(target_job, dict) and isinstance(self.candidate_data, dict):
+            for _k in ("_tailoring_failed", "_tailoring_error",
+                       "_skip_document_upload", "_missing_document",
+                       "_fix_command"):
+                if _k in target_job and _k not in self.candidate_data:
+                    self.candidate_data[_k] = target_job[_k]
 
         # Enter via the job page + APPLY NOW (bare .../apply deep links 404
         # on Oracle CX without session form tokens).
@@ -509,26 +555,48 @@ class AutonomousJobAgent:
         except Exception as e:
             logger.warning(f"[Stage 6] Could not capture screenshot: {e}")
 
+        # Decision 1: propagate blocked statuses — never record READY when
+        # the orchestrator (or tailoring) reported a block.
+        _BLOCKED = {"TAILORING_BLOCKED", "SECTION_BLOCKED", "REVIEW_BLOCKED",
+                    "ORDER_UNVERIFIED", "ACTION_REQUIRED"}
+        _blocked_status = ""
+        if isinstance(app_result, dict) and app_result.get("status") in _BLOCKED:
+            _blocked_status = str(app_result["status"])
+        elif isinstance(target_job, dict) and target_job.get("_tailoring_failed"):
+            _blocked_status = "TAILORING_BLOCKED"
+        _final_status = _blocked_status or "READY_FOR_HUMAN_SUBMISSION"
+
         # Update candidate application ledger
         self._record_in_ledger(
             job_id=job_id,
             title=title,
             company=target_job.get("details", {}).get("company", ""),
             score=target_job.get("score", 0),
-            status="READY_FOR_HUMAN_SUBMISSION",
+            status=_final_status,
             proof_image=str(proof_file)
         )
 
         gate_report = {
-            "status": "HALTED_AT_HUMAN_GATE",
+            "status": _blocked_status or "HALTED_AT_HUMAN_GATE",
             "job_id": job_id,
             "title": title,
             "score": target_job.get("score", 0),
-            "orchestrator_status": app_result.get("status"),
+            "orchestrator_status": app_result.get("status") if isinstance(app_result, dict) else None,
             "proof_screenshot": str(proof_file),
-            "submit_ready": True,
-            "message": "Application is 100% complete and verified. Halting strictly before SUBMIT for human review."
+            "submit_ready": not bool(_blocked_status),
+            "ready_for_submission": not bool(_blocked_status),
+            "message": (
+                f"Blocked ({_blocked_status}): "
+                f"{(app_result.get('blocked_reason') or app_result.get('tailoring_error') or app_result.get('error') or '') if isinstance(app_result, dict) else ''} "
+                f"Fix: {(app_result.get('fix_command') or '') if isinstance(app_result, dict) else ''}".strip()
+                if _blocked_status else
+                "Application is 100% complete and verified. Halting strictly before SUBMIT for human review."
+            ),
         }
+        if _blocked_status and isinstance(app_result, dict):
+            for _k in ("blocked_reason", "missing_document", "fix_command", "tailoring_error"):
+                if app_result.get(_k) is not None:
+                    gate_report.setdefault(_k, app_result[_k])
         logger.info(f"[Stage 6] Gate Report: {json.dumps(gate_report, indent=2)}")
         return gate_report
 

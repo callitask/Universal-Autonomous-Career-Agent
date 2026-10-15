@@ -21,6 +21,15 @@
 # Changes Made: Backfilled append-only header; preserved docstring below; no logic change.
 # Rationale: Governance parity; future edits append ENTRY #003+.
 # Preventative Notes: Never add logic in a governance-header commit.
+#
+# [ENTRY #003]
+# Term: [TIMEOUT_LOG_STRING_PARITY]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: Step 4 console print said timeout=None while the client
+#   initializes with timeout=120.0.
+# Changes Made: Print string aligned to timeout=120s; no logic change.
+# Rationale: Diagnostic output must match actual client configuration.
+# Preventative Notes: When changing timeouts, update log strings in the same edit.
 # ================================================================================
 """
 Colab GPU Gateway Connection Diagnostic
@@ -168,7 +177,7 @@ def run_diagnostic(profile_dir_str: str | None = None) -> None:
     test_prompt = "Explain gravity in one sentence. Be concise."
     print(f"[STEP 4] Sending test prompt: '{test_prompt}'")
     print(f"         Model: {active_model}")
-    print("         Waiting for response (timeout=None — GPU inference may take 10-60s)...\n")
+    print("         Waiting for response (timeout=120s — GPU inference may take 10-60s)...\n")
 
     try:
         t0 = time.time()

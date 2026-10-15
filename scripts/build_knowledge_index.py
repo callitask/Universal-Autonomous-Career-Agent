@@ -22,6 +22,12 @@
 # Changes: Excluded .venv/venv/node_modules/dist/build/*.egg-info in both is_allowed_path and scan prune lists.
 # Rationale: Local environments and build artifacts are never knowledge; freshness gate must pass with a venv present.
 # Preventative: When adding a new local-artifact directory, add it in both places.
+#
+# Serial: 004 | Term: F-03 Operations profile scan + F-06 async-def + legacy exclusion | Timestamp: 2026-10-15
+# Issue: get_live_profile_names() scanned only the repo tree (Operations live profiles invisible to privacy tests); chunker/AST dropped async def; archived legacy_company_apply/ was indexed as live knowledge.
+# Changes: Dual-root profile scan (repo + Operations via JOB_AGENT_OPERATIONS); legacy_company_apply excluded in both gate lists; (?:async )?def chunking + AsyncFunctionDef symbols.
+# Rationale: Privacy tests must see the real live-profile set; async lifecycle code must be retrievable; archives are not knowledge.
+# Preventative: New profile roots, artifact dirs, and grammar forms must be added in every parallel list.
 """
 
 import os
@@ -57,16 +63,20 @@ VECTORS_DIR = KNOWLEDGE_DIR / "vectors"
 LIVE_PROFILE_DENYLIST = frozenset()
 
 def get_live_profile_names() -> Set[str]:
-    try:
-        profiles_dir = REPO_A_ROOT / "profiles"
-        if not profiles_dir.is_dir():
-            return set()
-        return set(
-            p.name for p in profiles_dir.iterdir()
-            if p.is_dir() and p.name != "default_user" and not p.name.startswith(".")
-        )
-    except Exception:
-        return set()
+    # F-03: scan BOTH repo and Operations profile roots (live profiles live
+    # in Operations; repo-only scan neutered the privacy tests).
+    names: Set[str] = set()
+    ops_root = Path(os.environ.get("JOB_AGENT_OPERATIONS", str(REPO_A_ROOT.parent / "Operations JOB AI AGENT")))
+    for profiles_dir in (REPO_A_ROOT / "profiles", ops_root / "profiles"):
+        try:
+            if profiles_dir.is_dir():
+                names.update(
+                    p.name for p in profiles_dir.iterdir()
+                    if p.is_dir() and p.name != "default_user" and not p.name.startswith(".")
+                )
+        except Exception:
+            continue
+    return names
 
 STOPWORDS = {
     "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
@@ -105,7 +115,7 @@ def is_allowed_path(rel_path: str, repo: str) -> bool:
     
     # Exclusions
     if any(p in [".git", "__pycache__", ".pytest_cache", ".vscode", "output", "logs", "knowledge",
-                 ".venv", "venv", "node_modules", "dist", "build"] for p in parts):
+                 ".venv", "venv", "node_modules", "dist", "build", "legacy_company_apply"] for p in parts):
         return False
     if ".egg-info" in norm:
         return False
@@ -157,7 +167,7 @@ def scan_repository_files(root: Path, repo_name: str) -> List[Tuple[Path, str]]:
         pruned = []
         for d in dirnames:
             if d in [".git", "__pycache__", ".pytest_cache", "output", "logs", "scratch", "knowledge",
-                     ".venv", "venv", "node_modules", "dist", "build", "artifacts"]:
+                     ".venv", "venv", "node_modules", "dist", "build", "artifacts", "legacy_company_apply"]:
                 continue
             if d.endswith(".egg-info"):
                 continue
@@ -219,8 +229,8 @@ def chunk_python(content: str, rel_path: str) -> List[Dict[str, Any]]:
     chunk_lines = []
 
     for i, line in enumerate(lines, start=1):
-        # Chunk on top-level classes and functions
-        if re.match(r'^(class\s+[A-Za-z0-9_]+|def\s+[A-Za-z0-9_]+)', line):
+        # Chunk on top-level classes and functions (F-06: include async def)
+        if re.match(r'^(class\s+[A-Za-z0-9_]+|(?:async\s+)?def\s+[A-Za-z0-9_]+)', line):
             if chunk_lines:
                 text_block = "\n".join(chunk_lines)
                 chunks.append({
@@ -230,7 +240,7 @@ def chunk_python(content: str, rel_path: str) -> List[Dict[str, Any]]:
                     "content": text_block,
                     "hash": compute_sha256(text_block)
                 })
-            match = re.match(r'^(class|def)\s+([A-Za-z0-9_]+)', line)
+            match = re.match(r'^(class|(?:async\s+)?def)\s+([A-Za-z0-9_]+)', line)
             current_symbol = f"{match.group(1)} {match.group(2)}" if match else line.strip()
             chunk_start = i
             chunk_lines = [line]
@@ -297,7 +307,7 @@ def extract_ast_symbols(content: str) -> Dict[str, Any]:
         return {"functions": [], "classes": [], "imports": [], "calls": [], "summaries": []}
     functions, classes, imports, calls, summaries = [], [], [], [], []
     for node in _ast.walk(tree):
-        if isinstance(node, _ast.FunctionDef):
+        if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):  # F-06: async def was invisible
             args = [a.arg for a in node.args.args][:6]
             doc = (_ast.get_docstring(node) or "").splitlines()
             first = doc[0].strip()[:140] if doc else ""

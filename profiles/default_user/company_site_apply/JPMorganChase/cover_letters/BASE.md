@@ -8,8 +8,9 @@
 
 [Date]
 
-[Company] Engineering Team
+[Hiring Team]
 [Company]
+[Company Location]
 
 Subject: Application for [Exact Job Title] (Requisition ID: [Job ID])
 

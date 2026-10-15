@@ -82,7 +82,7 @@ F:\JOB AI AGENT\
 │   ├── ats_detector.py                   # Portal platform detection engine
 │   ├── section_agents/                   # Coordinators + discrete scripts/ + sub_agents/
 │   ├── ipc/                              # Section IPC bus (ipc_manager.py)
-│   ├── tests/                            # Regression suite (150 tests)
+│   ├── tests/                            # Regression suite (159 tests)
 │   ├── anatomy/                          # Portal anatomy models
 │   ├── fingers/                          # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
 │   ├── nails/                            # Company-specific ATS customizations (nails/oracle: JPMC, Bristlecone)
@@ -105,7 +105,7 @@ F:\JOB AI AGENT\
 │   └── default_user/                     # Master blueprint / schema exemplar
 │       ├── candidate_config.json         # Candidate details, credentials, CTC, target filters
 │       ├── resume.md                     # Master markdown resume (Factual source of truth)
-│       ├── company_site_apply/<Slug>/    # Per-company workspace (base resume, BASE.md letter, cover_letters/, resumes/; auto-provisioned) + APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/ fixed-name role outputs (live in Operations)
+│       ├── company_site_apply/<Slug>/    # Per-company workspace (root README.md-only + resumes/BASE.md + cover_letters/BASE.md; auto-provisioned) + APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/ fixed-name role outputs (live in Operations)
 │       └── output/                       # Runtime outputs and multi-session state
 │           ├── applications/             # Per-job tailored PDF resumes & job_details.json
 │           ├── profile_sync/             # Selective profile sync cards & sync reports

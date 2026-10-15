@@ -131,13 +131,20 @@ def resolve_company_name(target_job: Optional[Dict[str, Any]] = None,
     return ""
 
 
+def _strip_multi_location_suffix(loc: str) -> str:
+    """Drop Oracle HCM "and N more" location suffixes (F-04 cosmetic fix)."""
+    return re.sub(r"\.?\s+and\s+\d+\s+more\b.*$", "", loc,
+                  flags=re.IGNORECASE).strip()[:120]
+
+
 def resolve_job_location(page: Any = None,
                          candidate_data: Optional[Dict[str, Any]] = None) -> str:
     """Requisition location for the recipient block (never candidate address).
 
     Priority: live Section 4 DOM (Location label/panel) -> candidate_data
     target-jobs/details location keys -> "" (generator falls back to
-    candidate address only as a last resort).
+    candidate address only as a last resort). Multi-location suffixes
+    ("and 2 more") are stripped.
     """
     if page is not None:
         try:
@@ -150,7 +157,7 @@ def resolve_job_location(page: Any = None,
                 return m ? m[1].trim().slice(0, 120) : '';
             }""")
             if isinstance(loc, str) and loc.strip():
-                return loc.strip()[:120]
+                return _strip_multi_location_suffix(loc.strip())
         except Exception:
             pass
     if isinstance(candidate_data, dict):
@@ -159,17 +166,17 @@ def resolve_job_location(page: Any = None,
             for key in ("location", "job_location", "title_location"):
                 val = tj.get(key)
                 if val and str(val).strip():
-                    return str(val).strip()[:120]
+                    return _strip_multi_location_suffix(str(val).strip())
         for key in ("job_location", "location"):
             val = candidate_data.get(key)
             if val and str(val).strip():
-                return str(val).strip()[:120]
+                return _strip_multi_location_suffix(str(val).strip())
         det = candidate_data.get("details")
         if isinstance(det, dict):
             for key in ("location", "job_location"):
                 val = det.get(key)
                 if val and str(val).strip():
-                    return str(val).strip()[:120]
+                    return _strip_multi_location_suffix(str(val).strip())
     return ""
 
 

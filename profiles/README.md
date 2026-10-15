@@ -22,7 +22,7 @@ profiles/
 └── <firstname_lastname>/         <-- User Candidate Sandbox (created from default_user)
     ├── candidate_config.json     <-- [REQUIRED] Populated candidate parameters & ATS truths
     ├── resume.md                 <-- [REQUIRED] Candidate master resume in Markdown
-    ├── company_site_apply/       <-- [INPUTS] Per-company bases: <Slug>/resume.md, <Slug>/resumes/, <Slug>/cover_letters/ (+ cover_letters/BASE.md)
+    ├── company_site_apply/       <-- [INPUTS] Per-company bases (root README.md-only): <Slug>/README.md, <Slug>/resumes/BASE.md, <Slug>/cover_letters/BASE.md
     ├── APPLIED ON COMPANY WEBSITE/ <-- [OUTPUTS] Per-application roles: <Company>/<Role>_<jobid>/ with fixed <Stem>_Resume.pdf / <Stem>_Cover_Letter.pdf + resume/ + cover_letters/ subfolders + Cover_Letter.txt/.html (no job-id filename suffixes; profile-agnostic)
     └── output/                   <-- [AUTO-GENERATED] Created and maintained at runtime
         ├── applications/         <-- [AUTO-GENERATED] Per-job tailored resumes and logs

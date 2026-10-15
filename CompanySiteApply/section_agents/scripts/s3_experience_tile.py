@@ -9,6 +9,15 @@
 #               IPC serialization, bulleted achievement formatting, and atomic modal saving.
 # Rationale: Guarantees modular sub-section isolation and prevents full section re-runs.
 # Preventative Notes: Never interact with subsequent tiles while an inline modal is still open.
+#
+# [ENTRY #002]
+# Term: [NEW-8_WORD_BOUNDARY_TILE_SCOPE]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: Raw substrings mis-scoped employers ("Mastercard",
+#                  "CL Educate") as Education tiles.
+# Changes Made: Word-boundary degree regex for experience-tile filtering.
+# Rationale: Employer names must never match degree patterns partially.
+# Preventative Notes: Extend the pattern list, never revert to substrings.
 # ==============================================================================
 
 import logging
@@ -42,12 +51,18 @@ def heal_single_experience_tile(
                     candidate_data.get("experience") or 
                     candidate_data.get("work_experience") or [])
 
-        # Filter all tiles, finding experience tiles specifically
+        # Filter all tiles, finding experience tiles specifically.
+        # NEW-8: word-boundary degree match — raw substrings mis-scope
+        # employers like "Mastercard" or "CL Educate" as Education tiles.
+        import re as _re_tile
+        _EDU_RE = _re_tile.compile(
+            r"\b(bachelor|master'?s?|b\.?tech|m\.?tech|mba|degree|education|"
+            r"university|college|school|diploma)\b", _re_tile.IGNORECASE)
         tiles = page.locator(".apply-flow-profile-item-tile").all()
         exp_tiles = []
         for t in tiles:
             txt = t.inner_text().strip().lower()
-            if not any(k in txt for k in ["bachelor", "master", "degree", "education"]):
+            if not _EDU_RE.search(txt):
                 exp_tiles.append(t)
 
         if not exp_tiles or tile_index >= len(exp_tiles):

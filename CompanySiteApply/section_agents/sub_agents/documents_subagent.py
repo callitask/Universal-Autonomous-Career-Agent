@@ -40,6 +40,16 @@
 # Issue / Context: Oracle HCM candidate flow uses /jobs/preview/<id>/... which failed /job/<id> regex.
 # Changes Made: Expanded job_id extraction regex to support /(?:jobs?/preview/|job/|requisitions?/|preview/)(\d+).
 # Rationale: Guarantees correct requisition ID attribution for document tailoring across all Oracle HCM variants.
+#
+# [ENTRY #005]
+# Term: [DECISION1_BLOCKED_LIFT]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: TAILORING_BLOCKED details from s4 upload were dropped by
+#                  heal(), so Section 4 could not name the missing document.
+# Changes Made: heal() propagates status/blocked_reason/missing_document/
+#               error/fix_command/skip_retry from the cover upload result.
+# Rationale: The gate report must name the missing document + fix command.
+# Preventative Notes: Never swallow blocked metadata in coordinator layers.
 # ==============================================================================
 
 import os
@@ -273,13 +283,25 @@ class DocumentsSubAgent(BaseSectionAgent):
                 logger.debug(f"[DocumentsSubAgent] s4_cover_letter_upload note: {cl_e}")
 
             audit_res = self.audit(page, candidate_data)
+            # Decision 1: propagate tailoring-block details so Section 4 can
+            # halt REVIEW_BLOCKED with the missing document + fix command.
+            _blocked = {}
+            if isinstance(cov_up, dict) and (
+                cov_up.get("blocked_reason") == "TAILORING_BLOCKED"
+                or cov_up.get("status") == "REVIEW_BLOCKED"
+            ):
+                for _k in ("status", "blocked_reason", "missing_document",
+                           "error", "fix_command", "skip_retry", "deferred"):
+                    if cov_up.get(_k) is not None:
+                        _blocked[_k] = cov_up[_k]
             return {
                 "success": audit_res.get("is_valid", False),
                 "subagent": self.section_name,
                 "resume_updated": resume_updated,
                 "cover_updated": cover_updated,
                 "cover_path": cover_path,
-                "audit": audit_res
+                "audit": audit_res,
+                **_blocked,
             }
         except Exception as e:
             logger.error(f"[DocumentsSubAgent] Heal error: {e}")

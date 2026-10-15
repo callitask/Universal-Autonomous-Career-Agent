@@ -130,6 +130,27 @@ class TestCompanyKind(unittest.TestCase):
 
 
 class TestArchiveDocs(unittest.TestCase):
+    def setUp(self):
+        # Isolate profile resolution to a temp Operations root so the suite
+        # never recreates profiles/someone/ (or any profile dir) in the repo.
+        # NOTE: resolve_profile_dir() falls back to the repo tree when the
+        # Operations profile dir is absent, so the temp profile must exist.
+        import os as _os
+        from pathlib import Path as _P
+        self._tmp_ops = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ops.cleanup)
+        (_P(self._tmp_ops.name) / "profiles" / "someone").mkdir(parents=True)
+        self._old_ops = _os.environ.get("JOB_AGENT_OPERATIONS")
+        _os.environ["JOB_AGENT_OPERATIONS"] = self._tmp_ops.name
+        self.addCleanup(self._restore_ops)
+
+    def _restore_ops(self):
+        import os as _os
+        if self._old_ops is None:
+            _os.environ.pop("JOB_AGENT_OPERATIONS", None)
+        else:
+            _os.environ["JOB_AGENT_OPERATIONS"] = self._old_ops
+
     def test_copies_into_applied_tree(self):
         with tempfile.TemporaryDirectory() as d:
             src = Path(d) / "csa"
@@ -142,7 +163,11 @@ class TestArchiveDocs(unittest.TestCase):
                 str(src / "Name_Cover_Letter.pdf"), str(src),
             )
             self.assertIn("123", dest)
-            self.assertTrue(Path(dest, "Name_Cover_Letter.pdf").exists())
+            # Fixed-stem contract (Decision 2/3): the source basename is NOT
+            # preserved; the role folder carries <Stem>_Cover_Letter.pdf where
+            # Stem derives from the profile (no full_name here -> "Someone").
+            self.assertTrue(Path(dest, "Someone_Cover_Letter.pdf").exists())
+            self.assertFalse(Path(dest, "Name_Cover_Letter.pdf").exists())
             self.assertTrue(Path(dest, "Cover_Letter.txt").exists())
 
 

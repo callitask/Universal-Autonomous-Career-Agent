@@ -60,7 +60,7 @@ F:\JOB AI AGENT\
   ├── run_full_visual_ai_audit.py         ← linear audit runner with hardcoded answers
   └── run_jpmc_flawless_flow.py           ← linear Section 1→4 flow, no IPC
   COMPANY WORKSPACES (auto-provisioned, never hand-made):
-  └── profiles/$TARGET_PROFILE/company_site_apply/<CompanySlug>/ — base resume + cover_letters/ + resumes/
+  └── profiles/$TARGET_PROFILE/company_site_apply/<CompanySlug>/ — README.md (root only) + resumes/BASE.md + cover_letters/BASE.md
       (created by ensure_company_workspace(); slugs alphanumeric, e.g. JPMorganChase)
 ```
 
@@ -81,13 +81,13 @@ Ensure zero PII and zero static domain fallbacks exist in the code. Run the test
 ```powershell
 .venv\Scripts\python -m unittest discover -s CompanySiteApply/tests
 ```
-Expected: All 150 tests pass (`OK`).
+Expected: All 159 tests pass (`OK`).
 
 **Step 2 — Verify Sandbox I/O Isolation:**
 All dynamic outputs MUST be restricted to the candidate sandbox in the sibling
 `F:\Operations JOB AI AGENT\` data root (via `CompanySiteApply/utils/runtime_paths.py`; the repo keeps code plus the `default_user` blueprint only):
-- `F:\Operations JOB AI AGENT\profiles\$TARGET_PROFILE\company_site_apply\<CompanySlug>\` — per-company inputs (base `resume.md` + `cover_letters/BASE.md`, auto-provisioned by `ensure_company_workspace()`)
-- `F:\Operations JOB AI AGENT\profiles\$TARGET_PROFILE\APPLIED ON COMPANY WEBSITE\<Company>\<Role>_<jobid>\` — structured role outputs with FIXED names `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` (Stem Title-Cased, e.g. `udaysagar_kandpal` → `Udaysagar_Kandpal`), plus `resume/` + `cover_letters/` subfolders and role-specific `Cover_Letter.txt`/`.html`
+- `F:\Operations JOB AI AGENT\profiles\$TARGET_PROFILE\company_site_apply\<CompanySlug>\` — per-company inputs (root `README.md`-only; `resumes/BASE.md` + `cover_letters/BASE.md`, auto-provisioned by `ensure_company_workspace()`)
+- `F:\Operations JOB AI AGENT\profiles\$TARGET_PROFILE\APPLIED ON COMPANY WEBSITE\<Company>\<Role>_<jobid>\` — structured role outputs with FIXED names `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` (Stem Title-Cased, e.g. `first_last` → `First_Last`), plus `resume/` + `cover_letters/` subfolders and role-specific `Cover_Letter.txt`/`.html`
 - `F:\Operations JOB AI AGENT\profiles\$TARGET_PROFILE\output\processed_ledger.json` — application deduplication ledger
 - `F:\Operations JOB AI AGENT\artifacts\` — high-resolution visual audit screenshots and run transcripts
 
@@ -131,12 +131,12 @@ The agent executes the application pipeline in strict chronological order via [`
 ### Stage 4: Requisition Document Tailoring
 - **Command / Method:** `agent.stage_4_tailor_documents(best_job)`
 - Dynamically generates an executive, single-page, ATS-compliant cover letter PDF tailored to the selected requisition ID, job title, and company — **directly into the structured role dir** `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` (never the flat `company_site_apply` root), via `CompanySiteApply/utils/application_docs.py`.
-- Inputs resolve company-first (`company_site_apply/<CompanySlug>/` with `resume.md` + `cover_letters/BASE.md`, auto-provisioned by `ensure_company_workspace()`); company never resolves to the literal `"company"` (`resolve_company_name()`). Outputs use FIXED names `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` (Stem Title-Cased) flat plus mirrored `resume/` + `cover_letters/` subfolders, plus role-specific `Cover_Letter.txt`/`.html`. Multiple jobs per company and same-title different-IDs coexist via `<Role>_<jobid>` folders; works identically for any new profile. No per-req filename suffixes for upload.
-- Uploaders (`s4_cover_letter_upload.py`, `s4_resume_upload.py`, `documents_subagent.py`) try the exact role path FIRST; glob newest-first is legacy fallback only (skips `APPLIED` trees for base inputs; resume globs are resume-constrained `*token*resume*.pdf`). Cover letters are content-verified (Job ID + title) before upload. Company/location resolve per requisition (scraper-stamped `details.company`, DOM job location; unknown company defers loudly, never a placeholder) — recipient block always names the real company + requisition city. Identity fields are AG-Brain-owned: `AIBrainResolver.resolve_recipient_header()` arbitrates the evidence and its refusal is final (Stage 4 + s4 synthesis honor it).
+- Inputs resolve company-first (`company_site_apply/<CompanySlug>/` with root `README.md`-only + `resumes/BASE.md` + `cover_letters/BASE.md`, auto-provisioned by `ensure_company_workspace()`); company never resolves to the literal `"company"` (`resolve_company_name()`). Outputs use FIXED names `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` (Stem Title-Cased) flat plus mirrored `resume/` + `cover_letters/` subfolders, plus role-specific `Cover_Letter.txt`/`.html`. Multiple jobs per company and same-title different-IDs coexist via `<Role>_<jobid>` folders; works identically for any new profile. No per-req filename suffixes for upload.
+- Uploaders (`s4_cover_letter_upload.py`, `s4_resume_upload.py`, `documents_subagent.py`) never trust draft display names in the DOM: on every run they execute **remove-if-filled + upload + verify** against session flags and active role-folder content (`Cover_Letter.txt` Job ID + title + PDF mtime). If Stage 4 tailoring fails or refuses, Stage 5 still fills all non-document fields across Sections 1–4, removes any stale draft cover letter, skips document upload, and halts Section 4 as `REVIEW_BLOCKED` naming the missing document and the `s4_*_upload.py` fix command.
 
 ### Stage 5: Section Mini-Agent Dispatch & Form Application
 - **Command / Method:** `await agent.stage_5_apply_form(page, best_job)`
-- Navigates to `https://.../job/{job_id}/apply`.
+- Enters via the requisition detail page (`https://.../job/{job_id}`) and clicks `APPLY NOW` (bare `.../apply` deep links 404 on Oracle Cloud HCM).
 - Coordinates specialized section sub-agents via [`ApplyOrchestrator`](file:///f:/JOB%20AI%20AGENT/CompanySiteApply/apply_orchestrator.py) and [`SectionAgentDispatcher`](file:///f:/JOB%20AI%20AGENT/CompanySiteApply/section_agents/section_agent_dispatcher.py). Failing sections retry 3x then halt as `SECTION_BLOCKED`/`REVIEW_BLOCKED` (never advance past unverified work); every return writes a run transcript.
   - **Section 1 (Profile & Preferences):**
     - `PersonalDetailsSubAgent`: Title, Name, Email, Phone, Address.
@@ -197,14 +197,14 @@ If an audit detects a defect or red-validation error during execution:
 When you receive an instruction to apply to company site jobs:
 
 1. **Verify Pre-Flight:** Confirm Chrome CDP on port 9222 and run unit tests to confirm green status.
-2. **Resolve Profile:** Load `$TARGET_PROFILE` configuration and master resume.
+2. **Resolve Profile:** Load `$TARGET_PROFILE` configuration and master resume (or omit `--profile` when a single live profile exists in `F:\Operations JOB AI AGENT\profiles\`).
 3. **Execute Pipeline:**
    ```powershell
-   .venv\Scripts\python run_universal_apply.py --autonomous --profile $TARGET_PROFILE
+   .venv\Scripts\python run_universal_apply.py --autonomous
    ```
    *(Or run in active-tab mode if the user already has a specific requisition open)*:
    ```powershell
-   .venv\Scripts\python run_universal_apply.py --profile $TARGET_PROFILE
+   .venv\Scripts\python run_universal_apply.py
    ```
 4. **Inspect Proof:** View the generated Section 4 Review screenshot proof.
 5. **Halt & Prompt User:** Confirm all sections are complete, tailored cover letter is attached, Submit button is enabled, and prompt the user to review the open browser and click **SUBMIT**.
@@ -216,7 +216,7 @@ When you receive an instruction to apply to company site jobs:
 ================================================================================
 
 ```
-TARGET_PROFILE = udaysagar_kandpal
+TARGET_PROFILE = <auto-discovered from F:\Operations JOB AI AGENT\profiles\ or pass --profile>
 PORTAL         = jpmc
 CDP_URL        = http://127.0.0.1:9222
 ```

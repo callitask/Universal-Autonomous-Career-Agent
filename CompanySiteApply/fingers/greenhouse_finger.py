@@ -15,6 +15,15 @@
 # Changes Made: Delegates to DOMHelpers.verify_step_advanced with thank-you marker; URL change carries confirmation pages.
 # Rationale: Shared guard; ok_markers limited to thank-you text to avoid body-text false positives.
 # Preventative Notes: Never widen ok_markers to generic words like confirmation.
+# [ENTRY #003]
+# Term: [NEW-3_HUMAN_GATE_SUBMIT]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: advance_step() clicked Submit with no human gate,
+#                  contradicting the never-click-SUBMIT invariant.
+# Changes Made: allow_submit: bool = False gate (Oracle finger parity);
+#               default halts with human_gate_active, never clicks.
+# Rationale: Submission is human-only on every portal.
+# Preventative Notes: Never call advance_step(allow_submit=True) from agents.
 # ==============================================================================
 
 import time
@@ -78,7 +87,12 @@ class GreenhouseFinger(BaseATSFinger):
 
         return {"success": True, "filled_count": filled}
 
-    def advance_step(self, page: Any) -> Tuple[bool, str]:
+    def advance_step(self, page: Any, allow_submit: bool = False) -> Tuple[bool, str]:
+        # NEW-3: human gate — never click Submit unless explicitly allowed.
+        if not allow_submit:
+            return False, ("Human gate active: refusing to click Submit on "
+                           "Greenhouse (allow_submit=False). Attachments verified; "
+                           "operator submits manually.")
         before_url = getattr(page, "url", "")
         clicked, which = DOMHelpers.safe_click_button(
             page, ['submit application', 'submit'])

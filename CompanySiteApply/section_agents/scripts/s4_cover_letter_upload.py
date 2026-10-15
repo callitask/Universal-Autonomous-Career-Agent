@@ -17,6 +17,18 @@
 # Changes Made: Expanded requisition ID regex to support /(?:jobs?/preview/|job/|requisitions?/|preview/)(\d+).
 # Rationale: Guarantees correct requisition ID attribution for document tailoring across all Oracle HCM variants.
 # ==============================================================================
+# [ENTRY #003]
+# Term: [DECISION1_TAILORING_GATE + DECISION2_PDF_MTIME + JOBID_CLI]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: Tailoring failure proceeded silently; role PDF never
+#                  freshness-checked against its txt; recovery command used a
+#                  nonexistent --job-id flag.
+# Changes Made: _tailoring_failed gate (remove stale, upload nothing,
+#               REVIEW_BLOCKED skip_retry); PDF st_mtime >= txt st_mtime - 5.0
+#               checks; --job-id CLI support.
+# Rationale: Fill everything, upload nothing unverified, halt loudly.
+# Preventative Notes: Never trust a PDF older than its companion txt.
+# ==============================================================================
 
 import os
 import re
@@ -63,6 +75,48 @@ def heal_cover_letter_upload(
     """
     try:
         cand = candidate_data.get("candidate", candidate_data) if isinstance(candidate_data, dict) else {}
+
+        # Decision 1 (Revised): tailoring failed upstream — remove any stale
+        # draft so nothing wrong stays attached, upload NOTHING, halt loudly.
+        # Other Section 4 subagents still run; this step just refuses.
+        if isinstance(candidate_data, dict) and (
+            candidate_data.get("_tailoring_failed")
+            or candidate_data.get("_skip_document_upload")
+        ):
+            try:
+                _box = page.locator(".attachment-upload-button").filter(
+                    has_text=re.compile(r'cover', re.I)).first
+                try:
+                    _filled = _box.evaluate(
+                        "el => el.classList.contains('attachment-upload-button--filled')")
+                except Exception:
+                    _filled = False
+                if _filled:
+                    _rm = _box.locator(
+                        "button:has-text('REMOVE COVER LETTER'), "
+                        "button:has-text('Remove Cover Letter')").first
+                    try:
+                        if _rm.count() > 0 and _rm.is_visible():
+                            logger.info("[s4_cover_letter_upload] Tailoring deferred — removing stale draft.")
+                            _rm.click()
+                            time.sleep(1.5)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            _err = str(candidate_data.get("_tailoring_error") or
+                       "Stage 4 tailoring failed or deferred upstream.")
+            return {
+                "success": False,
+                "status": "REVIEW_BLOCKED",
+                "blocked_reason": "TAILORING_BLOCKED",
+                "missing_document": str(
+                    candidate_data.get("_missing_document") or "cover_letter"),
+                "error": _err,
+                "fix_command": candidate_data.get("_fix_command"),
+                "skip_retry": True,
+                "deferred": True,
+            }
 
         # 1. Extract job context (portal URL / DOM / candidate hints only)
         job_id = ""
@@ -143,7 +197,18 @@ def heal_cover_letter_upload(
                             _role_root = str(_ap0["role_dir"])
                             _id_ok = not job_id or _vjid(_role_root, job_id)
                             _ti_ok = not job_title or _vjt(_role_root, job_title)
-                            if _id_ok and _ti_ok:
+                            # Decision 2: the PDF itself must exist and be no
+                            # older than its role Cover_Letter.txt (a stale PDF
+                            # paired with refreshed companions must not pass).
+                            _mt_ok = True
+                            try:
+                                _txt = _Path(_role_root) / "Cover_Letter.txt"
+                                if _txt.is_file():
+                                    _mt_ok = (_cand.stat().st_mtime
+                                              >= _txt.stat().st_mtime - 5.0)
+                            except OSError:
+                                _mt_ok = True
+                            if _id_ok and _ti_ok and _mt_ok:
                                 cover_path = str(_cand)
                                 break
                             # Folder companions missing but filename is role-scoped
@@ -235,6 +300,21 @@ def heal_cover_letter_upload(
                             f"[s4_cover_letter_upload] Role companions stale for {job_id} "
                             f"— will regenerate companions below."
                         )
+                else:
+                    # Decision 2: even with matching companions, a role-scoped
+                    # PDF older than its txt is stale (regenerated companions
+                    # beside an old PDF) — force regeneration.
+                    try:
+                        _txt2 = _Path(_parent) / "Cover_Letter.txt"
+                        if _txt2.is_file() and _cp.is_file() and (
+                                _cp.stat().st_mtime < _txt2.stat().st_mtime - 5.0):
+                            logger.warning(
+                                f"[s4_cover_letter_upload] Role PDF older than companions for {job_id} "
+                                f"— regenerating."
+                            )
+                            cover_path = None
+                    except OSError:
+                        pass
             except Exception as ve:
                 logger.debug(f"[s4_cover_letter_upload] Job-ID verify note: {ve}")
 
@@ -403,12 +483,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Upload tailored cover letter independently.")
     parser.add_argument("--profile", default="default_user", help="Candidate profile name")
     parser.add_argument("--cdp-url", default="http://127.0.0.1:9222", help="CDP URL")
+    parser.add_argument("--job-id", default=None, help="Requisition ID to tailor/verify the cover letter for")
     args = parser.parse_args()
 
     arm = ATSArm(cdp_url=args.cdp_url)
     try:
         page = arm.connect()
         candidate_data = ConfigResolver.load_candidate_config(args.profile)
+        if isinstance(candidate_data, dict) and args.job_id:
+            candidate_data["job_id"] = str(args.job_id)
+            candidate_data["_ipc_job_id"] = str(args.job_id)
         res = heal_cover_letter_upload(page, candidate_data)
         print(f"Cover Letter Upload Result: {res}")
         sys.exit(0 if res.get("success") else 1)

@@ -9,6 +9,15 @@
 #               DOM attachment upload, and verification of the filled state.
 # Rationale: Guarantees modular sub-section isolation per Section IPC Architecture §3.
 # Preventative Notes: Never upload stale resumes; resolve dynamically from candidate config.
+#
+# [ENTRY #002]
+# Term: [JOBID_CLI]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: Standalone recovery commands referenced --job-id, which
+#                  argparse rejected.
+# Changes Made: Optional --job-id wired into candidate_data job_id/_ipc_job_id.
+# Rationale: Single-step document recovery must accept the requisition ID.
+# Preventative Notes: Keep CLI flags in sync with documented fix commands.
 # ==============================================================================
 
 import os
@@ -231,12 +240,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Upload candidate resume independently.")
     parser.add_argument("--profile", default="default_user", help="Candidate profile name")
     parser.add_argument("--cdp-url", default="http://127.0.0.1:9222", help="CDP URL")
+    parser.add_argument("--job-id", default=None, help="Requisition ID constraining resume resolution to its role folder")
     args = parser.parse_args()
 
     arm = ATSArm(cdp_url=args.cdp_url)
     try:
         page = arm.connect()
         candidate_data = ConfigResolver.load_candidate_config(args.profile)
+        if isinstance(candidate_data, dict) and args.job_id:
+            candidate_data["job_id"] = str(args.job_id)
+            candidate_data["_ipc_job_id"] = str(args.job_id)
         res = heal_resume_upload(page, candidate_data)
         print(f"Resume Upload Result: {res}")
         sys.exit(0 if res.get("success") else 1)

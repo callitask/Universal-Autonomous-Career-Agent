@@ -11,6 +11,14 @@
 # Rationale: Guarantees strict reverse-chronological order (current job at top, newest to oldest)
 #            regardless of Knockout VM state or date string formatting variations.
 # Preventative Notes: Never compare MM/YYYY strings using localeCompare or alphabetical comparison.
+#
+# [ENTRY #002]
+# Term: [NEW-8_WORD_BOUNDARY_TILE_SCOPE]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: Raw degree substrings mis-scoped employer tiles.
+# Changes Made: Word-boundary degree regex in read-back + KO exp-tile pick.
+# Rationale: Same as s3_experience_tile ENTRY #002 — no partial matches.
+# Preventative Notes: Keep both files' patterns in sync when extending.
 # ==============================================================================
 
 import logging
@@ -52,7 +60,9 @@ def get_tile_order(page: Any) -> List[Dict[str, Any]]:
         texts = page.evaluate("""() => {
             const tiles = Array.from(document.querySelectorAll('.apply-flow-profile-item-tile'));
             return tiles
-                .filter(t => !/bachelor|master|degree|education/i.test(t.innerText || ''))
+                // NEW-8: word-boundary degree match — raw substrings
+                // mis-scoped employers like "Mastercard" or "CL Educate".
+                .filter(t => !/\b(bachelor|master'?s?|b\\.?tech|m\\.?tech|mba|degree|education|university|college|school|diploma)\b/i.test(t.innerText || ''))
                 .map(t => (t.innerText || '').split('\\n')[0].trim());
         }""") or []
     except Exception as e:
@@ -112,7 +122,9 @@ def reorder_experience_tiles(page: Any) -> Dict[str, Any]:
                     let expTile = null;
                     for (const t of tiles) {
                         const txt = (t.innerText || '').toLowerCase();
-                        if (!txt.includes('bachelor') && !txt.includes('master') && !txt.includes('degree') && !txt.includes('education')) {
+                        // NEW-8: word boundaries — "Mastercard"/"CL Educate"
+                        // are employers, not education tiles.
+                        if (!/\b(bachelor|master'?s?|b\\.?tech|m\\.?tech|mba|degree|education|university|college|school|diploma)\b/.test(txt)) {
                             expTile = t;
                             break;
                         }

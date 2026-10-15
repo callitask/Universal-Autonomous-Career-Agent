@@ -22,6 +22,16 @@
 #               Also initialises IPC session_id at run() start (Phase 0 integration).
 # Rationale: Guarantees form elements are interactable before any section sub-agent runs.
 # Preventative Notes: NEVER move the modal check BELOW section detection — must run FIRST every iteration.
+#
+# [ENTRY #004]
+# Term: [DECISION1_SKIP_RETRY + NEW-4_LOGIN_WALL]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: Intentionally skipped steps were retried 3x; expired
+#                  sessions looped as unknown sections to MAX_STEPS.
+# Changes Made: skip_retry short-circuits the heal loop; _is_login_wall()
+#               halts SECTION_BLOCKED/SESSION_EXPIRED_OR_LOGIN_REQUIRED.
+# Rationale: Don't retry refusals; don't heal login screens as forms.
+# Preventative Notes: Login walls are never form sections.
 # ==============================================================================
 # [ENTRY #003]
 # Term: [SECTION_DETECTION_ORDER_AND_PREVIEW_COLLISION_FIX]
@@ -209,6 +219,14 @@ class ApplyOrchestrator:
                 if attempt > 1:
                     logger.info(f"[ApplyOrchestrator] Section '{section_key}' healed on attempt {attempt}.")
                 break
+            # Decision 1: intentionally skipped steps (e.g. deferred document
+            # upload) must NOT be retried — one pass, then halt loudly.
+            if eval_res.get("skip_retry"):
+                logger.info(
+                    f"[ApplyOrchestrator] Section '{section_key}' reports skip_retry "
+                    f"({eval_res.get('blocked_reason')}) — no further attempts."
+                )
+                break
             logger.warning(
                 f"[ApplyOrchestrator] Section '{section_key}' attempt {attempt}/{max_attempts} "
                 f"reported anomalies: {eval_res}. Retrying..."
@@ -300,6 +318,30 @@ class ApplyOrchestrator:
         except Exception as e:
             logger.debug(f"[ApplyOrchestrator] Transcript note: {e}")
             return None
+
+    def _is_login_wall(self, page: Any, url: str) -> bool:
+        """Detect mid-run login/session-expiry walls (NEW-4).
+
+        Oracle CX drops expired sessions to sign-in / PIN / email-verify
+        screens. Healing those as form sections loops to MAX_STEPS — halt.
+        """
+        try:
+            u = (url or "").lower()
+            if any(k in u for k in ("login", "signin", "sign-in", "auth",
+                                    "verify-email", "pin-code", "challenge")):
+                return True
+            found = page.evaluate("""() => {
+                const t = ((document.body && document.body.innerText) || '').toLowerCase();
+                const hasPwd = !!document.querySelector('input[type="password"]');
+                const keys = ['sign in to continue', 'session has expired', 'session expired',
+                              'please sign in again', 'verify it is you', 'enter verification code'];
+                return hasPwd || keys.some(k => t.includes(k));
+            }""")
+            # Strict identity: MagicMock pages in unit tests return truthy
+            # non-bool objects from evaluate() — never treat those as walls.
+            return found is True
+        except Exception:
+            return False
 
     def _blocked_result(
         self,
@@ -405,6 +447,19 @@ class ApplyOrchestrator:
                     logger.debug(f"[ApplyOrchestrator] Modal check skipped: {modal_err}")
 
                 curr_url = page.url
+                # NEW-4: expired session walls are not form sections — halt now.
+                if self._is_login_wall(page, curr_url):
+                    logger.error("[ApplyOrchestrator] Login/session wall detected — halting.")
+                    return self._blocked_result(
+                        "login_wall", curr_url,
+                        {"success": False, "status": "SECTION_BLOCKED",
+                         "blocked_reason": "SESSION_EXPIRED_OR_LOGIN_REQUIRED",
+                         "error": "SESSION_EXPIRED_OR_LOGIN_REQUIRED: sign-in or "
+                                  "verification screen mid-run. Re-authenticate in "
+                                  "the CDP browser and re-run.",
+                         "skip_retry": True},
+                        visited_stages, section_proofs, screenshot_dir,
+                    )
                 section = self.detect_current_section(page)
                 visited_stages.append((section, curr_url))
                 logger.info(f"[ApplyOrchestrator] Step {step_count}: Section='{section}' | URL={curr_url}")

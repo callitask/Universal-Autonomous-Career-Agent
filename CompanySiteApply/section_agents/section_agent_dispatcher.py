@@ -8,6 +8,16 @@
 # Rationale: Enables single-subagent execution (e.g. heal preferred_location, heal dropdown_questions, heal documents)
 #            with zero side effects on sister sections.
 # Preventative Notes: Always preserve subagent boundaries.
+#
+# [ENTRY #002]
+# Term: [DECISION1_SKIP_RETRY_LIFT]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: Intentional-skip flags stayed buried in per-subagent heal
+#                  outputs; the orchestrator could not see them.
+# Changes Made: evaluate_and_heal_section() lifts skip_retry + blocked
+#               metadata to the section-level result.
+# Rationale: Coordinators must surface, never swallow, halt directives.
+# Preventative Notes: New halt fields must be lifted here when added.
 # ==============================================================================
 
 import logging
@@ -290,6 +300,20 @@ class SectionAgentDispatcher:
                     post_audits[agent.section_name] = {"is_valid": False, "error": str(e)}
                     all_valid = False
 
+        # Decision 1: lift intentional-skip flags so the orchestrator honors
+        # skip_retry instead of pointlessly retrying a deferred step.
+        _lift: Dict[str, Any] = {}
+        try:
+            for _hr in (healed_results or {}).values():
+                if isinstance(_hr, dict) and _hr.get("skip_retry"):
+                    _lift["skip_retry"] = True
+                    for _k in ("status", "blocked_reason", "missing_document",
+                               "error", "fix_command"):
+                        if _hr.get(_k) is not None and _k not in _lift:
+                            _lift[_k] = _hr[_k]
+                    break
+        except Exception:
+            pass
         return {
             "section": sec_key,
             "success": all_valid,
@@ -298,7 +322,8 @@ class SectionAgentDispatcher:
             "cascade_passes": cascade_pass,
             "pre_audits": pre_audits,
             "healed_results": healed_results,
-            "post_audits": post_audits
+            "post_audits": post_audits,
+            **_lift,
         }
 
     def auto_heal_current_page(self, page: Any, candidate_data: Dict[str, Any]) -> Dict[str, Any]:

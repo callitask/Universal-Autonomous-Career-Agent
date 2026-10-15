@@ -8,6 +8,16 @@
 #               DocumentsSubAgent, DiversitySubAgent, SignatureSubAgent, and VisualVerifierSubAgent.
 # Rationale: Guarantees fresh tailored document attachment (removing old files) and strict human gate enforcement.
 # Preventative Notes: ABSOLUTELY NEVER CLICK SUBMIT.
+#
+# [ENTRY #002]
+# Term: [DECISION1_BLOCKED_PASSTHROUGH]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: Tailoring-block details died inside documents heal output.
+# Changes Made: skip_retry/status/blocked_reason/missing_document/error/
+#               fix_command lifted into review heal result; other subagents
+#               still run before REVIEW_BLOCKED is returned.
+# Rationale: One pass fills everything; the gate names the missing document.
+# Preventative Notes: Never retry an intentionally skipped upload.
 # ==============================================================================
 # [ENTRY #002]
 # Term: [REVIEW_PREVIEW_COLLISION_FIX]
@@ -158,7 +168,9 @@ class ReviewSectionAgent(BaseSectionAgent):
             verified = self.verify(page, candidate_data)
             if not order_verified:
                 logger.warning("[ReviewSectionAgent] Halting gate: review-screen order unverified.")
-            return {
+            # Decision 1: surface tailoring-block details; docs intentionally
+            # skipped (skip_retry) — other subagents above still ran.
+            _out = {
                 "success": verified and order_verified,
                 "section": self.section_name,
                 "documents": docs_res,
@@ -173,6 +185,14 @@ class ReviewSectionAgent(BaseSectionAgent):
                 "submit_clicked": False,
                 "verified": verified and order_verified
             }
+            if isinstance(docs_res, dict) and docs_res.get("skip_retry"):
+                _out["skip_retry"] = True
+                for _k in ("status", "blocked_reason", "missing_document",
+                           "error", "fix_command"):
+                    if docs_res.get(_k) is not None:
+                        _out.setdefault(_k, docs_res[_k])
+                _out.setdefault("status", "REVIEW_BLOCKED")
+            return _out
         except Exception as e:
             logger.error(f"[ReviewSectionAgent] Heal error: {e}")
             return {"success": False, "section": self.section_name, "error": str(e)}

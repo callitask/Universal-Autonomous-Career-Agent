@@ -386,7 +386,7 @@ If this session ends before full implementation:
 1. Re-read `ACTIVE_CONSTRAINT_BLOCK.md` + `SCAR_TISSUE.md` (mandatory).
 2. Check which Phase (§7) was last completed — grep for `# Phase N COMPLETE` comments in modified files.
 3. Resume from the next uncompleted phase.
-4. Before writing any code: run `python -m unittest discover -s CompanySiteApply/tests` — all 150 must pass (plus 7 cover-letter-id tests in `tests/`, 10 knowledge tests).
+4. Before writing any code: run `python -m unittest discover -s CompanySiteApply/tests` — all 159 must pass (plus 7 cover-letter-id tests in `tests/`, 10 knowledge tests).
 5. After each phase: run tests again. Regression = stop and investigate before continuing.
 6. This document is the canonical spec. Do not deviate without updating it first.
 

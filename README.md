@@ -52,7 +52,8 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── 03_profile_sync_linkedin.py    # LinkedIn profile updater
 │   ├── 04_job_discovery.py            # Batched discovery orchestrator, SRP scraper & match score extractor
 │   ├── 05_apply_jobs.py               # DOM interaction, chatbot solver & Easy Apply handler
-│   ├── generate_professional_cover_letter.py # Cover letter PDF + Job-ID/title verification
+│   ├── generate_factual_tailored.py      # Factual ATS resume tailor (Naukri flow) — CompanySiteApply uses master-PDF staging + tailored cover letters
+│   ├── generate_professional_cover_letter.py # Cover letter PDF + Job-ID/title/company refusal + PDF-freshness verification
 │   ├── ai_client.py                   # Dual-engine brain (API: Gemini+Colab / Integrity 2.0: AG IPC)
 │   ├── ai_rate_manager.py               # SmartRateManager (3.5s floor, 120s model ban)
 │   ├── ipc_watcher.py                 # File-based IPC signal relay daemon (Daemon 2)
@@ -72,13 +73,15 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │       └── apply_status.py            # Canonical APPLIED_*/FAILED statuses (shared)
 ├── CompanySiteApply/                  # On-demand direct company ATS application engine (human-gated)
 │   ├── cli.py                         # Interactive CLI runner for direct ATS applications
+│   ├── ai_brain_resolver.py           # Screening-question brain + recipient-header arbitration + IPC answer bridge
+│   ├── cognitive_job_matcher.py       # Profile-grounded scoring + allowed_countries gate
 │   ├── apply_orchestrator.py          # Section dispatcher with hard advance gates + per-section proofs
 │   ├── autonomous_job_agent.py        # 6-stage lifecycle: comprehend → search → rank → tailor → apply → gate
 │   ├── ats_arm.py                     # ATS orchestrator arm
 │   ├── ats_detector.py                # Portal platform detection engine
 │   ├── section_agents/                # Coordinators (5) + scripts/ (9 discrete actuators) + sub_agents/ (12)
 │   ├── ipc/                           # Section IPC bus (ipc_manager.py; runtime section_question.json)
-│   ├── tests/                         # Regression suite (150 tests)
+│   ├── tests/                         # Regression suite (159 tests)
 │   ├── fingers/                       # Platform adapters: Oracle Cloud HCM, Workday, Greenhouse, generic
 │   ├── nails/oracle/                  # Company overrides: JPMC, Bristlecone (on top of Oracle finger)
 │   ├── CompanyScraper/                # Direct career-site scrapers (JPMorgan example) + cli_scraper.py
@@ -93,6 +96,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── test_colab_connection.py       # Colab gateway diagnostic (120s finite timeout)
 │   ├── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
 │   └── legacy_company_apply/          # Archived one-off scripts (forensic reference only, never run)
+├── tests/                               # Root regression suites (test_cover_letter_job_id.py [7], test_knowledge_index.py [10])
 ├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)
 ├── docs/                              # Authoritative documentation & blueprints (16 files)
 │   ├── WORKSPACE_RULES.md             # 10 directives & 46 bug prevention guardrails (36 C, 6 H, 3 D, 1 P)

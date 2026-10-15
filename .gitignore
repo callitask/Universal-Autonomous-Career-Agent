@@ -15,6 +15,10 @@ profiles/*
 !profiles/README.md
 # Blueprint runtime skeleton stays untracked even under the tracked blueprint.
 profiles/default_user/output/
+profiles/default_user/company_site_apply/*.pdf
+profiles/default_user/company_site_apply/*.html
+profiles/default_user/company_site_apply/*.txt
+profiles/default_user/company_site_apply/*/resume.md
 
 
 # 2. Python Environment & Cache

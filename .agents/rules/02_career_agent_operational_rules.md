@@ -31,7 +31,7 @@ These rules are loaded automatically at every session start and before every pro
      * logs/ (terminal logs and screenshot diagnostics)
      * cognitive_profile.json (runtime synthesized domain taxonomy)
    - CompanySiteApply flow (2026-10-14 structured-layout contract, profile-agnostic — any new slug, same flow):
-     * inputs: `company_site_apply/<Slug>/resumes|cover_letters` (+ `resume.md`, `cover_letters/BASE.md`)
+     * inputs: `company_site_apply/<Slug>/` (root `README.md`-only + `resumes/BASE.md` + `cover_letters/BASE.md`)
      * outputs: `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/` + `cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes; uploaders try the exact role path first)
 2. **Developer Separation of Concerns**:
    - The engine code lives in core/, docs/, and scripts/.

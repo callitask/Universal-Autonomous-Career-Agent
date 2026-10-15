@@ -40,6 +40,11 @@
         "direct_employers_only": false,
         "salary_filter_bracket": "3to6",
         "job_age_days": 3,
+        "max_experience_gap_years": 2,
+        "allowed_countries": [
+            "India"
+        ],
+        "negative_companies": [],
         "negative_keywords": [
             "telecalling",
             "bpo",

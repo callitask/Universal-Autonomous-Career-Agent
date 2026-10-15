@@ -28,6 +28,19 @@
 # Changes Made: Stripped BOM character; generalized docstring to reference candidate_config.json.
 # Rationale: Syntax stability and compliance with Directive 2.
 # Preventative Notes: Never save Python files with UTF-8 BOM encoding.
+#
+# [ENTRY #003]
+# Term: [F-07_OPERATIONS_RESOLUTION + BLOCKED_STATUS_REEVALUATION]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: Bare profile paths bypassed the Operations root; CSV kept
+#   only APPLIED rows; substring negative-company matches false-positived;
+#   blocked statuses had no reset path for retry after fixes.
+# Changes Made: resolve_profile_dir() first with resolve() fallback; keep
+#   VERIFIED_SUCCESS/SUBMITTED_SUCCESSFULLY CSV rows; word-boundary negative
+#   matching; retain applied-family + READY statuses; ungate gap/blocked sets.
+# Rationale: Ledger maintenance must respect the Operations layout and the
+#   halt/resume lifecycle (blocked entries are retryable, applied are not).
+# Preventative Notes: Never purge READY/applied-family entries on reset.
 # ================================================================================
 """
 scripts/reevaluate_ledger.py
@@ -42,6 +55,7 @@ Strictly preserves:
 
 import os
 import sys
+import re
 import json
 import csv
 import argparse
@@ -51,10 +65,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from core.utils.profile_context import ProfileContext, canonical_job_url, extract_platform_job_id
+from CompanySiteApply.utils.runtime_paths import resolve_profile_dir
 
 
 def clean_ledger_for_reevaluation(profile_path: str, dry_run: bool = False):
-    profile_dir = Path(profile_path).resolve()
+    raw_path = Path(profile_path)
+    ops_dir = resolve_profile_dir(raw_path.name)
+    profile_dir = ops_dir if (ops_dir / "candidate_config.json").exists() else raw_path.resolve()
     ctx = ProfileContext(profile_dir, BASE_DIR)
     
     tracker_file = profile_dir / "output" / "applications_tracker.csv"
@@ -63,7 +80,8 @@ def clean_ledger_for_reevaluation(profile_path: str, dry_run: bool = False):
         with open(tracker_file, "r", encoding="utf-8-sig", errors="ignore") as f:  # utf-8-sig strips Excel BOM — Fix #15 (2026-09-23)
             reader = csv.DictReader(f)
             for row in reader:
-                if "APPLIED" in row.get("Status", "").upper():
+                st_upper = row.get("Status", "").upper()
+                if any(tok in st_upper for tok in ("APPLIED", "VERIFIED_SUCCESS", "SUBMITTED_SUCCESSFULLY")):
                     u = row.get("Job URL", "").strip().lower()
                     if u:
                         applied_urls.add(u)
@@ -97,16 +115,25 @@ def clean_ledger_for_reevaluation(profile_path: str, dry_run: bool = False):
         status = v.get("status", "")
         company = str(v.get("company", "")).lower()
 
-        # Always retain if applied or negative company
-        is_negative = any(neg in company for neg in negative_companies if neg)
-        is_applied = (k.lower() in applied_urls) or (status in ["applied", "composite_applied", "already_applied", "composite_already_applied"])
+        # Always retain if applied or negative company (word-boundary
+        # match so " induct" style substrings can't false-positive).
+        is_negative = any(re.search(rf"\b{re.escape(neg)}\b", company) for neg in negative_companies if neg)
+        is_applied = (k.lower() in applied_urls) or (status in [
+            "applied", "composite_applied", "already_applied", "composite_already_applied",
+            "applied_1click", "applied_chatbot", "verified_success", "saved_external",
+            "composite_saved_external", "READY_FOR_HUMAN_SUBMISSION"
+        ])
 
         if is_applied or is_negative or "negative" in status:
             retained_ledger[k] = v
             continue
 
         # Ungate candidates for re-evaluation: low_score, domain_gated, failed_apply, composite_gated
-        if status in ["low_score", "domain_gated", "failed_apply", "composite_gated", "no_native_apply", "no_description"]:
+        if status in [
+            "low_score", "domain_gated", "failed_apply", "composite_gated",
+            "no_native_apply", "no_description", "experience_gap_gated", "below_ctc_floor",
+            "TAILORING_BLOCKED", "SECTION_BLOCKED", "REVIEW_BLOCKED", "ORDER_UNVERIFIED"
+        ]:
             removed_count += 1
             statuses_removed[status] = statuses_removed.get(status, 0) + 1
             continue

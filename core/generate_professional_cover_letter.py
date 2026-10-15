@@ -191,6 +191,63 @@ def verify_cover_letter_job_title(target_dir_or_txt: str, job_title: str) -> boo
         return False
 
 
+def verify_cover_letter_pdf_fresh(target_dir_or_pdf: str,
+                                  margin_s: float = 5.0) -> bool:
+    """Confirm a role folder holds a PDF no older than its Cover_Letter.txt.
+
+    Catches the stale-PDF/fresh-txt desync the txt-only verifiers miss:
+    returns False when no Cover*Letter*.pdf exists beside the txt, or when
+    the newest such PDF is older than the txt (beyond margin_s).
+    """
+    try:
+        p = Path(str(target_dir_or_pdf))
+        if p.is_file():
+            role = p.parent
+            while role.name in ("cover_letters", "resume") and role.parent != role:
+                role = role.parent
+        else:
+            role = p
+        txt = role / "Cover_Letter.txt"
+        if not txt.is_file():
+            return False
+        pdfs = [q for q in role.glob("*cover*letter*.pdf")
+                + list(role.glob("*Cover*Letter*.pdf"))
+                if q.is_file() and q.stat().st_size > 0]
+        for sub in ("cover_letters", "resume"):
+            sd = role / sub
+            if sd.is_dir():
+                pdfs += [q for q in sd.glob("*.pdf")
+                         if "cover" in q.name.lower() and q.is_file()
+                         and q.stat().st_size > 0]
+        if not pdfs:
+            return False
+        newest = max(q.stat().st_mtime for q in pdfs)
+        return newest >= txt.stat().st_mtime - margin_s
+    except OSError:
+        return False
+
+
+def _default_hiring_team(company: str, job_title: str,
+                         cand: Dict[str, Any]) -> str:
+    """Vertical-aware hiring-team line (never a placeholder, never a person).
+
+    Engineering/technology roles and candidates keep "{company} Engineering
+    Team"; Finance/Audit/HR/Operations/Sales get "{company} Hiring Team".
+    """
+    text = " ".join([
+        str(job_title or ""),
+        str((cand or {}).get("current_title") or ""),
+        str((cand or {}).get("domain") or ""),
+        str((cand or {}).get("department") or ""),
+    ]).lower()
+    eng_markers = ("engineer", "developer", "software", "technology",
+                   "architect", "data", "cloud", "devops", "qa", "sdet",
+                   "platform", "backend", "frontend", "full stack", "full-stack")
+    if any(m in text for m in eng_markers):
+        return f"{company} Engineering Team"
+    return f"{company} Hiring Team"
+
+
 def generate_cover_letter_pdf(
     target_dir: str,
     candidate_name: str,
@@ -342,10 +399,13 @@ def generate_tailored_cover_letter(
         # mistailored — refuse loudly so callers defer instead of uploading.
         raise ValueError(
             "company unknown — refusing to render placeholder recipient block")
-    team = str(jd_data.get("team") or f"{company} Engineering Team").strip()
+    team = str(jd_data.get("team") or _default_hiring_team(company, job_title, cand)).strip()
     # Recipient address is the REQUISITION location, never the candidate's.
     job_loc = str(jd_data.get("location") or jd_data.get("job_location") or "").strip()
     org_loc = job_loc or loc
+    # Sentence-ending periods: a company ending in "." (e.g. "... & Co.")
+    # plus the template period rendered "Co.." — normalize to exactly one.
+    company_s = company.rstrip(".")
     
     today_str = date.today().strftime("%B %d, %Y")
     if not pdf_filename:
@@ -357,7 +417,7 @@ def generate_tailored_cover_letter(
     # Generate content via AIClient if available, otherwise synthesize from config
     opening_p = (
         f"I am writing to express my enthusiastic interest in the <strong>{job_title}</strong> "
-        f"position" + (f" (Job ID: {job_id})" if job_id else "") + f" at {company}. "
+        f"position" + (f" (Job ID: {job_id})" if job_id else "") + f" at {company_s}. "
         f"With over {cand.get('total_experience_years', 10)}+ years of software engineering leadership "
         f"architecting high-throughput distributed systems and mission-critical enterprise platforms, "
         f"I am strongly aligned with your mandate to engineer resilient, market-leading solutions."
@@ -395,7 +455,7 @@ def generate_tailored_cover_letter(
         _tone = ""
     if _tone:
         synthesis_p += f" I am drawn to this role by {_tone}."
-    closing_p = f"I welcome the opportunity to discuss how my technical leadership, distributed backend expertise, and passion for engineering quality can contribute to the mission of {company}. Thank you for your time and consideration."
+    closing_p = f"I welcome the opportunity to discuss how my technical leadership, distributed backend expertise, and passion for engineering quality can contribute to the mission of {company_s}. Thank you for your time and consideration."
     
     return generate_cover_letter_pdf(
         target_dir=target_dir,

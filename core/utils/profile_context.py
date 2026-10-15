@@ -119,6 +119,19 @@
 #   principal-ordered profile operation with backup). No behavior change otherwise.
 # Rationale: Defense in depth so a future secret in profiles/ is loud, not silent.
 # Preventative Notes: Never auto-delete profile keys in engine code; warn only.
+#
+# [ENTRY #011]
+# Term: [NEW-7_ROOT_RUNNER_SCAN + LIVE_PROFILE_SLUG_TOKENS]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: verify_codebase_purity() never scanned repo-root launchers,
+#   so default="udaysagar_kandpal" in run_universal_apply.py was invisible to
+#   Guardrail P1; forbidden tokens only covered profiles/<folder> path forms.
+# Changes Made: Scan base_path/*.py in addition to core/scripts/CompanySiteApply/
+#   tests; forbid default="<live-slug>" literals for slugs discovered in both
+#   Operations and repo profiles/ (default_user excluded).
+# Rationale: Launchers carry CLI defaults — the highest-risk hardcoding site.
+# Preventative Notes: When adding new entry-point scripts at repo root, no
+#   scanner change is needed (root glob covers them); never add profile literals.
 # ================================================================================
 """
 ================================================================================
@@ -503,6 +516,21 @@ class ProfileContext:
         cand_email = str(cand.get("email", "")).strip().lower()
         cand_phone = re.sub(r'\D', '', str(cand.get("phone", "")))
         profile_folder_name = self.profile_path.name.lower()
+        # NEW-7: live profile names from BOTH Operations and repo profiles/
+        # (the active profile slug is the highest-risk hardcoded token).
+        live_profile_slugs = {profile_folder_name}
+        try:
+            from CompanySiteApply.utils.runtime_paths import profiles_root
+            for _base in (profiles_root(), self.base_path / "profiles"):
+                try:
+                    if _base.is_dir():
+                        for _d in _base.iterdir():
+                            if _d.is_dir() and _d.name != "default_user" and not _d.name.startswith("."):
+                                live_profile_slugs.add(_d.name.lower())
+                except Exception:
+                    continue
+        except Exception:
+            pass
 
         # Check candidate personal values (ignoring placeholders)
         forbidden_strings = set()
@@ -515,11 +543,25 @@ class ProfileContext:
         if profile_folder_name and profile_folder_name != "default_user":
             forbidden_strings.add(f"profiles/{profile_folder_name}")
             forbidden_strings.add(f"profiles\\\\{profile_folder_name}")
+        # NEW-7: every live profile slug is forbidden as a bare default/literal.
+        for _slug in sorted(live_profile_slugs):
+            if _slug and _slug != "default_user":
+                forbidden_strings.add(f'default="{_slug}"')
+                forbidden_strings.add(f"default='{_slug}'")
 
         py_files = []
         for sdir in scan_dirs:
             if sdir.exists():
                 py_files.extend([f for f in sdir.rglob("*.py") if "__pycache__" not in str(f)])
+        # NEW-7: repo-root launchers were never scanned (run_universal_apply.py
+        # hardcoded default="udaysagar_kandpal" was invisible to Guardrail P1).
+        try:
+            py_files.extend(
+                [f for f in self.base_path.glob("*.py")
+                 if "__pycache__" not in str(f) and f not in py_files]
+            )
+        except Exception:
+            pass
 
         for py_file in py_files:
             try:
