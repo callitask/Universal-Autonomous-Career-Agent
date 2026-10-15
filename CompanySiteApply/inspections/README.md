@@ -23,6 +23,9 @@ This directory contains empirical DOM structure snapshots captured by `CompanySi
 *   `unknown_20260917_105350.json` — Oracle Cloud HCM complete multi-step wizard inspection dump.
 *   `unknown_20260917_110906.json` — Oracle Cloud HCM review and submit step inspection dump.
 
+### Runtime files (not snapshots — never copy values from these)
+*   `screening_answers.json` — persisted brain-resolved Q&A log (audit trail, appended per run).
+
 ## Governance & Hygiene Rules
 1. **Never copy values:** Never use names, numbers, or placeholder text from these JSON files as runtime code defaults.
 2. **Read-only reference:** Used solely to design locators and test DOM selector resilience against portal redesigns.

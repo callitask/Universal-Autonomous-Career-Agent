@@ -2,6 +2,8 @@
 
 This directory houses candidate profile sandboxes for the **Universal Autonomous Career Agent**. Each candidate's data, resume, configurations, and application ledgers are strictly isolated inside their own sandbox directory.
 
+> Live sandboxes resolve under the Operations root (`F:\Operations JOB AI AGENT\profiles\`, env-overridable via `JOB_AGENT_OPERATIONS`); this repo tree keeps code + the `default_user` blueprint only.
+
 ---
 
 ## Directory Structure
@@ -20,6 +22,8 @@ profiles/
 └── <firstname_lastname>/         <-- User Candidate Sandbox (created from default_user)
     ├── candidate_config.json     <-- [REQUIRED] Populated candidate parameters & ATS truths
     ├── resume.md                 <-- [REQUIRED] Candidate master resume in Markdown
+    ├── company_site_apply/       <-- [INPUTS] Per-company bases: <Slug>/resume.md, <Slug>/resumes/, <Slug>/cover_letters/ (+ cover_letters/BASE.md)
+    ├── APPLIED ON COMPANY WEBSITE/ <-- [OUTPUTS] Per-application roles: <Company>/<Role>_<jobid>/ with fixed <Stem>_Resume.pdf / <Stem>_Cover_Letter.pdf + resume/ + cover_letters/ subfolders + Cover_Letter.txt/.html (no job-id filename suffixes; profile-agnostic)
     └── output/                   <-- [AUTO-GENERATED] Created and maintained at runtime
         ├── applications/         <-- [AUTO-GENERATED] Per-job tailored resumes and logs
         ├── search_manifest.json  <-- [AUTO-GENERATED] Discovered job postings
@@ -61,8 +65,8 @@ python core/02_profile_sync_naukri.py --profile profiles/<candidate_slug>
 
 ## Important Rules & Safeguards
 
-- **NEVER Manually Edit `output/applications/`**:
-  The `output/` directory and its `applications/` subfolder are automatically created and populated by the agent. They store generated application logs and tailored resumes. Never create, modify, or delete files inside `output/applications/` by hand.
+- **NEVER Manually Edit `output/applications/` or `APPLIED ON COMPANY WEBSITE/`**:
+  The `output/` directory and its `applications/` subfolder are automatically created and populated by the agent. They store generated application logs and tailored resumes. Never create, modify, or delete files inside `output/applications/` by hand. The same holds for `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` role folders (fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf`, no job-id filename suffixes) — uploaders resolve the exact role path first.
 - **`default_user` Protection**:
   The core engine (`core/utils/profile_context.py`) automatically skips `default_user` when discovering candidates, guaranteeing that your starter blueprint remains untouched.
 - **Candidate Isolation**:

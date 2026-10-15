@@ -135,6 +135,9 @@ Run `python CompanySiteApply/cli.py inspect` to confirm your new finger claims t
 3. **Never Bypass Honeypots**: Never fill elements flagged by `HoneypotGuard.is_honeypot()`.
 4. **Never Run Auto-Daemon for Company Sites**: Company site apply must remain on-demand / human-supervised.
 5. **Never Use Raw `open("w")` on Shared Configs**: Use atomic save protocols if updating configs.
+6. **Never Glob-First for Role Documents (2026-10-14 structured layout)**: Uploaders (`s4_cover_letter_upload.py`, `s4_resume_upload.py`, `documents_subagent.py`) MUST try the exact role path from `utils/application_docs.py` (`APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` + FIXED `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf`) FIRST. Newest-first glob is legacy fallback only, MUST skip `APPLIED` trees for base inputs, and resume globs MUST stay resume-constrained (`*token*resume*.pdf`) — a bare `*Name*.pdf` once picked the cover letter.
+7. **Never Suffix Filenames Per Requisition**: Inside a role folder, names are FIXED (`<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf`, Stem Title-Cased via `profile_stem()`), flat plus mirrored `resume/` + `cover_letters/` subfolders. Never reintroduce `<Name>_Cover_Letter_<jobid>.pdf` or `*{jobid}*cover*letter*.pdf` job-id-prefixed globs for upload.
+8. **Never Emit Literal `company`**: Company resolution MUST flow through `resolve_company_name()` in `utils/application_docs.py` — never the literal folder `"company"`. Stage 4 (`stage_4_tailor_documents`) MUST generate directly into the role dir, never the flat `company_site_apply` root.
 
 ---
 

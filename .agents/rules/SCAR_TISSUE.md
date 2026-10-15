@@ -351,7 +351,62 @@ all semantic job fit evaluations. Keyword lists in config are advisory context f
 - **Correct behavior**: Strict job-title selectors only; defer synthesis when the title is unknown; companion-txt title verification (`verify_cover_letter_job_title`) triggers regeneration on mismatch; review reorder retries 3x with per-attempt diagnostics in the heal result.
 - **Never repeat**: Never read titles from bare heading tags; never single-shot a render-sensitive reorder.
 
-## [2026-10-13] SYNC GENERATOR INSIDE ASYNC LOOP — THREAD OFFLOAD- **File**: `autonomous_job_agent.py` Stage 4 + `s4_cover_letter_upload.py` on-demand synthesis → shared `utils/sync_bridge.py`
+## [2026-10-13] REACT LISTBOX NEEDS FILTER TEXT — FETCH FALLBACK
+- **File**: `s2_dropdown_questions.py`
+- **What happened**: Req 210772077 languages listbox loads options only after filter text is typed; open-and-read returned empty, so nothing was ever selected and the agent hand-typed the pills via scratch instead.
+- **Correct behavior**: Empty fetch triggers filter-typing (`a`, then `e`), re-read, input cleared afterwards. Pinned by filter-typing test.
+- **Never repeat**: Never assume an opened listbox is populated; always handle the empty-options case.
+
+## [2026-10-13] PER-COMPANY WORKSPACES + STAGE 4 ARCHIVE GAP
+- **File**: `utils/company_workspace.py`, `autonomous_job_agent.py`, `s4_resume_upload.py`, `s4_cover_letter_upload.py`
+- **What happened**: Resumes/letters resolved from a flat namespace (no per-company product framing); Stage 4 never wrote the per-application `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<id>/` archive (only cli_scraper did).
+- **Correct behavior**: `ensure_company_workspace()` self-provisions `company_site_apply/<Slug>/` (+ seed from master, skeleton-only for blueprints); resolution is company-first; Stage 4 archives docs per application via `_archive_application_docs()`. `company_profiles.json` maps service firms to the flat generic base and product/tech/finance firms to workspaces with cover tones; unlisted companies default to workspaces.
+- **Never repeat**: Never resolve candidate documents without company scoping; never finish tailoring without archiving.
+
+## [2026-10-13] SYNC GENERATOR INSIDE ASYNC LOOP - THREAD OFFLOAD
+- **File**: `autonomous_job_agent.py` Stage 4 + `s4_cover_letter_upload.py` on-demand synthesis → shared `utils/sync_bridge.py`
 - **What happened**: `generate_tailored_cover_letter()` (sync_playwright) crashed inside `--autonomous`'s event loop; the fallback note swallowed it and the stale letter survived. Stage 5's `orchestrator.run()` had the identical latent crash, plus a bare `.../apply` deep-link 404 on entry.
 - **Correct behavior**: Single tested `call_sync_offloaded()` bridge for all sync-in-async calls (never inline idiom copies); Stage 5 enters via job page + APPLY NOW click. Shared `save_match_report()` helper also replaced duplicated untested writes (one copy had an out-of-scope `cfg_path` NameError).
 - **Never repeat**: Never call sync Playwright code from async flows without the bridge. Never duplicate untested I/O across launchers. Never deep-link Oracle `.../apply`.
+## [2026-10-14] RUNTIME DATA OUT OF THE CODEBASE — OPERATIONS ROOT
+- **File**: `utils/runtime_paths.py`, resolvers, launchers, `core/utils/profile_context.py`
+- **What happened**: Live profiles, artifacts, inspections, and IPC state lived inside the git-tracked tree.
+- **Correct behavior**: Sibling `Operations JOB AI AGENT/` holds `profiles/`, `artifacts/`, `inspections/`, `ipc/`, `logs/` (env-overridable); repo keeps code + blueprint. All resolvers prefer Operations with repo fallback. Pinned by `tests/test_runtime_paths.py`.
+- **Never repeat**: Never store runtime input/output under the code tree; never hardcode a data location outside `runtime_paths.py`.
+
+
+## [2026-10-14] RUN TRANSCRIPT WRITER + PER-REQ FILENAMES
+- **File**: `apply_orchestrator.py` (`_write_transcript`), `generate_professional_cover_letter.py` (per-req PDF names)
+- **What happened**: Forensic runs reconstructed behavior from chat memory; generated letters overwrote each other under one filename.
+- **Correct behavior**: Every orchestrator return writes `artifacts/run_transcript_<status>_<ts>.json` (verdicts, gate errors, proofs, URLs); tailored PDFs render as `{Name}_Cover_Letter_{job_id}.pdf`.
+- **Never repeat**: Never end a run without a machine-readable transcript; never write per-req outputs under a constant filename.
+
+## [2026-10-14] STALE COVER LETTER UPLOAD VIA SUFFIX-GLOB MISS (REQ 210791831)
+- **File**: `s4_cover_letter_upload.py` (+ `documents_subagent.py`, `generate_professional_cover_letter.py` per-req `{Name}_Cover_Letter_{jobid}.pdf` naming)
+- **What happened**: Section 4 generated per-req files with a job-ID filename suffix while the uploader globbed `*{jobid}*cover*letter*.pdf` (job-ID prefix order) — the glob never matched, fallback `candidates[0]` picked the stale generic letter, and req 210791831 uploaded 210765001 content.
+- **Correct behavior**: Structured-layout contract — fixed names `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` inside `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` (+ `resume/`/`cover_letters/` mirrors); uploaders try the exact role path FIRST, glob is legacy fallback only, no job-id filename suffixes, no `candidates[0]`. Supersedes the 2026-10-14 per-req-filename note above. Pinned by `CompanySiteApply/tests/test_application_docs.py`.
+- **Never repeat**: Never glob for a file the generator names differently; never default-pick `candidates[0]` for identity documents.
+
+## [2026-10-14] STRUCTURED-DOC VERIFICATION + OPERATOR SUBMIT (REQ 210791831)
+- **File**: `artifacts/scratch/run_docs_heal.py` (scratch, since removed), `section_agents/sub_agents/documents_subagent.py`, `section_agents/scripts/s4_cover_letter_upload.py`, `section_agents/scripts/s4_resume_upload.py`
+- **What happened**: After the structured-layout fix, Antigravity re-ran Section 4 documents-only via `DocumentsSubAgent.heal()` on the live tab: pre-docs empty (stale removed), post-docs both `--filled` with FIXED names from `APPLIED ON COMPANY WEBSITE/JPMorgan_Chase_Co/Sr_Manager_of_Software_Engineering_Java_AWS_React_210791831/{resume,cover_letters}/`, `Cover_Letter.txt` verified ID 210791831 + full title, visual verifier 9/9 order + diversity + signature clean, transcript `run_transcript_READY_FOR_HUMAN_SUBMISSION_1791954232.json` + proof `section_4_review_structured_docs_1791954232.png`. Operator then clicked SUBMIT manually; ledger `jpmc:210791831` marked SUBMITTED. No prod `.py` edits this run (only `Analyzed`, scratch `Edited` under Operations artifacts/scratch, since cleaned). Repo `screenshots/visual_audit/` regenerable captures removed post-submit.
+- **Correct behavior**: Docs-only heal via the exact role path, transcript + proof per run, human clicks Submit, ledger moves READY -> SUBMITTED, scratch probes live under Operations artifacts/scratch (never repo root) and are cleaned after success.
+- **Never repeat**: Never re-upload generic company_site_apply PDFs for a role folder requisition; never leave ledger READY after an operator-confirmed submit; never keep scratch probes or regenerable screenshots after closeout.
+
+## [2026-10-14] PLACEHOLDER RECIPIENT BLOCK (REQ 210791831 COVER LETTER)
+- **File**: `core/generate_professional_cover_letter.py` (`generate_tailored_cover_letter`)
+- **What happened**: The submitted cover letter rendered "Hiring Organization Engineering Team / Hiring Organization / Bengaluru, Karnataka, India" in the recipient block. Cause: `company` defaulted to the literal "Hiring Organization" when `jd_data.company` was empty (pre-fix Stage 4 passed empty `details.company`), and `org_location` was wired to the candidate address instead of the requisition location. Base resume verified clean — fault is generator-only. The submitted PDF (already operator-submitted) is left intact as the record of what was sent.
+- **Correct behavior**: Placeholder/empty company now raises `ValueError` (callers defer as `REVIEW_BLOCKED`/`ACTION_REQUIRED` instead of shipping); recipient `org_location` uses the requisition location with candidate address as fallback only. Pinned by `tests/test_cover_letter_job_id.py::test_rejects_placeholder_company` and `::test_recipient_uses_job_location_not_candidate` (suite now 7).
+- **Never repeat**: Never default a company name to a plausible-looking literal; a tailored letter without a real company must fail loudly, never render.
+
+## [2026-10-14] COMPANY-AT-SOURCE STAMPING + JOB-LOCATION RECIPIENT BLOCK
+- **File**: `CompanyScraper/companies/jpmorgan/jpmorgan_scraper.py`, `utils/application_docs.py` (`resolve_company_name`, `resolve_job_location`), `autonomous_job_agent.py` Stage 4, `s4_cover_letter_upload.py`, `documents_subagent.py`, `generate_professional_cover_letter.py`
+- **What happened**: Follow-up to the placeholder-block fix: the scraper never stamped `company` into tiles/details, so every consumer saw "" (ledger `company` empty, Stage 4 defaulted). `resolve_company_name` then defaulted blindly to JPMorgan (correct for CX_1002, wrong for every future portal). On-demand regeneration passed the *candidate* city as the letter location, re-showing the home city as the company city.
+- **Correct behavior**: Scraper stamps `company` at the source (tiles + details). `resolve_company_name(..., default_company=)` takes the portal context (Stage 4 passes `scraper.company_name`, canonicalized "JPMorgan Chase" -> "JPMorgan Chase & Co."); truly unknown returns "" so the generator raises instead of shipping. Recipient `org_location` resolves live-DOM job city -> requisition location -> candidate fallback. Stage 4 refuses to tailor when company is unresolvable; s4 on-demand defers the same way. Hiring-team line stays "{Company} Engineering Team" (company dynamic; Oracle CX exposes no hiring-manager person — never invent one). Pinned by `test_application_docs.py` (+3: unknown->"", canonicalization, DOM-over-candidate location); suite now 145.
+- **Never repeat**: Never consume a scraped job without a stamped company; never default one portal's company globally; never feed candidate address where a requisition address belongs.
+
+## [2026-10-14] AG-BRAIN-OWNED RECIPIENT HEADER + WORKSPACE BASE LAYOUT
+- **File**: `ai_brain_resolver.py` (`resolve_recipient_header`), `autonomous_job_agent.py` Stage 4, `s4_cover_letter_upload.py`, `documents_subagent.py`, `utils/company_workspace.py`, scraper `jpmorgan_scraper.py`
+- **What happened**: (a) Recipient identity was decided by Python heuristics with a blind portal default, and the scraper never stamped `company` — any gap printed a plausible-but-wrong block (wasted req 210791831). (b) Workspace root held waste (`company.json`, `cover_letter_base.md`, root `resume.md`) while `resumes/` sat empty; operators hand-placed base files.
+- **Correct behavior**: (a) `AIBrainResolver.resolve_recipient_header()` arbitrates company/location/team from ranked evidence (stamped > URL hint > candidate hints > portal default); conflicts and unknowns refuse loudly (persisted `REFUSED_RECIPIENT_UNVERIFIED`, callers defer). Person names never invented — team is "{Company} Engineering Team" unless stated. Scraper stamps company at source. (b) Workspace root holds README only; bases are `resumes/BASE.md` + `cover_letters/BASE.md` (seeded from profile master, legacy auto-migrated). Pinned by 4 brain tests + 1 migration test; suite 150 (+7 cover-id, +10 knowledge).
+- **Never repeat**: Never let Python pick document identity unsupervised; never store base files outside their subfolders; never invent a hiring-manager name.

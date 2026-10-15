@@ -153,7 +153,8 @@ def cmd_apply_flow(args):
         p = Path(args.config)
         if p.exists():
             candidate_data = json.loads(p.read_text("utf-8"))
-    shot_dir = PROJECT_ROOT / "artifacts"
+    from CompanySiteApply.utils.runtime_paths import artifacts_dir as _adir2
+    shot_dir = _adir2()
     print("Executing autonomous application pipeline via Section Mini-Agents...")
     res = orchestrator.run(candidate_data, screenshot_dir=shot_dir)
     print("\nPipeline Result:")

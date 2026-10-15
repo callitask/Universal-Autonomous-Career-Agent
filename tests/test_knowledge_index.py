@@ -7,6 +7,7 @@ Tests:
   3. Index freshness idempotency (check_staleness returns True on clean index)
   4. Planted stale detection (verifies that hash modification is detected immediately)
   5. BM25-lite query retrieval verification (asserts expected file:line hits for core concepts)
+  6-10. Extended retrieval/pagerank/tier-boost/domain-split coverage (test_06 through test_10; total 10 tests)
 """
 
 import os

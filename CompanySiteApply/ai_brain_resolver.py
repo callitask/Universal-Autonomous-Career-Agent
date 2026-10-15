@@ -55,10 +55,24 @@ class AIBrainResolver:
         return cls._instance
 
     def _resolve_output_json_path(self) -> Path:
-        """Determines the candidate-specific screening_answers.json path."""
+        """Determines the candidate-specific screening_answers.json path.
+
+        Operations profiles take precedence; repo paths and the inspections
+        fallback remain for transition/unknown profiles.
+        """
+        from CompanySiteApply.utils.runtime_paths import profiles_root
+
         cand = self.candidate_data.get("candidate", {})
         cand_name = cand.get("full_name") or cand.get("name") or "candidate"
         cand_slug = re.sub(r'[^a-zA-Z0-9_]', '_', cand_name.lower())
+
+        # Operations profile first
+        ops_csa = profiles_root() / cand_slug / "company_site_apply"
+        if ops_csa.exists():
+            return ops_csa / "screening_answers.json"
+        ops_prof = profiles_root() / cand_slug
+        if ops_prof.exists():
+            return ops_prof / "screening_answers.json"
 
         # Check profiles directory
         profiles_dir = Path("profiles") / cand_slug / "company_site_apply"
@@ -617,3 +631,127 @@ class AIBrainResolver:
             answered.append(q)
         ipc.write_answers(answered)
         return {"success": True, "status": "ANSWERED", "count": len(answered)}
+
+    # =========================================================================
+    # RECIPIENT HEADER ARBITRATION (cover-letter identity block)
+    # =========================================================================
+    def resolve_recipient_header(
+        self, job_evidence: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """AG-Brain-owned verdict for the cover-letter recipient block.
+
+        The brain — not Python heuristics — decides the identity fields
+        (company, requisition city, hiring-team line) from weighed evidence,
+        grounded in the candidate profile + requisition. Python callers
+        (Stage 4, s4 on-demand synthesis) supply the evidence proposal and
+        MUST honor a refusal (defer, never render a placeholder).
+
+        job_evidence keys: job_id, job_title, stamped_company,
+        page_url, portal_default_company, candidate_company_hints (list),
+        dom_location, requisition_location, explicit_team,
+        workspace_provisioned (bool).
+
+        Returns {"success", "company", "location", "hiring_team",
+        "evidence", "error"}. Person names are never invented: hiring_team
+        is "{company} Engineering Team" unless the requisition states one.
+        """
+        ev = job_evidence if isinstance(job_evidence, dict) else {}
+        job_id = str(ev.get("job_id") or "").strip()
+        job_title = str(ev.get("job_title") or "").strip()
+        evidence: List[str] = []
+
+        # --- Company arbitration (ranked evidence, conflict refuses) ---
+        _PLACEHOLDERS = {"", "company", "hiring organization",
+                         "hiring organisation", "unknown"}
+
+        def _clean(v: Any) -> str:
+            s = str(v or "").strip()
+            return "" if s.lower() in _PLACEHOLDERS else s
+
+        stamped = _clean(ev.get("stamped_company"))
+        url = str(ev.get("page_url") or "")
+        url_hint = "JPMorgan Chase & Co." if (
+            url and ("jpmc" in url.lower() or "chase" in url.lower())) else ""
+        hints = [_clean(h) for h in (ev.get("candidate_company_hints") or [])]
+        hints = [h for h in hints if h]
+        portal_default = _clean(ev.get("portal_default_company"))
+
+        def _canon(s: str) -> str:
+            if "jpmorgan" in s.lower() and "chase" in s.lower():
+                return "JPMorgan Chase & Co."
+            return s
+
+        if stamped:
+            evidence.append(f"scraper-stamped:{stamped}")
+        if url_hint:
+            evidence.append(f"url-hint:{url_hint}")
+        evidence.extend(f"candidate-hint:{h}" for h in hints)
+        if portal_default:
+            evidence.append(f"portal-default:{portal_default}")
+        if ev.get("workspace_provisioned"):
+            evidence.append("workspace-provisioned-for-company")
+
+        # Conflict rule: two distinct grounded identities (stamped vs URL
+        # hint) means corrupted context — refuse instead of guessing.
+        if stamped and url_hint and _canon(stamped) != _canon(url_hint):
+            return self._recipient_refusal(
+                job_id, job_title, evidence,
+                f"company conflict: stamped {stamped!r} vs URL hint "
+                f"{url_hint!r} — refusing to pick")
+
+        company = ""
+        for cand_value in [stamped, url_hint] + hints + [portal_default]:
+            if cand_value:
+                company = _canon(cand_value)
+                break
+        if not company:
+            return self._recipient_refusal(
+                job_id, job_title, evidence,
+                "company unknown from all evidence — refusing placeholder")
+
+        # --- Location arbitration (requisition only; never home address) ---
+        dom_loc = str(ev.get("dom_location") or "").strip()
+        req_loc = str(ev.get("requisition_location") or "").strip()
+        location = (dom_loc or req_loc)[:120]
+        evidence.append(f"location:{location or '<unverified>'}:"
+                        f"{'dom' if dom_loc else ('requisition' if req_loc else 'none')}")
+
+        # --- Hiring-team line (no invented person names, ever) ---
+        explicit_team = str(ev.get("explicit_team") or "").strip()
+        hiring_team = explicit_team or f"{company} Engineering Team"
+        evidence.append(f"team:{hiring_team}")
+
+        record = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "question": f"Cover-letter recipient header ({job_id} - {job_title})",
+            "control_type": "RECIPIENT_HEADER",
+            "options": [],
+            "source": "AI_BRAIN_RECIPIENT_ARBITRATION",
+            "answer": {"company": company, "location": location,
+                       "hiring_team": hiring_team},
+            "rationale": f"Arbitrated from evidence: {'; '.join(evidence)}",
+            "evidence": evidence,
+        }
+        self._persist_answer(record)
+        logger.info(f"[AIBrainResolver] Recipient header: {company} | "
+                    f"{location or '<city unverified>'} | {hiring_team}")
+        return {"success": True, "company": company, "location": location,
+                "hiring_team": hiring_team, "evidence": evidence, "error": ""}
+
+    def _recipient_refusal(self, job_id: str, job_title: str,
+                           evidence: List[str], reason: str) -> Dict[str, Any]:
+        """Loud deferral: the letter must not be rendered."""
+        record = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "question": f"Cover-letter recipient header ({job_id} - {job_title})",
+            "control_type": "RECIPIENT_HEADER",
+            "options": [],
+            "source": "REFUSED_RECIPIENT_UNVERIFIED",
+            "answer": None,
+            "rationale": reason,
+            "evidence": evidence,
+        }
+        self._persist_answer(record)
+        logger.warning(f"[AIBrainResolver] Recipient header REFUSED: {reason}")
+        return {"success": False, "company": "", "location": "",
+                "hiring_team": "", "evidence": evidence, "error": reason}

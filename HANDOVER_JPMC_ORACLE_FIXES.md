@@ -1,6 +1,6 @@
 # Handover: Enterprise ATS & Company Site Autonomous Application Subsystem
 
-> **Status:** Fully Integrated, Tested (97 Unit Tests Passing), and Production-Ready
+> **Status:** Fully Integrated, Tested (142 Unit Tests Passing as of 2026-10-14 structured-layout fix; 138 at authoring), and Production-Ready
 > *(Historical snapshots in this handover citing older counts describe the state at authoring time.)*  
 > **Architecture:** 6-Stage Autonomous Lifecycle, Cognitive Sub-Agent Dispatch, Dynamic Brain Q&A, and Stale Document Healing  
 > **Key Constraint:** **STRICT HUMAN SUBMISSION GATE (Never click SUBMIT on Section 4).**
@@ -32,8 +32,9 @@ The Company Site Apply subsystem (`CompanySiteApply/`) provides 100% config-driv
 [Stage 4: Document Tailoring] 
   → Generates bespoke, ATS-compliant cover letter PDF matching exact job_id and title.
 [Stage 5: Section Mini-Agent Dispatch (Form Apply)] 
-  → Navigates to target application URL (/job/<id>/apply).
+  → Enters via the job page + APPLY NOW click (bare `.../apply` deep links 404).
   → Coordinates Section 1 -> Section 2 -> Section 3 -> Section 4 with pre-audit, surgical micro-heal, and post-audit.
+  → Failing sections halt as `SECTION_BLOCKED`/`REVIEW_BLOCKED` — never advance past unverified work.
 [Stage 6: Visual Audit & Human Submission Gate] 
   → Captures high-res verification screenshot.
   → Records application in profiles/<profile>/output/processed_ledger.json.

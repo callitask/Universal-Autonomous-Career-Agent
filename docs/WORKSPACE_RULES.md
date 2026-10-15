@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: WORKSPACE DEVELOPMENT & CODING RULES
 
-> **Document Version:** 4.5 — Batch Architecture v2.0, Dual-Channel IPC, 46 Guardrails (36 C, 6 H, 3 D, 1 P), G-BRAIN-01 Alignment, Global-Secrets-Only Policy & Directive 10 Page-Loop Protocol  
-> **Last Updated:** 2026-10-07  
+> **Document Version:** 4.6 — Batch Architecture v2.0, Dual-Channel IPC, 46 Guardrails (36 C, 6 H, 3 D, 1 P), G-BRAIN-01 Alignment, Global-Secrets-Only Policy, Directive 10 Page-Loop Protocol & 2026-10-14 Structured-Layout Contract
+> **Last Updated:** 2026-10-14
 > **Authority:** These rules are ABSOLUTE and OVERRIDE all model defaults. Violations cause runtime crashes, data corruption, phantom applications, or account bans.  
 > **Workspace Root:** `F:\JOB AI AGENT`
 
@@ -25,7 +25,7 @@
    * `profiles/<profile_name>/candidate_config.json`
    * `profiles/<profile_name>/resume.md`
 4. **Dynamic Directory Resolution:** The engine must automatically locate the active candidate profile directory from command-line arguments (`--profile`) or dynamically scan `profiles/` for existing candidate configurations without hardcoded fallback strings.
-5. **Isolated Output Paths:** All outputs (tailored resumes, PDF packages, trackers, search manifests, and screenshots) must write strictly to `profiles/<profile_name>/output/`.
+5. **Isolated Output Paths:** All outputs (tailored resumes, PDF packages, trackers, search manifests, and screenshots) must write strictly to the live profile sandbox under the Operations root (`F:\Operations JOB AI AGENT\profiles\<profile_name>\...`, env-overridable via `JOB_AGENT_OPERATIONS`, repo fallback only for the `default_user` blueprint) — never to ad-hoc repo paths. CompanySiteApply document I/O follows the 2026-10-14 structured-layout contract (inputs `company_site_apply/<Slug>/resumes|cover_letters`; outputs `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf`, no job-id filename suffixes).
 6. **No Hardcoded Regex Intercepts or Question-Detection Keyword Lists:** Never match questions like `"notice period"`, `"experience"`, `"CTC"` to hardcoded numeric values, and never embed keyword detection lists (notice period triggers, relocation keywords, interview mode keywords, experience triggers, numeric question triggers, numeric exclusions, intern designation markers, fallback text labels) as Python literals in `core/*.py` or `scripts/*.py`. Every screening question keyword list MUST reside in the `"screening_heuristics"` section of `candidate_config.json`. Python reads them exclusively via `sh = cfg.get("screening_heuristics", {})` and `sh.get("key", [])`. Violations cause `verify_codebase_purity()` to halt the runtime.
 7. **No Hardcoded Model Names as Constants:** Model identifiers (e.g., `gemini-2.5-flash`) must be configurable via `gemini_credentials.json` (`model` / `fallback_models`) or environment variables (`GEMINI_MODEL`). Per the Global-Secrets-Only Policy, model names must NEVER live in `profiles/*/candidate_config.json`.
 8. **Zero-Hardcoding via Cognitive Profile Synthesis & AG Brain Push-Start:** Never hardcode domain words, vertical dictionaries, soft skill sets, role templates, seniority prefixes, or experience threshold branches (`if exp >= N:`) in Python code. Python scripts act strictly as an execution actuator / browser medium between job portals and the AG Brain. The AG Brain is the sole decider and talent strategist. At session start, the AG Brain analyzes the candidate's complete profile and push-starts `candidate_config.json` with high-yield target roles, recommended titles, and skills. All domain models, core vs. soft skill taxonomies, domain acronyms, and multi-cycle designation queues are synthesized dynamically by `AIClient.synthesize_cognitive_profile()` or read from `candidate_config.json`. Out-of-domain vertical checks and search cycles must read strictly from the candidate's cognitive profile.
@@ -90,11 +90,12 @@
    ```
    Mandatory public method on `AIClient` for profile summaries, ATS bullets, and arbitrary LLM text tasks. Uses operational Gemini API if configured; otherwise dispatches to `pending_question.json` File-Based IPC handshake without terminal stdin blocking.
 
-4. **Job Discovery Disk Persistence Contract (`04_job_discovery.py`):**
+4. **Job Discovery Disk Persistence Contract (`04_job_discovery.py` — Naukri pipeline only):**
    Upon identifying a qualified job (`score >= 60`):
    - Dynamically sanitize folder name: `profiles/<profile>/output/applications/<Company>_<Role>/`
    - Immediately write `Job_Description.md` (UTF-8 markdown) and `job_details.json` to the application folder *before* calling `process_batch()`.
    - Append `jd_path` and `description` to the `job_entry` recorded in `search_manifest.json`.
+   - Structured-layout note (2026-10-14): the folder above is the Naukri flow. CompanySiteApply (direct company ATS) uses a separate profile-agnostic contract — inputs from `company_site_apply/<Slug>/resumes|cover_letters`, outputs to `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` plus `resume/` + `cover_letters/` subfolders and role `Cover_Letter.txt`/`.html`; uploaders try the exact role path first, no job-id filename suffixes.
 
 5. **`ProfileContext` Constructor Contract:**
    ```python
@@ -646,7 +647,7 @@ F:\JOB AI AGENT\
 │   ├── ats_detector.py                # Portal platform detection engine
 │   ├── section_agents/                # Coordinators + discrete scripts/ + sub_agents/
 │   ├── ipc/                           # Section IPC bus (ipc_manager.py)
-│   ├── tests/                         # Regression suite (122 tests)
+│   ├── tests/                         # Regression suite (150 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests)
 │   ├── anatomy/                       # Portal anatomy models
 │   ├── fingers/                       # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
 │   ├── nails/                         # Company-specific ATS customizations (nails/oracle: JPMC, Bristlecone)
@@ -665,7 +666,9 @@ F:\JOB AI AGENT\
 │   └── <profile_name>/
 │       ├── candidate_config.json      # Master configuration (all candidate truths)
 │       ├── resume.md                  # Factual reverse-chronological resume
-│       └── output/
+│       ├── company_site_apply/        # Per-company inputs: <Slug>/resumes|cover_letters (+ resume.md, cover_letters/BASE.md)
+│       ├── APPLIED ON COMPANY WEBSITE/ # Per-application outputs: <Company>/<Role>_<jobid>/ with fixed <Stem>_Resume.pdf / <Stem>_Cover_Letter.pdf + resume/ + cover_letters/ subfolders + Cover_Letter.txt/.html (no job-id filename suffixes; profile-agnostic)
+│       └── output/                    # Live under Operations root (F:\Operations JOB AI AGENT\profiles\<profile>\...), repo keeps default_user blueprint only
 │           ├── applications/          # Per-job tailored resume folders
 │           ├── profile_sync/          # Selective profile sync cards & sync reports
 │           │   ├── naukri_cards/      # Per-role JSON evaluation cards (KEEP/UPDATE/ADD)

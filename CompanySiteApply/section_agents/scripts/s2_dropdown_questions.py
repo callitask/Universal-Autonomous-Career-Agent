@@ -123,6 +123,32 @@ def heal_dropdown_questions(
                 }
                 return items.map(i => i.innerText.trim()).filter(Boolean);
             }""") or []
+
+            # Filter-typing fallback (incident 210772077): React cx-multi-select
+            # loads options only after filter text is typed — the agent had to
+            # type "SQL" by hand. Emulate: type fragment, re-read, Escape.
+            if not available_options:
+                try:
+                    combo_inp = q.locator("input[role='combobox']").first
+                    if combo_inp.count() > 0 and combo_inp.is_visible():
+                        for fragment in ("a", "e"):
+                            combo_inp.click()
+                            time.sleep(0.3)
+                            combo_inp.fill(fragment)
+                            time.sleep(0.9)
+                            available_options = q.evaluate("""(rowEl) => {
+                                const isVis = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+                                const inODA = el => !!el.closest('ul.oda-chat-autocomplete-items, [class*="oda-chat"]');
+                                return Array.from(document.querySelectorAll('.cx-multi-select__list-item, [role="option"], li[role="option"]')).filter(e => isVis(e) && !inODA(e)).map(i => (i.innerText || '').trim()).filter(Boolean);
+                            }""") or []
+                            if available_options:
+                                break
+                        try:
+                            combo_inp.fill("")
+                        except Exception:
+                            pass
+                except Exception as ff_e:
+                    logger.debug(f"[s2_dropdown_questions] Filter-typing note: {ff_e}")
             try:
                 page.keyboard.press("Escape")
             except Exception:

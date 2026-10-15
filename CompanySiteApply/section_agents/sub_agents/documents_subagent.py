@@ -350,12 +350,37 @@ class DocumentsSubAgent(BaseSectionAgent):
             os.makedirs(target_dir, exist_ok=True)
 
             cand_location = str(cand.get("location") or cand.get("city") or "").strip()
+            try:
+                from CompanySiteApply.utils.application_docs import (
+                    resolve_job_location as _jobloc2,
+                )
+                _job_loc2 = _jobloc2(page, candidate_data)
+            except Exception:
+                _job_loc2 = ""
+            # AG-Brain-owned recipient verdict; refusal returns the
+            # (possibly stale) fallback instead of rendering a placeholder.
+            from CompanySiteApply.ai_brain_resolver import AIBrainResolver as _Brain2
+            _verdict2 = _Brain2.get_instance(candidate_data).resolve_recipient_header({
+                "job_id": job_id or "",
+                "job_title": job_title or "",
+                "stamped_company": company or "",
+                "page_url": getattr(page, "url", "") or "",
+                "portal_default_company": "",
+                "candidate_company_hints": [],
+                "dom_location": _job_loc2,
+                "requisition_location": "",
+                "explicit_team": "",
+                "workspace_provisioned": True,
+            })
+            if not _verdict2.get("success"):
+                logger.error(f"[DocumentsSubAgent] Recipient refused: {_verdict2.get('error')}")
+                return tailored_file
             jd_data = {
                 "title": job_title or "",
                 "job_id": job_id or "",
-                "company": company or "",
-                "team": "",
-                "location": cand_location
+                "company": _verdict2["company"],
+                "team": _verdict2["hiring_team"],
+                "location": _verdict2["location"] or cand_location
             }
 
             gen_path = generate_tailored_cover_letter(candidate_data, jd_data, target_dir)
@@ -372,11 +397,37 @@ class DocumentsSubAgent(BaseSectionAgent):
         candidate_data: Dict[str, Any],
         job_id: Optional[str] = None
     ) -> Optional[str]:
-        """Resolves target PDF path prioritizing job-specific tailored folders."""
+        """Resolves target PDF path prioritizing the structured role folder."""
         key_file = f"{doc_type}_path"
         target_path = cand.get(key_file) or cand.get(f"{doc_type}_filename")
         if target_path and os.path.isabs(target_path) and os.path.exists(target_path):
             return target_path
+
+        # 0. Structured exact path FIRST (2026-10-14 fix): no walk, no glob.
+        try:
+            from CompanySiteApply.utils.application_docs import (
+                application_doc_paths,
+                profile_slug_of,
+                resolve_company_name,
+            )
+            _prof = profile_slug_of(candidate_data, "")
+            _jid = str(job_id or candidate_data.get("job_id")
+                       or candidate_data.get("_ipc_job_id") or "")
+            _tj = candidate_data.get("target_jobs") or {}
+            _title = str(_tj.get("title") or _tj.get("job_title") or "role")
+            _comp = resolve_company_name(candidate_data, candidate_data, "")
+            if _jid and _prof:
+                _ap = application_doc_paths(_prof, _comp, _title, _jid, candidate_data)
+                _exact = (_ap["cover_sub_pdf"] if doc_type == "cover_letter"
+                          else _ap["resume_sub_pdf"])
+                if _exact.is_file():
+                    return str(_exact)
+                _flat = (_ap["cover_pdf"] if doc_type == "cover_letter"
+                         else _ap["resume_pdf"])
+                if _flat.is_file():
+                    return str(_flat)
+        except Exception:
+            pass
 
         try:
             from CompanySiteApply.utils.config_resolver import resolve_search_roots

@@ -68,5 +68,40 @@ class TestCoverLetterJobId(unittest.TestCase):
             self.assertFalse(verify_cover_letter_job_title(d, "Work Summary"))
             self.assertFalse(verify_cover_letter_job_title(d, ""))
 
+    def test_rejects_placeholder_company(self):
+        # Incident 210791831: "Hiring Organization" rendered as recipient
+        # block and shipped. Missing/placeholder company must refuse loudly.
+        from core.generate_professional_cover_letter import generate_tailored_cover_letter
+        cand = {"candidate": {"full_name": "Udaysagar Kandpal"}}
+        with tempfile.TemporaryDirectory() as d:
+            for bad in ("", "Hiring Organization", "company", "Unknown"):
+                with self.assertRaises(ValueError, msg=f"company={bad!r} must refuse"):
+                    generate_tailored_cover_letter(
+                        cand,
+                        {"title": "Sr Manager of Software Engineering",
+                         "job_id": "210791831", "company": bad},
+                        d)
+
+    def test_recipient_uses_job_location_not_candidate(self):
+        # Recipient address block must carry the requisition location
+        # (Mumbai), never the candidate home address (Bengaluru).
+        from unittest.mock import patch
+        from core.generate_professional_cover_letter import generate_tailored_cover_letter
+        cand = {"candidate": {"full_name": "Udaysagar Kandpal",
+                              "location": "Bengaluru, Karnataka, India"}}
+        jd = {"title": "Sr Manager of Software Engineering - Java, AWS, React",
+              "job_id": "210791831",
+              "company": "JPMorgan Chase & Co.",
+              "location": "Mumbai, Maharashtra, India"}
+        with tempfile.TemporaryDirectory() as d:
+            with patch("core.generate_professional_cover_letter.generate_cover_letter_pdf") as mock_pdf:
+                mock_pdf.return_value = os.path.join(d, "x.pdf")
+                generate_tailored_cover_letter(cand, jd, d)
+                kwargs = mock_pdf.call_args.kwargs
+                self.assertEqual(kwargs["organization"], "JPMorgan Chase & Co.")
+                self.assertEqual(kwargs["org_location"], "Mumbai, Maharashtra, India")
+                self.assertIn("JPMorgan Chase & Co. Engineering Team",
+                              kwargs["hiring_team"])
+
 if __name__ == "__main__":
     unittest.main()

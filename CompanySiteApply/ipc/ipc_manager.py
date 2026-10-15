@@ -24,10 +24,19 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# IPC directory relative to this file's location (CompanySiteApply/ipc/)
-_IPC_DIR = Path(__file__).parent
-_IPC_FILE = _IPC_DIR / "section_question.json"
-_IPC_ERROR_LOG = _IPC_DIR / "ipc_error.log"
+# IPC directory: Operations runtime bus (never the repo tree).
+def _ipc_paths():
+    try:
+        from CompanySiteApply.utils.runtime_paths import ipc_dir, logs_dir
+        base, logs = ipc_dir(), logs_dir()
+        base.mkdir(parents=True, exist_ok=True)
+        return base / "section_question.json", logs / "ipc_error.log"
+    except Exception:
+        _here = Path(__file__).parent
+        return _here / "section_question.json", _here / "ipc_error.log"
+
+
+_IPC_FILE, _IPC_ERROR_LOG = _ipc_paths()
 
 # Status constants — never use raw strings in scripts; import from here
 STATUS_IDLE = "IDLE"

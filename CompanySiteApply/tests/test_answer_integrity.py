@@ -533,5 +533,65 @@ class TestResumeFreshness(unittest.TestCase):
             self.assertFalse(res.get("uploaded", True))
 
 
+class TestDropdownFilterTypingFallback(unittest.TestCase):
+    """Incident 210772077: React listbox loads options only after filter text."""
+
+    def test_empty_fetch_triggers_filter_typing(self):
+        from CompanySiteApply.section_agents.scripts.s2_dropdown_questions import (
+            heal_dropdown_questions,
+        )
+        toggle = MagicMock()
+        toggle.count.return_value = 1
+        label = MagicMock()
+        label.count.return_value = 1
+        label.inner_text.return_value = "Do you have experience? Choose your top 2."
+        combo_inp = MagicMock()
+        combo_inp.count.return_value = 1
+        combo_inp.is_visible.return_value = True
+        filled = []
+        combo_inp.fill.side_effect = lambda v: filled.append(v)
+        pills = MagicMock()
+        pills.count.return_value = 0
+
+        def _q_locator(selector, *args):
+            if "toggle-button" in selector:
+                m = MagicMock()
+                m.first = toggle
+                return m
+            if "legend" in selector:
+                m = MagicMock()
+                m.first = label
+                return m
+            if "role='combobox'" in selector:
+                m = MagicMock()
+                m.first = combo_inp
+                return m
+            return pills
+
+        q = MagicMock()
+        q.is_visible.return_value = True
+        q.locator.side_effect = _q_locator
+        q.element_handle.return_value = MagicMock()
+        q.evaluate.side_effect = [[], ["JAVA", "SQL"]]
+
+        rows = MagicMock()
+        rows.all.return_value = [q]
+        page = MagicMock()
+        page.locator.return_value = rows
+        page.evaluate.return_value = False
+
+        cand = {
+            "candidate": {"full_name": "T", "country": "India", "total_experience_years": 10},
+            "ats_answers": {},
+            "taxonomy_skills": {"Technical Skills": ["Java"]},
+        }
+        from CompanySiteApply.ai_brain_resolver import AIBrainResolver
+        AIBrainResolver._instance = None
+        res = heal_dropdown_questions(page, cand)
+        self.assertTrue(res.get("success", False))
+        self.assertTrue(any(v in ("a", "e") for v in filled), "filter text must be typed")
+        self.assertIn("", filled, "input must be cleared afterwards")
+
+
 if __name__ == "__main__":
     unittest.main()

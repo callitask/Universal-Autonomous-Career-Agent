@@ -1,7 +1,7 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT: ARCHITECTURE REFERENCE
 
-> **Document Version:** 5.4 — Multi-Key Round-Robin Gemini Rotation, SmartRateManager, Gemini Inline Batch Engine, Global-Secrets-Only Policy  
-> **Last Updated:** 2026-10-07  
+> **Document Version:** 5.5 — Multi-Key Round-Robin Gemini Rotation, SmartRateManager, Gemini Inline Batch Engine, Global-Secrets-Only Policy & 2026-10-14 Structured-Layout Contract
+> **Last Updated:** 2026-10-14
 > **Purpose:** Comprehensive technical reference for the complete pipeline — how every module works, data flows, inter-process communication, DOM interaction patterns, multi-bullet regex isolation, two-tier early highlights gating, card-level experience band gating (Guardrail C24), and the chatbot reverse-engineering protocol. Upload this alongside `WORKSPACE_RULES.md` to ground the AI's understanding of the system before any coding session.
 
 ---
@@ -119,8 +119,9 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
 - **Completion-switch rule (both IPC channels):** readers accept a payload ONLY with `status: "ANSWERED"` plus non-empty content (`answer` / `decisions`); PENDING or half-written payloads keep polling. Writers must flip status atomically with content (tmp-file + replace). Polls already return the instant a final payload lands — timeouts burn only when nobody answers, and no switch shortens absence (tune via `batch_ipc_timeout_seconds`).
 - `search_state.json` — State persistence for `SearchStateManager` designation rotation
 - `ques_ans_chatbot.json` — Per-job Q&A audit log stored alongside tailored resumes
-- `Job_Description.md` — Raw un-clamped multi-section scraped JD markdown saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
-- `job_details.json` — Structured job metadata + `naukri_match_score` saved to `profiles/<profile>/output/applications/<Company>_<Role>/`
+- `Job_Description.md` — Raw un-clamped multi-section scraped JD markdown saved to `profiles/<profile>/output/applications/<Company>_<Role>/` (Naukri flow)
+- `job_details.json` — Structured job metadata + `naukri_match_score` saved to `profiles/<profile>/output/applications/<Company>_<Role>/` (Naukri flow)
+- Structured-layout note (2026-10-14, CompanySiteApply flow): inputs `profiles/<slug>/company_site_apply/<Slug>/resumes|cover_letters`; outputs `profiles/<slug>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` plus `resume/` + `cover_letters/` subfolders and role `Cover_Letter.txt`/`.html` — no job-id filename suffixes, profile-agnostic (any new slug, same flow), uploaders try the exact role path first. Live profiles resolve under the Operations root (`F:\Operations JOB AI AGENT\profiles\...`); the repo keeps code + the `default_user` blueprint only.
 - `output/profile_sync/naukri_cards/` — Per-role evaluation cards (`KEEP_EXISTING` / `UPDATE_REQUIRED` / `ADD_NEW`)
 - `output/profile_sync/naukri_sync_report.json` — Profile sync execution summary metrics
 
@@ -135,7 +136,7 @@ Cron Heartbeat (* * * * * / 60-second wake-up)
 - `AIClient` — Gemini Flash + Antigravity 2.0 File-Based IPC dual-brain with portal match score calibration. Multi-key round-robin rotation with automatic fallback across 7 API keys.
 
 **Multi-Key Round-Robin Architecture (v2.0):**
-- `gemini_credentials.json` stores an array of API keys: `{"api_keys": ["key1", "key2", ...], "model": "...", "fallback_models": [...], "engine_enabled": true}`.
+- `gemini_credentials.json` stores an array of API keys: `{"api_keys": ["key1", "key2", ...], "model": "...", "fallback_models": [...], "engine_enabled": true}`. Live state (2026-10-14): `engine_enabled: false`, file gitignored — the Integrity 2.0 AG Brain IPC path is the active evaluation route.
 - API keys and model names resolve EXCLUSIVELY from `gemini_credentials.json` or `GEMINI_API_KEY` / `GEMINI_MODEL` environment variables. `profiles/*/candidate_config.json` is never a secrets carrier (2026-10-07 policy).
 - At init, `AIClient.__init__` instantiates a `list` of `genai.Client` objects (`self._gemini_clients`), one per key.
 - `self.gemini_client` is a `@property` (NOT a static attribute) — it returns `self._gemini_clients[self._current_client_idx]`. **Never assign to `self.gemini_client` directly — it has no setter.**
@@ -550,6 +551,8 @@ os.replace(tmp_path, config_path)  # Atomic on all OSes
   }
 ]
 ```
+
+> Structured-layout note (2026-10-14): the `jd_path` above is the Naukri flow. CompanySiteApply role folders live at `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` (see IPC contract list in §2).
 
 ### 4.2b `job_details.json` Schema (Per-Application Metadata)
 ```json

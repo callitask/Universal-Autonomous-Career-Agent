@@ -16,7 +16,7 @@ Write-Host "`n==== 4. BUILD --CHECK Exit 0 ===="
 python scripts/build_knowledge_index.py --check
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "`n==== 5. KNOWLEDGE 6/6 ===="
+Write-Host "`n==== 5. KNOWLEDGE 10/10 ===="
 python -m unittest tests/test_knowledge_index.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

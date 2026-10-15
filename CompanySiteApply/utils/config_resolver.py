@@ -34,7 +34,12 @@ def resolve_candidate_config(
     explicit_path: Optional[str] = None,
     candidate_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Load candidate config dict without hardcoded profile names."""
+    """Load candidate config dict without hardcoded profile names.
+
+    Operations profiles take precedence; the repo blueprint is fallback.
+    """
+    from CompanySiteApply.utils.runtime_paths import profiles_root
+
     candidates: list[Path] = []
     if explicit_path:
         candidates.append(Path(explicit_path))
@@ -46,6 +51,9 @@ def resolve_candidate_config(
                 candidates.append(p / "candidate_config.json" if p.is_dir() else p)
         prof = candidate_data.get("profile")
         if prof:
+            ops_cfg = profiles_root() / str(prof) / "candidate_config.json"
+            if ops_cfg.exists():
+                candidates.append(ops_cfg)
             candidates.append(Path(str(prof)) / "candidate_config.json")
     root = _repo_root()
     candidates.append(root / _BLUEPRINT)
@@ -60,7 +68,12 @@ def resolve_candidate_config(
 
 
 def resolve_search_roots(candidate_data: Optional[Dict[str, Any]] = None) -> list[str]:
-    """Directories to search for relative resume files. No live names."""
+    """Directories to search for relative resume files. No live names.
+
+    Operations profile dirs take precedence; repo paths remain as fallback.
+    """
+    from CompanySiteApply.utils.runtime_paths import profiles_root
+
     roots: list[str] = []
     if isinstance(candidate_data, dict):
         for key in ("profile_dir", "profile", "config_path"):
@@ -68,6 +81,11 @@ def resolve_search_roots(candidate_data: Optional[Dict[str, Any]] = None) -> lis
             if val:
                 p = Path(str(val))
                 base_dir = p if p.is_dir() else p.parent
+                # Bare slug ("udaysagar_kandpal") resolves to Operations first.
+                if not p.is_dir() and base_dir == Path("."):
+                    ops_dir = profiles_root() / p.name
+                    if ops_dir.is_dir():
+                        base_dir = ops_dir
                 csa_dir = base_dir / "company_site_apply"
                 if csa_dir.exists() and csa_dir.is_dir():
                     roots.append(str(csa_dir))
@@ -80,15 +98,16 @@ def resolve_search_roots(candidate_data: Optional[Dict[str, Any]] = None) -> lis
             import re
             slug = re.sub(r'[^a-zA-Z0-9_]', '_', str(full_name).strip().lower())
             repo_root = _repo_root()
-            prof_dir = repo_root / "profiles" / slug
-            if prof_dir.exists() and prof_dir.is_dir():
-                csa_dir = prof_dir / "company_site_apply"
-                if csa_dir.exists() and csa_dir.is_dir():
-                    roots.append(str(csa_dir))
-                applied_dir = prof_dir / "APPLIED ON COMPANY WEBSITE"
-                if applied_dir.exists() and applied_dir.is_dir():
-                    roots.append(str(applied_dir))
-                roots.append(str(prof_dir))
+            for prof_dir in (profiles_root() / slug, repo_root / "profiles" / slug):
+                if prof_dir.exists() and prof_dir.is_dir():
+                    csa_dir = prof_dir / "company_site_apply"
+                    if csa_dir.exists() and csa_dir.is_dir():
+                        roots.append(str(csa_dir))
+                    applied_dir = prof_dir / "APPLIED ON COMPANY WEBSITE"
+                    if applied_dir.exists() and applied_dir.is_dir():
+                        roots.append(str(applied_dir))
+                    roots.append(str(prof_dir))
+                    break
     root = str(_repo_root())
     roots.extend([str(Path(root) / "profiles" / "default_user"), root, os.getcwd()])
     # de-duplicate, keep order

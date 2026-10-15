@@ -1,7 +1,7 @@
 # Universal Autonomous Career Agent — Setup & Execution Guide
 
-> **Document Version:** 4.1 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC & 46 Guardrails  
-> **Last Updated:** 2026-10-07  
+> **Document Version:** 4.2 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC, Structured Role Outputs & 46 Guardrails  
+> **Last Updated:** 2026-10-14  
 > **Proprietary Notice:** Confidential and Proprietary. Copyright (c) 2026 Amitsagar Kandpal. All Rights Reserved. No public license granted.
 
 Welcome to the **Universal Autonomous Career Agent** (`F:\JOB AI AGENT`). This system is an enterprise-grade, multi-agent autonomous pipeline engineered to execute end-to-end job discovery, cognitive profile synthesis, factual resume tailoring, and automated ATS application submission across platforms including LinkedIn and Naukri.
@@ -52,6 +52,7 @@ F:\JOB AI AGENT\
 │   ├── 03_profile_sync_linkedin.py       # LinkedIn profile updater
 │   ├── 04_job_discovery.py               # Batched discovery orchestrator & URL filter injector
 │   ├── generate_factual_tailored.py      # Factual ATS resume tailor & PDF compiler
+│   ├── generate_professional_cover_letter.py # Cover letter PDF + Job-ID/title verification
 │   ├── 05_apply_jobs.py                  # Form solver (LinkedIn Easy Apply & Naukri Chatbot)
 │   ├── ai_client.py                      # Dual-engine brain (API: Gemini+Colab / Integrity 2.0: AG IPC)
 │   ├── ai_rate_manager.py               # SmartRateManager (3.5s floor, 120s model ban)
@@ -73,19 +74,21 @@ F:\JOB AI AGENT\
 │
 ├── CompanySiteApply/                     # On-demand direct company ATS application engine
 │   ├── cli.py                            # Interactive CLI runner for direct ATS applications
-│   ├── apply_orchestrator.py             # Section dispatch with hard gates + per-section proofs
+│   ├── ai_brain_resolver.py             # Screening-question brain + IPC answer bridge
+│   ├── cognitive_job_matcher.py         # Profile-grounded scoring + allowed_countries gate
+│   ├── apply_orchestrator.py             # Section dispatch with hard gates + per-section proofs + transcripts
 │   ├── autonomous_job_agent.py           # 6-stage lifecycle controller
 │   ├── ats_arm.py                        # ATS orchestrator arm
 │   ├── ats_detector.py                   # Portal platform detection engine
 │   ├── section_agents/                   # Coordinators + discrete scripts/ + sub_agents/
 │   ├── ipc/                              # Section IPC bus (ipc_manager.py)
-│   ├── tests/                            # Regression suite (97 tests)
+│   ├── tests/                            # Regression suite (150 tests)
 │   ├── anatomy/                          # Portal anatomy models
 │   ├── fingers/                          # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
 │   ├── nails/                            # Company-specific ATS customizations (nails/oracle: JPMC, Bristlecone)
 │   ├── CompanyScraper/                   # Direct company career site scrapers
 │   ├── parser_doctor/                    # ATS resume parsing healing and review verification
-│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver, experience_matcher
+│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver, experience_matcher, match_report, sync_bridge, question_hygiene, company_workspace, runtime_paths, application_docs (+ company_profiles.json)
 │
 ├── run_universal_apply.py                # Canonical entry: active-tab apply + --autonomous lifecycle
 ├── search_and_evaluate_jpmc_jobs.py      # Canonical entry: search → evaluate → rank
@@ -102,11 +105,13 @@ F:\JOB AI AGENT\
 │   └── default_user/                     # Master blueprint / schema exemplar
 │       ├── candidate_config.json         # Candidate details, credentials, CTC, target filters
 │       ├── resume.md                     # Master markdown resume (Factual source of truth)
+│       ├── company_site_apply/<Slug>/    # Per-company workspace (base resume, BASE.md letter, cover_letters/, resumes/; auto-provisioned) + APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/ fixed-name role outputs (live in Operations)
 │       └── output/                       # Runtime outputs and multi-session state
 │           ├── applications/             # Per-job tailored PDF resumes & job_details.json
 │           ├── profile_sync/             # Selective profile sync cards & sync reports
 │           ├── cognitive_profile.json    # Synthesized candidate taxonomy & search cycles
 │           ├── processed_ledger.json     # O(1) multi-session persistent deduplication ledger
+│           ├── jpmc_job_matches.json       # Ranked company-site match report (never repo root)
 │           ├── search_manifest.json      # Active execution batch manifest
 │           ├── applications_tracker.csv  # Canonical application audit trail
 │           ├── batch_question.json       # Batch card triage IPC request file
@@ -114,11 +119,15 @@ F:\JOB AI AGENT\
 │           ├── pending_question.json     # Single-query cognitive IPC exchange file
 │           └── search_state.json         # Search designation rotation state
 │
-└── docs/                                 # Authoritative documentation & blueprints
+└── docs/                                 # Authoritative documentation & blueprints (16 files)
     ├── WORKSPACE_RULES.md                # 10 mandatory directives & 46 bug prevention guardrails
     ├── ARCHITECTURE_REFERENCE.md         # Comprehensive system architecture & data contracts
+    ├── SECTION_IPC_ARCHITECTURE.md        # Company-site section IPC spec + gates
+    ├── COMPANY_ATS_KNOWLEDGE.md / ORACLE_HCM_ATS_DEEP_DIVE.md / COMPANY_PORTAL_PAGELOOP_PROTOCOL.md
     ├── REFERENCE_DEPLOYMENT_GUIDE.md     # Fast deployment & verification guide
     └── GEMINI_WEB_AI_PROMPTS.md          # 3-step onboarding prompts for Gemini Web AI
+    (+ PLATFORM_KNOWLEDGE, STRATEGIC_RESUME_TAILORING, QUERY_GUIDE, KNOWLEDGE_GRAPH_CHANGELOG,
+        DEPRECATED_SYSTEMS_CHANGELOG, ADVANCED_…_PROMPT, AGENT_HANDOFF_…_PROMPT, UNIVERSAL_ATS_…_PLAYBOOK)
 ```
 
 ---

@@ -1,5 +1,5 @@
 # SECTION IPC ARCHITECTURE — AG Brain-Gated Question Fill System
-# Version: 1.0 | Created: 2026-10-12 | Status: APPROVED FOR IMPLEMENTATION
+# Version: 1.1 | Created: 2026-10-12 | Amended: 2026-10-14 (structured-layout contract, §4 only) | Status: APPROVED FOR IMPLEMENTATION
 # Scope: CompanySiteApply — Oracle Cloud HCM (JPMC CX_1002), extensible to Workday / Greenhouse
 
 > [!IMPORTANT]
@@ -149,14 +149,16 @@ After `binary_questions`, `competency_questions`, and `dropdown_questions` compl
 
 | Subsection | Script | Notes |
 |-----------|--------|-------|
-| `resume_upload` | `section_agents/scripts/s4_resume_upload.py` | Independent: check if resume uploaded → if missing/stale → upload `tailored_resume.pdf`. |
-| `cover_letter_upload` | `section_agents/scripts/s4_cover_letter_upload.py` | Independent: check if cover letter uploaded → if stale (not this session's job) → REMOVE → upload fresh. |
+| `resume_upload` | `section_agents/scripts/s4_resume_upload.py` | Independent: check if resume uploaded → if missing/stale → upload the exact role file `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<id>/<Stem>_Resume.pdf` (fixed name, no job-id suffix; exact role path first, glob legacy fallback only). |
+| `cover_letter_upload` | `section_agents/scripts/s4_cover_letter_upload.py` | Independent: check if cover letter uploaded → if stale (not this session's job) → REMOVE → upload the exact role file `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<id>/<Stem>_Cover_Letter.pdf` (fixed name, no job-id suffix; exact role path first — never `*{jobid}*cover*letter*` globs or `candidates[0]` picks). |
 | `diversity` | `DiversitySubAgent` (no discrete script) | India Uniformed Forces, Ethnicity, Gender. Non-IPC (deterministic). |
 | `signature` | `SignatureSubAgent` (no discrete script) | E-Signature full name. Non-IPC (deterministic). |
 | `linkedin_url` | `JPMCNail` LinkedIn normalization (inline, no discrete script) | Verify LinkedIn link not truncated by Oracle resume parser. Non-IPC. |
-| `visual_verify` | `VisualVerifierSubAgent` (no discrete script) | Full-page screenshot → saved to `artifacts/` + structured DOM readback with `ORDER_UNVERIFIED` pre-submit gate. |
+| `visual_verify` | `VisualVerifierSubAgent` (no discrete script) | Full-page screenshot → saved to `artifacts/` (Operations root) + structured DOM readback with `ORDER_UNVERIFIED` pre-submit gate. |
 
-**Document Upload Independence Rule:**
+**Document Upload Independence Rule (structured-layout contract, 2026-10-14):**
+- Inputs (profile-agnostic): `profiles/<slug>/company_site_apply/<Slug>/resumes|cover_letters` (+ `resume.md`, `cover_letters/BASE.md`).
+- Outputs: `profiles/<slug>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with FIXED `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` (Stem = Title-Cased profile, e.g. `udaysagar_kandpal` → `Udaysagar_Kandpal`) mirrored flat AND inside `resume/` + `cover_letters/` subfolders, plus role `Cover_Letter.txt`/`.html`. No job-id filename suffixes — multiple jobs per company and same-title different-IDs coexist by folder, not by filename.
 - `resume_upload` and `cover_letter_upload` are callable independently.
 - Each checks its own state BEFORE acting:
   - Resume: `[data-automation-id*='resume'], input[type='file'][accept*='pdf']` — check `.attachment-upload-button--filled` state.
@@ -384,7 +386,7 @@ If this session ends before full implementation:
 1. Re-read `ACTIVE_CONSTRAINT_BLOCK.md` + `SCAR_TISSUE.md` (mandatory).
 2. Check which Phase (§7) was last completed — grep for `# Phase N COMPLETE` comments in modified files.
 3. Resume from the next uncompleted phase.
-4. Before writing any code: run `python -m unittest discover -s CompanySiteApply/tests` — all 122 must pass.
+4. Before writing any code: run `python -m unittest discover -s CompanySiteApply/tests` — all 150 must pass (plus 7 cover-letter-id tests in `tests/`, 10 knowledge tests).
 5. After each phase: run tests again. Regression = stop and investigate before continuing.
 6. This document is the canonical spec. Do not deviate without updating it first.
 

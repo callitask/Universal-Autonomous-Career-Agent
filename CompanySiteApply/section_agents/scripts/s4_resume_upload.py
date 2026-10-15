@@ -40,29 +40,88 @@ def heal_resume_upload(
         job_id = str(candidate_data.get("job_id") or candidate_data.get("_ipc_job_id") or "")
         profile = str(candidate_data.get("profile") or candidate_data.get("_ipc_profile") or "")
 
-        # 1. Resolve candidate resume file path. Prefer an exact
-        # candidate-name match, newest first — a bare glob once attached an
-        # arbitrary (possibly stale) resume when several existed.
+        # 1. Resolve candidate resume file path. PRIORITY 0 (2026-10-14 fix):
+        # exact structured path APPLIED/.../<Company>/<Role>_<id>/ with FIXED
+        # names — no glob. Glob is legacy fallback only.
+        # Company workspace first (auto-provisioned per workspace contract).
+        from CompanySiteApply.utils.application_docs import (
+            application_doc_paths as _app_paths,
+            profile_slug_of as _slug_of,
+            resolve_company_name as _company_of,
+        )
+        from CompanySiteApply.utils.company_workspace import (
+            ensure_company_workspace,
+            resolve_company_roots,
+        )
         from CompanySiteApply.utils.config_resolver import resolve_search_roots
         from pathlib import Path
-        roots = [Path(r) for r in resolve_search_roots(candidate_data)]
+        _url = str(getattr(page, "url", "") or "")
+        _company = _company_of(candidate_data, candidate_data, _url)
+        _jid = str(candidate_data.get("job_id") or candidate_data.get("_ipc_job_id") or "")
+        if not _jid and _url:
+            import re as _re
+            _m = (_re.search(r'requisition[iI]d=(\d+)', _url)
+                  or _re.search(r'/(?:jobs?/preview/|job/|requisitions?/|preview/)(\d+)', _url))
+            if _m:
+                _jid = _m.group(1)
+        _title = ""
+        try:
+            _t = page.locator(".job-title, [class*='requisition-title'], [data-bind*='jobTitle' i]").first
+            if _t.count() > 0 and _t.is_visible():
+                _title = _t.inner_text().strip()
+        except Exception:
+            _title = ""
+        if not _title and isinstance(candidate_data, dict):
+            _tj = candidate_data.get("target_jobs") or {}
+            _title = str(_tj.get("title") or _tj.get("job_title") or "").strip()
+        _profile = _slug_of(candidate_data, profile)
+        resume_path = None
+        if _jid:
+            try:
+                _ap = _app_paths(_profile, _company, _title or "role", _jid, candidate_data)
+                for _cand in (_ap["resume_sub_pdf"], _ap["resume_pdf"]):
+                    if _cand.is_file() and _cand.stat().st_size > 0:
+                        resume_path = str(_cand)
+                        break
+            except Exception:
+                resume_path = None
+        if _company:
+            from CompanySiteApply.utils.company_workspace import company_kind
+            if company_kind(_company) == "service":
+                roots = [Path(r) for r in resolve_search_roots(candidate_data)]
+            else:
+                ensure_company_workspace(candidate_data, _company)
+                roots = [Path(r) for r in resolve_company_roots(candidate_data, _company)]
+        else:
+            roots = [Path(r) for r in resolve_search_roots(candidate_data)]
         cand_name = str(cand.get("name") or cand.get("full_name") or "").strip()
         patterns = ["*resume*.pdf", "*Resume*.pdf", "*resume*.docx", "*Resume*.docx"]
         if cand_name:
-            patterns.insert(0, f"*{cand_name}*.pdf")
+            import re as _re2
+            for _tok in [t for t in _re2.split(r"[^A-Za-z0-9]+", cand_name) if t][:2]:
+                patterns.insert(0, f"*{_tok}*resume*.pdf")
 
-        resume_path = None
-        for r in roots:
-            for pattern in patterns:
-                try:
-                    matches = sorted(r.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
-                except Exception:
-                    matches = []
-                if matches:
-                    resume_path = str(matches[0])
+        if not resume_path:
+            search_dirs = []
+            for r in roots:
+                search_dirs.append(r)
+                if (r / "resumes").is_dir():
+                    search_dirs.append(r / "resumes")
+            for r in search_dirs:
+                # Never use APPLIED trees as base inputs in fallback either —
+                # outputs are role-specific; generic fallback must be a base.
+                if "APPLIED ON COMPANY WEBSITE" in str(r):
+                    continue
+                for pattern in patterns:
+                    try:
+                        matches = sorted(r.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+                    except Exception:
+                        matches = []
+                    if matches:
+                        resume_path = str(matches[0])
+                        break
+                if resume_path:
                     break
-            if resume_path:
-                break
 
         if not resume_path or not os.path.exists(resume_path):
             return {"success": False, "error": f"Resume file not found in roots: {roots}"}

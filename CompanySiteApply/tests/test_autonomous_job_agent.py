@@ -157,6 +157,9 @@ class TestAutonomousJobAgent(unittest.TestCase):
     def test_stage_4_tailor_documents(self, mock_pw):
         agent = AutonomousJobAgent()
         agent.stage_1_comprehend_profile(candidate_config=self.tech_candidate)
+        # Isolate from the live Operations profile.
+        agent.candidate_data["profile"] = "test_structured_profile_xyz"
+        agent.profile_slug = "test_structured_profile_xyz"
 
         target_job = {
             "job_id": "3001",
@@ -169,11 +172,29 @@ class TestAutonomousJobAgent(unittest.TestCase):
         }
         
         with patch("CompanySiteApply.autonomous_job_agent.generate_tailored_cover_letter") as mock_gen:
-            mock_gen.return_value = "/mock/path/Cover_Letter.pdf"
+            import tempfile as _tf
+            _tmpd = _tf.mkdtemp()
+            _mock_pdf = Path(_tmpd, "Udaysagar_Kandpal_Cover_Letter.pdf")
+            _mock_pdf.write_bytes(b"%PDF-mock")
+            mock_gen.side_effect = lambda cd, jd, td, pdf_filename=None: (
+                Path(td, pdf_filename or "x.pdf").write_bytes(b"%PDF-mock"),
+                str(Path(td) / (pdf_filename or "x.pdf")))[1]
             res = agent.stage_4_tailor_documents(target_job)
             self.assertTrue(res["success"])
-            self.assertEqual(res["cover_letter_pdf"], "/mock/path/Cover_Letter.pdf")
+            # Structured layout: FIXED name inside role folder, never mock path.
+            self.assertIn("3001", res["cover_letter_pdf"])
+            self.assertTrue(res["cover_letter_pdf"].endswith("Test_Structured_Profile_Xyz_Cover_Letter.pdf") or res["cover_letter_pdf"].endswith("Udaysagar_Kandpal_Cover_Letter.pdf"))
+            self.assertIn("JPMorgan_Chase_Co", res["applied_dir"])
             self.assertEqual(res["job_id"], "3001")
+            # Cleanup isolated test profile (repo fallback, gitignored but keep tree clean).
+            import shutil as _sh
+            for _base in (Path("profiles") / "test_structured_profile_xyz",
+                          Path("F:/Operations JOB AI AGENT/profiles/test_structured_profile_xyz")):
+                try:
+                    if _base.exists():
+                        _sh.rmtree(_base, ignore_errors=True)
+                except Exception:
+                    pass
 
     def test_stage_6_human_gate_enforcement_and_ledger(self):
         agent = AutonomousJobAgent()

@@ -37,7 +37,11 @@ from CompanySiteApply.fingers import get_finger_for_page
 from CompanySiteApply.fingers.base_finger import BaseATSFinger
 from CompanySiteApply.parser_doctor.review_verifier import ReviewVerifier
 
-INSPECTIONS_DIR = Path(__file__).resolve().parent / "inspections"
+try:
+    from CompanySiteApply.utils.runtime_paths import inspections_dir
+    INSPECTIONS_DIR = inspections_dir()
+except Exception:
+    INSPECTIONS_DIR = Path(__file__).resolve().parent / "inspections"
 
 
 class ATSArm:

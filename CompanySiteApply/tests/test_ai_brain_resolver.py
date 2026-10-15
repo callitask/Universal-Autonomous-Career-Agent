@@ -173,5 +173,74 @@ class TestAIBrainResolver(unittest.TestCase):
         self.assertIn("My job does not require coding/I am not hands-on with coding", ans)
 
 
+class TestRecipientHeaderArbitration(unittest.TestCase):
+    """AG Brain owns the cover-letter recipient block (incident 210791831)."""
+
+    def _brain(self):
+        import tempfile as _tf
+        from pathlib import Path as _P
+        from CompanySiteApply.ai_brain_resolver import AIBrainResolver
+        AIBrainResolver._instance = None
+        b = AIBrainResolver.get_instance(
+            {"candidate": {"full_name": "Udaysagar Kandpal"}})
+        # Never pollute the live screening_answers.json from unit tests.
+        b.output_json_path = _P(_tf.mkdtemp()) / "screening_answers.json"
+        b.history = []
+        return b
+
+    def test_stamped_company_wins_with_location(self):
+        v = self._brain().resolve_recipient_header({
+            "job_id": "210791831",
+            "job_title": "Sr Manager of Software Engineering - Java, AWS, React",
+            "stamped_company": "JPMorgan Chase",
+            "page_url": "https://jpmc.fa.oraclecloud.com/.../job/210791831",
+            "portal_default_company": "JPMorgan Chase",
+            "candidate_company_hints": [],
+            "dom_location": "",
+            "requisition_location": "Mumbai, Maharashtra, India",
+            "explicit_team": "",
+            "workspace_provisioned": True,
+        })
+        self.assertTrue(v["success"])
+        self.assertEqual(v["company"], "JPMorgan Chase & Co.")
+        self.assertEqual(v["location"], "Mumbai, Maharashtra, India")
+        self.assertEqual(v["hiring_team"], "JPMorgan Chase & Co. Engineering Team")
+
+    def test_unknown_company_refuses(self):
+        v = self._brain().resolve_recipient_header({
+            "job_id": "1", "job_title": "X", "stamped_company": "",
+            "page_url": "", "portal_default_company": "",
+            "candidate_company_hints": [], "dom_location": "",
+            "requisition_location": "", "explicit_team": "",
+            "workspace_provisioned": False,
+        })
+        self.assertFalse(v["success"])
+        self.assertEqual(v["company"], "")
+
+    def test_conflicting_evidence_refuses(self):
+        v = self._brain().resolve_recipient_header({
+            "job_id": "1", "job_title": "X",
+            "stamped_company": "Acme Corp",
+            "page_url": "https://jpmc.fa.oraclecloud.com/...",
+            "portal_default_company": "", "candidate_company_hints": [],
+            "dom_location": "", "requisition_location": "",
+            "explicit_team": "", "workspace_provisioned": False,
+        })
+        self.assertFalse(v["success"])
+        self.assertIn("conflict", v["error"])
+
+    def test_never_invents_person_name(self):
+        v = self._brain().resolve_recipient_header({
+            "job_id": "1", "job_title": "Engineer",
+            "stamped_company": "Acme Corp", "page_url": "",
+            "portal_default_company": "", "candidate_company_hints": [],
+            "dom_location": "Bengaluru", "requisition_location": "",
+            "explicit_team": "", "workspace_provisioned": False,
+        })
+        self.assertTrue(v["success"])
+        self.assertNotIn("Hiring Organization", v["hiring_team"])
+        self.assertIn("Acme Corp", v["hiring_team"])
+
+
 if __name__ == "__main__":
     unittest.main()

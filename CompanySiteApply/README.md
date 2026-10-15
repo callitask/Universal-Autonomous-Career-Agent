@@ -1,7 +1,7 @@
 # CompanySiteApply: Enterprise ATS Form Filling Subsystem
 
-> **Document Version:** 3.1 — Hard Advance Gates, Dispatcher Cascade, Pre-Submit Order Gate, JET Radio Coverage & Zero-Hardcoding Architecture
-> **Last Updated:** 2026-10-13  
+> **Document Version:** 3.2 — Hard Advance Gates, Dispatcher Cascade, Pre-Submit Order Gate, JET Radio Coverage, Structured Role Outputs & Zero-Hardcoding Architecture
+> **Last Updated:** 2026-10-14  
 > **Execution Mode:** Autonomous Full Lifecycle & On-Demand Human-Gated (Decoupled from background daemons)
 
 A decoupled, modular automation subsystem for applying directly to company career sites and enterprise Applicant Tracking Systems (ATSs) like Oracle Cloud HCM, Workday, and Greenhouse.
@@ -72,7 +72,7 @@ CompanySiteApply/
 │   ├── education_healer.py         # Fixes swapped degree vs. college mappings
 │   └── review_verifier.py          # Coordinates DOM-level pre-submit verification
 │
-├── tests/                          # Automated regression test suite (122 tests)
+├── tests/                          # Automated regression test suite (150 tests)
 │   ├── test_autonomous_job_agent.py# Lifecycle & matching test suite
 │   ├── test_ai_brain_resolver.py   # Screening Q&A dynamic deduction tests
 │   ├── test_sub_agents.py          # Granular sub-agent audit & heal tests
@@ -83,7 +83,8 @@ CompanySiteApply/
 │   ├── test_experience_matcher.py  # resume.md parsing + employer matching tests
 │   ├── test_search_entry.py        # Site-root entry + 404-guard tests
 │   ├── test_dom_helpers.py         # Shared DOM helper tests
-│   └── test_anatomy.py             # Portal anatomy model tests
+│   ├── test_anatomy.py             # Portal anatomy model tests
+│   └── test_application_docs.py    # Structured role-layout contract tests (+4)
 │
 ├── anatomy/                          # Portal anatomy models (base, oracle_cloud, surgical_auditor)
 ├── fingers/                          # Platform adapters: base/generic/oracle_cloud/workday/greenhouse (+ registry)
@@ -93,6 +94,7 @@ CompanySiteApply/
     ├── config_resolver.py          # Dynamic search roots & candidate resolution
     ├── dom_helpers.py              # Framework-native JavaScript event dispatchers
     ├── honeypot_guard.py           # Anti-bot honeypot detection
+    ├── application_docs.py         # Structured role-layout contract (fixed names, exact paths, resolve_company_name)
     └── experience_matcher.py       # resume.md parsing + fuzzy employer matching
 ```
 
@@ -161,11 +163,68 @@ Section 2 questions on Oracle HCM can be conditional — answering a binary Yes/
 
 Oracle HCM shows a full-page Terms & Conditions agreement (`#applyFlowLegalDisclaimer`) that overlays the entire form on first load. The orchestrator must detect and dismiss this modal BEFORE calling any section mini-agent. Fix in Phase 1 of `docs/SECTION_IPC_ARCHITECTURE.md §4.2`.
 
-### H. Document Upload Independence (Section 4)
+### I. Per-Company Workspaces (Company Agents, Current & Future)
 
-Resume and cover letter uploads are now fully independent:
-- `s4_cover_letter_upload.py` — checks if cover letter is stale (not uploaded this session for this job) → REMOVE first → upload fresh PDF.
-- `s4_resume_upload.py` — checks if resume is present → if missing → upload tailored resume PDF.
+Resume/cover resolution is company-first: `company_site_apply/<CompanySlug>/`
+(e.g. `JPMorganChase`) is created on demand by
+`CompanySiteApply/utils/company_workspace.py` (`ensure_company_workspace()`),
+seeded from the master `resume.md`, and searched before the flat directory
+(`resolve_company_roots()`). Slugs are alphanumeric (`company_slug()` strips
+`&`, spaces, and `Co/Inc/Ltd` suffixes). Inputs live here: base `resume.md`
+plus `cover_letters/BASE.md` and `resumes/` — auto-provisioned at Stage 4
+start for every profile identically.
+
+**Future company agents:** call `ensure_company_workspace(candidate_data,
+company)` at run start — the workspace (plus `cover_letters/`, `resumes/`,
+`README.md`) self-provisions; no layout rediscovery, no hardcoded paths.
+`company_profiles.json` decides framing: `service` firms use the flat generic
+base, product/tech/finance firms (and unlisted ones) use workspaces with
+per-company cover tones. `cover_letters/BASE.md` (seeded once per workspace,
+never overwritten) is the tone reference; generated per-requisition PDFs land
+in the structured role folder (§J), never beside it with per-req suffixes.
+Blueprint (`profiles/default_user/`) carries skeleton + README only, never PII.
+
+### J. Structured Role Outputs — Fixed Names in `<Role>_<jobid>/` (2026-10-14)
+
+Stage 4 (`autonomous_job_agent.stage_4_tailor_documents`) generates directly
+into the role dir via `CompanySiteApply/utils/application_docs.py`, never the
+flat `company_site_apply` root:
+
+```
+profiles/<slug>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/
+├── <Stem>_Resume.pdf          # FIXED name (flat canonical)
+├── <Stem>_Cover_Letter.pdf    # FIXED name (flat canonical)
+├── resume/<Stem>_Resume.pdf           # mirrored copy
+├── cover_letters/<Stem>_Cover_Letter.pdf  # mirrored copy
+├── Cover_Letter.txt           # role-specific companions
+└── Cover_Letter.html
+```
+
+- **Stem** is Title-Cased per underscore part (`profile_stem()`; e.g.
+  `udaysagar_kandpal` → `Udaysagar_Kandpal`), preferring candidate
+  `full_name` so any new profile works identically.
+- **Company** never resolves to the literal `"company"`
+  (`resolve_company_name()` in `application_docs.py`).
+- Multiple jobs per company and same-title different-IDs coexist via
+  `<Role>_<jobid>` folders. No per-req filename suffixes for upload.
+
+### K. Runtime Operations Layout (Code In Repo, Data Outside)
+
+Live profiles, artifacts, inspections, and the IPC bus live in the sibling
+`F:\Operations JOB AI AGENT\` data root (override via `JOB_AGENT_OPERATIONS`
+env), never in the git tree. `CompanySiteApply/utils/runtime_paths.py` is the
+single choke point (`operations_root()`, `profiles_root()`,
+`resolve_profile_dir()` with repo fallback for the blueprint); every present
+and future path resolution flows through it. The repo keeps code + the
+`default_user` blueprint only. Gemini/Colab credential files carry
+`engine_enabled=false` (disabled) and are gitignored.
+
+### L. Document Upload Independence — Exact-Path-First (Section 4)
+Resume and cover letter uploads are fully independent, and both try the exact
+structured role path FIRST (`application_doc_paths()` for
+`APPLIED/.../<Company>/<Role>_<jobid>/` with FIXED names — no glob):
+- `s4_cover_letter_upload.py` — exact role path first (verified Job ID + title against the role folder); stale cover (not uploaded this session for this job) → REMOVE first → upload fresh PDF. Glob newest-first is legacy fallback only.
+- `s4_resume_upload.py` — exact role path first; if resume present → skip. Glob fallback is resume-constrained (`*token*resume*.pdf`) and skips `APPLIED` trees for base inputs.
 - Each script is callable independently. Stale cover but present resume → ONLY cover letter re-uploaded.
 
 ---

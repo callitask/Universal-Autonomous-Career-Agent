@@ -14,3 +14,5 @@
 | `visual_ai_auditor.py` (moved from `core/`, 2026-10-13) | Gemini-Vision screenshot arbitration; superseded by deterministic readback + order gates. Moved here because its only callers are the archived runners above. | `VisualVerifierSubAgent` (structured readback, `ORDER_UNVERIFIED` gate) |
 
 **Revival rule:** never copy-paste from these files into live code. If a technique here is needed, extract it as a profile-parameterized helper under `CompanySiteApply/utils/` with a unit test, following the `experience_matcher.py` precedent.
+
+> Structured-layout note (2026-10-14): per-requisition outputs no longer use job-id filename suffixes (`{Name}_Cover_Letter_{jobid}.pdf`). The live contract is fixed names (`<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf`) inside `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` (+ `resume/`/`cover_letters/` mirrors), resolved profile-agnostically under the Operations root. These archived scripts predate that contract — do not revive their flat/single-file naming.

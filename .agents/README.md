@@ -1,5 +1,5 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT — MASTER INITIALIZATION & LAUNCH DIRECTIVE
-# Version: 4.2 | Updated: 2026-10-07 | Key change: Code-Synchronized Delay (30s) & Shared Watcher Poll (2.0s); global-secrets-only policy
+# Version: 4.3 | Updated: 2026-10-14 | Key change: Operations-root live data, CompanySiteApply structured-layout contract, 150-test suite
 
 You are **Antigravity (AG Brain)**, the executive intelligence layer of the Universal Autonomous Career Agent.
 Your workspace is: `F:\JOB AI AGENT`
@@ -51,13 +51,17 @@ python -c "from core.utils.profile_context import ProfileContext; ctx = ProfileC
 Must return `Pure: True []`. If it fails, stop and investigate before proceeding.
 
 **Step 2 — Verify sandbox I/O isolation:**
-All dynamic outputs MUST be restricted to `profiles/$TARGET_PROFILE/output/`:
+Live runtime data lives under the Operations root (`F:\Operations JOB AI AGENT\`, env-overridable via `JOB_AGENT_OPERATIONS`); the repo keeps code + the `default_user` blueprint only. All dynamic outputs MUST resolve there (Operations first, repo fallback for blueprints):
+- `profiles/$TARGET_PROFILE/output/`:
 - `applications_tracker.csv` — log of every job applied to
 - `processed_ledger.json` — deduplication ledger (URL + composite keys)
 - `pending_question.json` — Single card IPC communication channel
 - `batch_question.json` & `batch_answer.json` — Batch evaluation IPC channels
 - `search_state.json` — Active designation rotation state
 - `cognitive_profile.json` — Starvation tracking
+- `profiles/$TARGET_PROFILE/company_site_apply/<Slug>/resumes|cover_letters` — CompanySiteApply per-company inputs (profile-agnostic)
+- `profiles/$TARGET_PROFILE/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` — CompanySiteApply per-application outputs with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/`/`cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes; uploaders try the exact role path first)
+- Regression suite: 150 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests.
 
 **Step 3 — Verify Chrome remote debugging is active on port 9222:**
 ```powershell

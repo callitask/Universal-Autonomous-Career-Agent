@@ -38,6 +38,71 @@ from CompanySiteApply.utils.config_resolver import resolve_search_roots
 from core.generate_professional_cover_letter import generate_tailored_cover_letter
 
 
+def _archive_application_docs(
+    repo_root: Path,
+    candidate_data: Dict[str, Any],
+    company: str,
+    job_title: str,
+    job_id: str,
+    cover_pdf_path: str,
+    source_dir: str,
+    resume_pdf_path: str = "",
+) -> str:
+    """Copy tailored docs into APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<id>/.
+
+    Structured layout (2026-10-14 fix): fixed filenames
+    <Stem>_Resume.pdf / <Stem>_Cover_Letter.pdf flat in the role folder AND
+    inside resume/ + cover_letters/ subfolders. Incident 210791831: archive
+    used literal folder "company" and uploaders ignored the archive.
+    Pure file ops — unit tested.
+    """
+    from CompanySiteApply.utils.application_docs import (
+        application_doc_paths,
+        copy_into_role,
+        profile_slug_of,
+        resolve_company_name,
+    )
+
+    profile = profile_slug_of(candidate_data, "candidate")
+    company_clean = resolve_company_name(
+        {"details": {"company": company}}, candidate_data, "")
+    paths = application_doc_paths(profile, company_clean, job_title,
+                                  job_id, candidate_data)
+    role_dir = paths["role_dir"]
+    role_dir.mkdir(parents=True, exist_ok=True)
+    (role_dir / "resume").mkdir(parents=True, exist_ok=True)
+    (role_dir / "cover_letters").mkdir(parents=True, exist_ok=True)
+    from CompanySiteApply.utils.application_docs import profile_stem
+    stem = profile_stem(candidate_data, profile)
+    # Cover: rename whatever Stage 4 produced to the FIXED name.
+    try:
+        if cover_pdf_path and Path(cover_pdf_path).is_file():
+            copy_into_role(role_dir, stem, None, cover_pdf_path)
+    except OSError as e:
+        logger.warning(f"[Stage 4] Archive cover note: {e}")
+    # Resume: explicit path wins, else sibling of source_dir.
+    try:
+        res_src = resume_pdf_path
+        if not res_src:
+            for cand_name in (f"{stem}_Resume.pdf", "Udaysagar_Kandpal_Resume.pdf"):
+                cand_p = Path(source_dir) / cand_name
+                if cand_p.is_file():
+                    res_src = str(cand_p)
+                    break
+        if res_src and Path(res_src).is_file():
+            copy_into_role(role_dir, stem, res_src, None)
+    except OSError as e:
+        logger.warning(f"[Stage 4] Archive resume note: {e}")
+    for name in ("Cover_Letter.txt", "Cover_Letter.html"):
+        src = Path(source_dir) / name
+        try:
+            if src.exists() and src.is_file():
+                (role_dir / name).write_bytes(src.read_bytes())
+        except OSError as e:
+            logger.warning(f"[Stage 4] Archive copy note ({name}): {e}")
+    return str(role_dir)
+
+
 class AutonomousJobAgent:
     """
     Antigravity 2.0 Master Autonomous Career Agent.
@@ -74,20 +139,24 @@ class AutonomousJobAgent:
             cand = self.candidate_data.get("candidate", self.candidate_data)
             self.profile_slug = cand.get("full_name", "candidate").lower().replace(" ", "_")
         else:
+            from CompanySiteApply.utils.runtime_paths import resolve_profile_dir
+
             profile = profile_name or os.environ.get("CANDIDATE_PROFILE", "default_user")
-            cfg_path = REPO_ROOT / "profiles" / profile / "candidate_config.json"
+            cfg_path = resolve_profile_dir(profile) / "candidate_config.json"
             if not cfg_path.exists():
                 cfg_path = REPO_ROOT / "profiles" / "default_user" / "candidate_config.json"
-            
+
             logger.info(f"[Stage 1] Loading candidate configuration from: {cfg_path}")
             self.candidate_data = json.loads(cfg_path.read_text(encoding="utf-8"))
             self.profile_slug = profile
 
         # Initialize Cognitive Matcher
         self.matcher = CognitiveJobMatcher(self.candidate_data)
-        
-        # Resolve candidate ledger path
-        output_dir = REPO_ROOT / "profiles" / self.profile_slug / "output"
+
+        # Resolve candidate ledger path (Operations sandbox, repo fallback)
+        from CompanySiteApply.utils.runtime_paths import resolve_profile_dir as _rpd
+
+        output_dir = _rpd(self.profile_slug) / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
         self.ledger_path = output_dir / "processed_ledger.json"
 
@@ -226,17 +295,86 @@ class AutonomousJobAgent:
     # =========================================================================
     def stage_4_tailor_documents(self, target_job: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Stage 4: Generates a role-specific, tailored cover letter matching the target job.
+        Stage 4: Generates role-specific docs directly into the structured
+        APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<id>/ folder with FIXED
+        names <Stem>_Resume.pdf / <Stem>_Cover_Letter.pdf (plus resume/ and
+        cover_letters/ subfolders). Base inputs come from
+        company_site_apply/<Slug>/resumes|cover_letters.
         """
-        job_id = target_job.get("job_id", "")
-        job_title = target_job.get("title", "")
-        company = target_job.get("details", {}).get("company", "")
-        logger.info(f"[AutonomousJobAgent] === STAGE 4: Tailoring Documents for Role: {job_title} (ID: {job_id}) ===")
+        job_id = str(target_job.get("job_id", "") or "").strip()
+        job_title = str(target_job.get("title", "") or "").strip()
+        from CompanySiteApply.utils.application_docs import (
+            application_doc_paths,
+            copy_into_role,
+            profile_slug_of,
+            profile_stem,
+            resolve_company_name,
+            resolve_master_resume,
+        )
+        det = target_job.get("details", {}) if isinstance(
+            target_job.get("details"), dict) else {}
+        python_proposal = resolve_company_name(
+            target_job, self.candidate_data, "",
+            default_company=getattr(getattr(self, "scraper", None),
+                                    "company_name", ""))
+        cand = self.candidate_data.get("candidate", self.candidate_data) \
+            if isinstance(self.candidate_data, dict) else {}
+        company_hints = [v for v in (
+            (self.candidate_data.get("company_name")
+             if isinstance(self.candidate_data, dict) else None),
+            (self.candidate_data.get("target_company")
+             if isinstance(self.candidate_data, dict) else None),
+            ((cand.get("company_name") or cand.get("target_company"))
+             if isinstance(cand, dict) else None)) if v and str(v).strip()]
 
-        # Resolve target document directory
-        roots = resolve_search_roots(self.candidate_data)
-        target_dir = Path(roots[0]) if roots else (REPO_ROOT / "profiles" / self.profile_slug / "company_site_apply")
-        target_dir.mkdir(parents=True, exist_ok=True)
+        # AG-Brain-owned recipient verdict (Python evidence is a proposal;
+        # the brain arbitrates and its refusal is final).
+        from CompanySiteApply.ai_brain_resolver import AIBrainResolver
+        brain = AIBrainResolver.get_instance(
+            self.candidate_data,
+            {"job_id": job_id, "job_title": job_title})
+        verdict = brain.resolve_recipient_header({
+            "job_id": job_id,
+            "job_title": job_title,
+            "stamped_company": det.get("company") or det.get("company_name") or "",
+            "page_url": target_job.get("url") or det.get("url") or "",
+            "portal_default_company": getattr(
+                getattr(self, "scraper", None), "company_name", ""),
+            "candidate_company_hints": company_hints,
+            "dom_location": "",
+            "requisition_location": str(
+                target_job.get("location") or det.get("location") or ""),
+            "explicit_team": str(det.get("team") or ""),
+            "workspace_provisioned": True,
+        })
+        _ = python_proposal  # proposal logged inside the verdict evidence
+        if not verdict.get("success"):
+            logger.error(f"[Stage 4] Recipient header refused by AG Brain: "
+                         f"{verdict.get('error')}")
+            return {"success": False,
+                    "error": f"ACTION_REQUIRED: {verdict.get('error')}"}
+        company = verdict["company"]
+        team = verdict["hiring_team"]
+        job_city = verdict["location"]
+        profile = profile_slug_of(self.candidate_data, self.profile_slug or "default_user")
+        logger.info(f"[AutonomousJobAgent] === STAGE 4: Tailoring Documents for Role: {job_title} (ID: {job_id}) ===")
+        logger.info(f"[Stage 4] Structured output: profile={profile} company={company}")
+
+        # Ensure per-company input workspace exists (resumes/ + cover_letters/).
+        try:
+            from CompanySiteApply.utils.company_workspace import ensure_company_workspace
+            if company:
+                ensure_company_workspace(self.candidate_data, company)
+        except Exception as e:
+            logger.debug(f"[Stage 4] Workspace ensure note: {e}")
+
+        paths = application_doc_paths(profile, company, job_title, job_id,
+                                      self.candidate_data)
+        role_dir = paths["role_dir"]
+        role_dir.mkdir(parents=True, exist_ok=True)
+        (role_dir / "resume").mkdir(parents=True, exist_ok=True)
+        (role_dir / "cover_letters").mkdir(parents=True, exist_ok=True)
+        stem = profile_stem(self.candidate_data, profile)
 
         jd_data = {
             "job_id": job_id,
@@ -244,23 +382,50 @@ class AutonomousJobAgent:
             "job_title": job_title,
             "company": company,
             "organization": company,
-            "location": target_job.get("location", ""),
+            "team": team,
+            "location": job_city or str(target_job.get("location", "")),
             "full_text": target_job.get("details", {}).get("full_text", "")
         }
 
         try:
             from CompanySiteApply.utils.sync_bridge import call_sync_offloaded
 
+            # Generate into a temp scratch inside role_dir, then rename to FIXED.
+            # generate_tailored_cover_letter writes Cover_Letter.txt/html beside
+            # the PDF, so targeting role_dir keeps companions role-specific.
             def _generate() -> str:
-                return generate_tailored_cover_letter(self.candidate_data, jd_data, str(target_dir))
+                return generate_tailored_cover_letter(
+                    self.candidate_data, jd_data, str(role_dir),
+                    pdf_filename=f"__tmp_{job_id}.pdf")
 
-            pdf_path = call_sync_offloaded(_generate)
-            logger.info(f"[Stage 4] Freshly tailored cover letter generated at: {pdf_path}")
+            tmp_pdf = call_sync_offloaded(_generate)
+            logger.info(f"[Stage 4] Freshly tailored cover letter generated at: {tmp_pdf}")
+            fixed = copy_into_role(role_dir, stem, None, tmp_pdf)
+            try:
+                Path(tmp_pdf).unlink(missing_ok=True)
+            except Exception:
+                pass
+            cover_fixed = fixed.get("cover_pdf", str(paths["cover_pdf"]))
+
+            # Resume: copy master (company resumes/ first) with FIXED name.
+            resume_master = resolve_master_resume(self.candidate_data, company)
+            resume_fixed = ""
+            if resume_master:
+                fixed_r = copy_into_role(role_dir, stem, resume_master, None)
+                resume_fixed = fixed_r.get("resume_pdf", "")
+                logger.info(f"[Stage 4] Master resume staged at: {resume_fixed}")
+            else:
+                logger.warning("[Stage 4] No master resume PDF found — upload will defer.")
+
+            archived = str(role_dir)
             return {
                 "success": True,
-                "cover_letter_pdf": pdf_path,
-                "target_dir": str(target_dir),
-                "job_id": job_id
+                "cover_letter_pdf": cover_fixed,
+                "resume_pdf": resume_fixed,
+                "target_dir": str(role_dir),
+                "applied_dir": archived,
+                "job_id": job_id,
+                "company": company,
             }
         except Exception as e:
             logger.error(f"[Stage 4] Failed to generate tailored cover letter: {e}")
@@ -303,7 +468,9 @@ class AutonomousJobAgent:
 
         # Execute ApplyOrchestrator across Sections 1 -> 2 -> 3 -> 4.
         # Orchestrator is sync Playwright: bridge offloads inside a loop.
-        screenshot_path = screenshot_dir or (REPO_ROOT / "artifacts")
+        from CompanySiteApply.utils.runtime_paths import artifacts_dir as _artifacts_dir2
+
+        screenshot_path = screenshot_dir or _artifacts_dir2()
         from CompanySiteApply.utils.sync_bridge import call_sync_offloaded
         app_result = call_sync_offloaded(
             self.orchestrator.run, self.candidate_data, screenshot_dir=screenshot_path
@@ -328,8 +495,10 @@ class AutonomousJobAgent:
         job_id = target_job.get("job_id", "")
         title = target_job.get("title", "")
         
-        # Capture high-res proof screenshot
-        proof_dir = screenshot_dir or (REPO_ROOT / "artifacts")
+        # Capture high-res proof screenshot (Operations artifacts)
+        from CompanySiteApply.utils.runtime_paths import artifacts_dir as _artifacts_dir
+
+        proof_dir = screenshot_dir or _artifacts_dir()
         proof_dir.mkdir(parents=True, exist_ok=True)
         timestamp = int(time.time())
         proof_file = proof_dir / f"final_review_ready_{job_id}_{timestamp}.png"

@@ -275,8 +275,9 @@ class ApplyOrchestrator:
         """
         try:
             import json as _json
+            from CompanySiteApply.utils.runtime_paths import artifacts_dir as _adir
 
-            target = screenshot_dir or Path("artifacts")
+            target = screenshot_dir or _adir()
             target.mkdir(parents=True, exist_ok=True)
             safe_status = str(result.get("status", "unknown")).replace(" ", "_")
             path = target / f"run_transcript_{safe_status}_{int(time.time())}.json"

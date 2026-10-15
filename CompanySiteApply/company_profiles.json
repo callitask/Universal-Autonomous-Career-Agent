@@ -1,0 +1,62 @@
+{
+  "_comment": "Company framing profiles for CompanySiteApply documents. slug: {type, cover_tone}. type=service uses the flat generic base (consulting tone fits); anything else uses the per-company workspace. Keep this file small — unlisted companies default to company-workspace behavior.",
+  "companies": {
+    "JPMorganChase": {
+      "type": "product",
+      "cover_tone": "platform ownership at banking scale; resilience, auditability, and regulatory trust"
+    },
+    "GoldmanSachs": {
+      "type": "product",
+      "cover_tone": "platform ownership at banking scale; low-latency engineering and risk rigor"
+    },
+    "Microsoft": {
+      "type": "product",
+      "cover_tone": "platform ownership at global scale; developer velocity and cloud-native depth"
+    },
+    "Amazon": {
+      "type": "product",
+      "cover_tone": "ownership and operational excellence; customer-obsessed large-scale systems"
+    },
+    "Google": {
+      "type": "product",
+      "cover_tone": "engineering excellence at planetary scale; simplicity and reliability"
+    },
+    "Apple": {
+      "type": "product",
+      "cover_tone": "craft and quality bar; privacy-aware systems engineering"
+    },
+    "Amex": {
+      "type": "product",
+      "cover_tone": "platform ownership in payments; availability and financial trust"
+    },
+    "Barclays": {
+      "type": "product",
+      "cover_tone": "platform ownership in banking; resilience and regulatory trust"
+    },
+    "Blackrock": {
+      "type": "product",
+      "cover_tone": "platform ownership in asset technology; data scale and correctness"
+    },
+    "HPE": {
+      "type": "product",
+      "cover_tone": "enterprise platform engineering; hybrid-cloud depth"
+    },
+    "TCS": {"type": "service"},
+    "TataConsultancyServices": {"type": "service"},
+    "Infosys": {"type": "service"},
+    "InfosysLimited": {"type": "service"},
+    "Cognizant": {"type": "service"},
+    "CognizantTechnologySolutions": {"type": "service"},
+    "Wipro": {"type": "service"},
+    "WiproLimited": {"type": "service"},
+    "HCLTech": {"type": "service"},
+    "HCLTechnologies": {"type": "service"},
+    "TechMahindra": {"type": "service"},
+    "Accenture": {"type": "service"},
+    "Capgemini": {"type": "service"},
+    "CapgeminiEngineering": {"type": "service"},
+    "Bristlecone": {"type": "service"},
+    "Coforge": {"type": "service"},
+    "NIITTechnologies": {"type": "service"}
+  }
+}

@@ -52,7 +52,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── 03_profile_sync_linkedin.py    # LinkedIn profile updater
 │   ├── 04_job_discovery.py            # Batched discovery orchestrator, SRP scraper & match score extractor
 │   ├── 05_apply_jobs.py               # DOM interaction, chatbot solver & Easy Apply handler
-│   ├── generate_factual_tailored.py   # Markdown-to-PDF ATS compiler
+│   ├── generate_professional_cover_letter.py # Cover letter PDF + Job-ID/title verification
 │   ├── ai_client.py                   # Dual-engine brain (API: Gemini+Colab / Integrity 2.0: AG IPC)
 │   ├── ai_rate_manager.py               # SmartRateManager (3.5s floor, 120s model ban)
 │   ├── ipc_watcher.py                 # File-based IPC signal relay daemon (Daemon 2)
@@ -76,15 +76,15 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── autonomous_job_agent.py        # 6-stage lifecycle: comprehend → search → rank → tailor → apply → gate
 │   ├── ats_arm.py                     # ATS orchestrator arm
 │   ├── ats_detector.py                # Portal platform detection engine
-│   ├── section_agents/                # Section coordinators + discrete IPC actuator scripts/ (9 files)
+│   ├── section_agents/                # Coordinators (5) + scripts/ (9 discrete actuators) + sub_agents/ (12)
 │   ├── ipc/                           # Section IPC bus (ipc_manager.py; runtime section_question.json)
-│   ├── tests/                         # Regression suite (97 tests)
+│   ├── tests/                         # Regression suite (150 tests)
 │   ├── fingers/                       # Platform adapters: Oracle Cloud HCM, Workday, Greenhouse, generic
 │   ├── nails/oracle/                  # Company overrides: JPMC, Bristlecone (on top of Oracle finger)
 │   ├── CompanyScraper/                # Direct career-site scrapers (JPMorgan example) + cli_scraper.py
 │   ├── parser_doctor/                 # ATS resume parsing healing and review verification
 │   ├── anatomy/                       # Portal anatomy models (Oracle Cloud profile/timeline)
-│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver, experience_matcher
+│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver, experience_matcher, match_report, sync_bridge, question_hygiene, company_workspace, runtime_paths, application_docs
 ├── run_universal_apply.py             # Canonical entry: active-tab apply + --autonomous lifecycle
 ├── search_and_evaluate_jpmc_jobs.py   # Canonical entry: search → evaluate → rank (+ optional --apply)
 ├── scripts/                           # Operational and maintenance utilities
@@ -94,11 +94,15 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
 │   └── legacy_company_apply/          # Archived one-off scripts (forensic reference only, never run)
 ├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)
-├── docs/                              # Technical blueprints, DOM catalogs & rules
+├── docs/                              # Authoritative documentation & blueprints (16 files)
 │   ├── WORKSPACE_RULES.md             # 10 directives & 46 bug prevention guardrails (36 C, 6 H, 3 D, 1 P)
 │   ├── ARCHITECTURE_REFERENCE.md      # Full architecture, DOM schemas & IPC contracts
+│   ├── SECTION_IPC_ARCHITECTURE.md     # Company-site section IPC spec + hard gates
+│   ├── COMPANY_ATS_KNOWLEDGE.md / ORACLE_HCM_ATS_DEEP_DIVE.md / COMPANY_PORTAL_PAGELOOP_PROTOCOL.md
 │   ├── REFERENCE_DEPLOYMENT_GUIDE.md  # 5-minute candidate onboarding & verification guide
 │   └── GEMINI_WEB_AI_PROMPTS.md       # Onboarding prompts for Gemini Web AI
+│   (+ PLATFORM_KNOWLEDGE, STRATEGIC_RESUME_TAILORING, QUERY_GUIDE, KNOWLEDGE_GRAPH_CHANGELOG,
+│    DEPRECATED_SYSTEMS_CHANGELOG, ADVANCED_…_PROMPT, AGENT_HANDOFF_…_PROMPT, UNIVERSAL_ATS_…_PLAYBOOK)
 └── profiles/                          # .gitignored candidate sandboxes (default_user schema exemplar)
 ```
 

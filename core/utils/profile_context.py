@@ -145,6 +145,28 @@ from typing import Dict, Any, Optional, Union, Tuple, List
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def _default_base() -> Path:
+    """Operations data root when it holds live profiles, else repo root.
+
+    Fallback-only: behavior is identical until the Operations tree exists.
+    """
+    import os
+
+    try:
+        env = os.environ.get("JOB_AGENT_OPERATIONS")
+        if env and Path(env).is_dir():
+            return Path(env)
+        ops = PROJECT_ROOT.parent / f"Operations {PROJECT_ROOT.name}"
+        profs = ops / "profiles"
+        if profs.is_dir() and any(
+            p.is_dir() and p.name != "default_user" for p in profs.iterdir()
+        ):
+            return ops
+    except Exception:
+        pass
+    return PROJECT_ROOT
+
+
 def canonical_job_url(url: str) -> str:
     """
     Normalizes job URLs by stripping query parameters, session IDs (e.g. ?src=...&sid=...),
@@ -328,7 +350,7 @@ class ProfileContext:
         profile_path: Optional[Union[str, Path]] = None,
         base_path: Optional[Union[str, Path]] = None
     ):
-        self.base_path = Path(base_path).resolve() if base_path else PROJECT_ROOT
+        self.base_path = Path(base_path).resolve() if base_path else _default_base()
         
         # 1. Resolve Profile Directory Path
         (self.base_path / "profiles").mkdir(parents=True, exist_ok=True)

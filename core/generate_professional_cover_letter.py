@@ -313,7 +313,8 @@ def generate_tailored_cover_letter(
     candidate_data: dict,
     jd_data: dict,
     target_dir: str,
-    ai_client: Any = None
+    ai_client: Any = None,
+    pdf_filename: Optional[str] = None,
 ) -> str:
     """
     Dynamically generates an executive, professional single-page cover letter
@@ -331,12 +332,27 @@ def generate_tailored_cover_letter(
     
     job_title = str(jd_data.get("title") or jd_data.get("job_title") or "Software Engineer").strip()
     job_id = str(jd_data.get("job_id") or jd_data.get("req_id") or "").strip()
-    company = str(jd_data.get("company") or jd_data.get("company_name") or "Hiring Organization").strip()
+    company = str(jd_data.get("company") or jd_data.get("company_name") or "").strip()
+    if not company or company.lower() in (
+        "hiring organization", "hiring organisation", "unknown", "company",
+    ):
+        # Incident 210791831: the default "Hiring Organization" rendered as a
+        # plausible-but-wrong recipient block (team, organization, body copy)
+        # and shipped. A tailored letter without a real company is
+        # mistailored — refuse loudly so callers defer instead of uploading.
+        raise ValueError(
+            "company unknown — refusing to render placeholder recipient block")
     team = str(jd_data.get("team") or f"{company} Engineering Team").strip()
+    # Recipient address is the REQUISITION location, never the candidate's.
+    job_loc = str(jd_data.get("location") or jd_data.get("job_location") or "").strip()
+    org_loc = job_loc or loc
     
     today_str = date.today().strftime("%B %d, %Y")
-    clean_name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
-    pdf_filename = f"{clean_name}_Cover_Letter.pdf"
+    if not pdf_filename:
+        clean_name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+        # Per-requisition filename so letters never overwrite each other.
+        clean_jid = re.sub(r'[^a-zA-Z0-9_]', '_', job_id) if job_id else ""
+        pdf_filename = f"{clean_name}_Cover_Letter_{clean_jid}.pdf" if clean_jid else f"{clean_name}_Cover_Letter.pdf"
     
     # Generate content via AIClient if available, otherwise synthesize from config
     opening_p = (
@@ -372,6 +388,13 @@ def generate_tailored_cover_letter(
         f"but fundamentally auditable, secure, and fault-tolerant. My empirical background in designing distributed backend microservices, "
         f"optimizing asynchronous messaging, and leading enterprise engineering teams directly equips me to deliver immediate value."
     )
+    try:
+        from CompanySiteApply.utils.company_workspace import company_cover_tone
+        _tone = company_cover_tone(company)
+    except Exception:
+        _tone = ""
+    if _tone:
+        synthesis_p += f" I am drawn to this role by {_tone}."
     closing_p = f"I welcome the opportunity to discuss how my technical leadership, distributed backend expertise, and passion for engineering quality can contribute to the mission of {company}. Thank you for your time and consideration."
     
     return generate_cover_letter_pdf(
@@ -384,7 +407,7 @@ def generate_tailored_cover_letter(
         date_str=today_str,
         hiring_team=team,
         organization=company,
-        org_location=loc,
+        org_location=org_loc,
         job_title=job_title,
         job_id=job_id,
         opening_p=opening_p,

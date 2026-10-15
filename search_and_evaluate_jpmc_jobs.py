@@ -49,8 +49,9 @@ async def main():
         
         # Save results to the candidate sandbox (never the repo root)
         from CompanySiteApply.utils.match_report import save_match_report
+        from CompanySiteApply.utils.runtime_paths import resolve_profile_dir
         out_file = save_match_report(
-            REPO_ROOT / "profiles" / agent.profile_slug / "output", ranked_jobs
+            resolve_profile_dir(agent.profile_slug) / "output", ranked_jobs
         )
         print(f"\nSaved match report to: {out_file}")
 

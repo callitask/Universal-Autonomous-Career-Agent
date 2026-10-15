@@ -178,6 +178,11 @@ class JPMorganScraper(BaseCompanyScraper):
         }""", selectors)
 
         self.scraped_jobs = job_tiles_data
+        # Stamp the portal company at the source (incident 210791831: tiles
+        # carried no company, so Stage 4/6 defaulted to "" -> placeholders).
+        for _tile in self.scraped_jobs:
+            if isinstance(_tile, dict) and not str(_tile.get("company") or "").strip():
+                _tile["company"] = self.company_name
         print(f"[{self.company_name}] Extracted {len(self.scraped_jobs)} job tiles.")
         return self.scraped_jobs
 
@@ -232,5 +237,6 @@ class JPMorganScraper(BaseCompanyScraper):
             };
         }""", selectors)
 
+        details["company"] = self.company_name
         return details
 

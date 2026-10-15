@@ -19,11 +19,12 @@ if str(ROOT) not in sys.path:
 
 from CompanySiteApply.apply_orchestrator import ApplyOrchestrator
 from CompanySiteApply.autonomous_job_agent import AutonomousJobAgent
+from CompanySiteApply.utils.runtime_paths import artifacts_dir as _artifacts_dir
 
 
 def run_active_page_apply(args, candidate_data, cdp_endpoint):
     orchestrator = ApplyOrchestrator(cdp_url=cdp_endpoint)
-    artifacts_dir = ROOT / "artifacts"
+    artifacts_dir = _artifacts_dir()
     
     print(f"[Universal Apply Runner] Connecting to CDP at {cdp_endpoint} (Active Tab Apply Mode)...")
     result = orchestrator.run(candidate_data, screenshot_dir=artifacts_dir)
@@ -58,7 +59,8 @@ async def run_autonomous_lifecycle(args, candidate_data, cdp_endpoint):
 
         # Save match results into the candidate's sandbox (never the repo root)
         from CompanySiteApply.utils.match_report import save_match_report
-        out_file = save_match_report(ROOT / "profiles" / agent.profile_slug / "output", ranked_jobs)
+        from CompanySiteApply.utils.runtime_paths import resolve_profile_dir
+        out_file = save_match_report(resolve_profile_dir(agent.profile_slug) / "output", ranked_jobs)
         print(f"[Universal Apply Runner] Saved job match report to {out_file}")
 
         best_job = ranked_jobs[0]
@@ -74,10 +76,10 @@ async def run_autonomous_lifecycle(args, candidate_data, cdp_endpoint):
 
         # Stage 5: Section Mini-Agent Dispatch & Form Application
         print(f"\n[Universal Apply Runner] Applying to Job {best_job['job_id']}...")
-        app_res = await agent.stage_5_apply_form(page, best_job, screenshot_dir=ROOT / "artifacts")
+        app_res = await agent.stage_5_apply_form(page, best_job, screenshot_dir=_artifacts_dir())
 
         # Stage 6: Visual Audit, Human Submission Gate & Ledger Persistence
-        gate_res = await agent.stage_6_verify_and_gate(page, best_job, app_res, screenshot_dir=ROOT / "artifacts")
+        gate_res = await agent.stage_6_verify_and_gate(page, best_job, app_res, screenshot_dir=_artifacts_dir())
         print("\n[Human Submission Gate Report]:")
         print(json.dumps(gate_res, indent=2))
         return gate_res
@@ -94,7 +96,14 @@ def main():
     parser.add_argument("--max-eval", type=int, default=5, help="Max jobs to inspect in autonomous mode")
     args = parser.parse_args()
 
-    cfg_path = Path(args.config) if args.config else (ROOT / "profiles" / args.profile / "candidate_config.json")
+    cfg_path = Path(args.config) if args.config else None
+    if cfg_path is None:
+        from CompanySiteApply.utils.runtime_paths import resolve_profile_dir
+        ops_cfg = resolve_profile_dir(args.profile) / "candidate_config.json"
+        if ops_cfg.exists():
+            cfg_path = ops_cfg
+        else:
+            cfg_path = ROOT / "profiles" / args.profile / "candidate_config.json"
     if not cfg_path.exists():
         cfg_path = ROOT / "profiles" / "default_user" / "candidate_config.json"
 

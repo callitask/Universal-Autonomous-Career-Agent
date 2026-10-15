@@ -1,8 +1,10 @@
 # UNIVERSAL DEPLOYMENT GUIDE
 **System:** Anti-Gravity Autonomous Career Operations Engine  
 **Architecture:** Variable-Driven, Candidate-Agnostic, Multi-Profile, Batch Architecture v2.0  
-**Document Version:** 4.0 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC & C24-C34 Guardrails  
-**Last Updated:** 2026-09-21
+**Document Version:** 4.1 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC, C24-C34 Guardrails & 2026-10-14 Structured-Layout Contract
+**Last Updated:** 2026-10-14
+
+> Operations layout (2026-10-14): live data (profiles, artifacts, inspections, ipc, logs) lives under `F:\Operations JOB AI AGENT\` (env-overridable via `JOB_AGENT_OPERATIONS`); the repo keeps code + the `default_user` blueprint only. Credentials (`gemini_credentials.json` / `colab_credentials.json`) are gitignored with `engine_enabled=false`. CompanySiteApply document contract — inputs `profiles/<slug>/company_site_apply/<Slug>/resumes|cover_letters`, outputs `profiles/<slug>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/`/`cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes, profile-agnostic, uploaders exact-path-first). Suite: 150 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests.
 
 ---
 

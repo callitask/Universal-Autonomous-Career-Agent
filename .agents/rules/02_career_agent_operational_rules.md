@@ -12,7 +12,7 @@ These rules are loaded automatically at every session start and before every pro
    - F:\JOB AI AGENT\docs\ARCHITECTURE_REFERENCE.md (Module anatomy, IPC contracts, data schemas)
    - F:\JOB AI AGENT\docs\PLATFORM_KNOWLEDGE.md (Naukri/LinkedIn DOM patterns, SEO slugs, zero-comma rules)
 2. **Universal Compliance**:
-   This requirement applies regardless of whether the user asks to read the docs or not. It guarantees that all workspace restrictions, known bug guardrails (P1, C1-C34, H1-H6, D1-D3), and environment boundaries are strictly respected at all times.
+   This requirement applies regardless of whether the user asks to read the docs or not. It guarantees that all workspace restrictions, known bug guardrails (P1, C1-C37, H1-H6, D1-D3), and environment boundaries are strictly respected at all times.
 3. **No Assumptions**:
    Never guess portal selectors, method signatures, or data structures. Ground all decisions in the verified documentation and live DOM inspection.
 
@@ -21,15 +21,18 @@ These rules are loaded automatically at every session start and before every pro
 ## RULE 2: DYNAMIC PROFILE SANDBOX BOUNDARIES & DEVELOPER ROLE
 
 1. **profiles/ Directory Purpose**:
-   F:\JOB AI AGENT\profiles is the **dynamic runtime data sandbox** for the Universal Autonomous Career Agent.
+   F:\JOB AI AGENT\profiles is the **dynamic runtime data sandbox** for the Universal Autonomous Career Agent. Live sandboxes resolve under the Operations root (`F:\Operations JOB AI AGENT\profiles\`, env-overridable via `JOB_AGENT_OPERATIONS`, repo fallback for the `default_user` blueprint only).
    - It contains candidate-specific inputs (candidate_config.json, resume.md) and runtime generated outputs.
    - Specifically, the output/ subfolder inside each candidate profile (profiles/<profile_name>/output/) is where the agent dynamically stores large, volatile runtime artifacts:
      * processed_ledger.json (1,000+ deduplication entries)
      * applications_tracker.csv (audit log of applications)
      * search_manifest.json & saved_external_jobs.json
-     * applications/ (per-job tailored resumes, PDFs, and scraped Job_Description.md)
+     * applications/ (Naukri flow: per-job tailored resumes, PDFs, and scraped Job_Description.md)
      * logs/ (terminal logs and screenshot diagnostics)
      * cognitive_profile.json (runtime synthesized domain taxonomy)
+   - CompanySiteApply flow (2026-10-14 structured-layout contract, profile-agnostic — any new slug, same flow):
+     * inputs: `company_site_apply/<Slug>/resumes|cover_letters` (+ `resume.md`, `cover_letters/BASE.md`)
+     * outputs: `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/` + `cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes; uploaders try the exact role path first)
 2. **Developer Separation of Concerns**:
    - The engine code lives in core/, docs/, and scripts/.
    - **Scanning or modifying profiles/ has nothing to do with developing, upgrading, or editing the agent code.**
