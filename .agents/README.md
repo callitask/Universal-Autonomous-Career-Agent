@@ -60,7 +60,7 @@ Live runtime data lives under the Operations root (`F:\Operations JOB AI AGENT\`
 - `search_state.json` — Active designation rotation state
 - `cognitive_profile.json` — Starvation tracking
 - `profiles/$TARGET_PROFILE/company_site_apply/<Slug>/` (root `README.md`-only + `resumes/BASE.md` + `cover_letters/BASE.md`) — CompanySiteApply per-company inputs (profile-agnostic)
-- `profiles/$TARGET_PROFILE/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` — CompanySiteApply per-application outputs with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/`/`cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes; uploaders try the exact role path first)
+- `profiles/$TARGET_PROFILE/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` — CompanySiteApply per-application outputs with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/`/`cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes; uploaders remove-if-filled + upload + verify exact role path)
 - Regression suite: 164 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests.
 
 **Step 3 — Verify Chrome remote debugging is active on port 9222:**

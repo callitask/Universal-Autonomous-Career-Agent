@@ -13,7 +13,7 @@ class TestAutonomousJobAgent(unittest.TestCase):
     def setUp(self):
         self.tech_candidate = {
             "candidate": {
-                "full_name": "Udaysagar Kandpal",
+                "full_name": "Alex Rivera",
                 "current_title": "Lead Software Engineer",
                 "total_experience_years": 10.5,
                 "location": "Bengaluru",
@@ -50,7 +50,7 @@ class TestAutonomousJobAgent(unittest.TestCase):
     def test_stage_1_comprehend_profile_zero_hardcoding(self):
         agent = AutonomousJobAgent()
         summary_tech = agent.stage_1_comprehend_profile(candidate_config=self.tech_candidate)
-        self.assertEqual(summary_tech["candidate_name"], "Udaysagar Kandpal")
+        self.assertEqual(summary_tech["candidate_name"], "Alex Rivera")
         self.assertEqual(summary_tech["experience_years"], 10.5)
         self.assertIn("Java", agent.matcher.candidate_skills)
 

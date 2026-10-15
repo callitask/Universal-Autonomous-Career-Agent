@@ -8,6 +8,6 @@ Inputs — base documents the agent refactors per requisition at runtime (worksp
 
 Outputs — per-application role folders (profile-agnostic; any new slug, same flow):
 - `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with FIXED `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` (Stem = Title-Cased profile, e.g. `first_last` → `First_Last`), mirrored flat AND inside `resume/` + `cover_letters/` subfolders, plus role `Cover_Letter.txt`/`.html`
-- No job-id filename suffixes — requisitions coexist by folder, not by filename. Uploaders try the exact role path first (glob legacy fallback only).
+- No job-id filename suffixes — requisitions coexist by folder, not by filename. Uploaders never trust DOM draft filenames: remove-if-filled + upload + content/mtime verify on the exact role path (glob legacy fallback only).
 
 Blueprint only — never store live PII here. Live data resolves under `F:\Operations JOB AI AGENT\profiles\<slug>\`.

@@ -8,10 +8,10 @@ from CompanySiteApply.ai_brain_resolver import AIBrainResolver
 class TestAIBrainResolver(unittest.TestCase):
 
     def setUp(self):
-        # Sample candidate profile similar to Udaysagar Kandpal
+        # Sample synthetic tech candidate profile
         self.candidate_data = {
             "candidate": {
-                "full_name": "Udaysagar Kandpal",
+                "full_name": "Alex Rivera",
                 "current_title": "Lead Software Engineer - Java Full Stack",
                 "total_experience_years": 10.8,
                 "country": "India",
@@ -41,7 +41,7 @@ class TestAIBrainResolver(unittest.TestCase):
 
     def test_knowledge_index_extraction(self):
         idx = self.brain.knowledge_index
-        self.assertEqual(idx["candidate_name"], "Udaysagar Kandpal")
+        self.assertEqual(idx["candidate_name"], "Alex Rivera")
         self.assertAlmostEqual(idx["total_experience_years"], 10.8)
         self.assertIn("Java", idx["programming_languages"])
         self.assertIn("SQL", idx["programming_languages"])
@@ -182,7 +182,7 @@ class TestRecipientHeaderArbitration(unittest.TestCase):
         from CompanySiteApply.ai_brain_resolver import AIBrainResolver
         AIBrainResolver._instance = None
         b = AIBrainResolver.get_instance(
-            {"candidate": {"full_name": "Udaysagar Kandpal"}})
+            {"candidate": {"full_name": "Alex Rivera"}})
         # Never pollute the live screening_answers.json from unit tests.
         b.output_json_path = _P(_tf.mkdtemp()) / "screening_answers.json"
         b.history = []

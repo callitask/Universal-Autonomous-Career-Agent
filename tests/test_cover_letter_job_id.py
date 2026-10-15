@@ -10,6 +10,16 @@
 # Changes Made: Pure-helper tests (no browser/PDF): empty parens are
 #               stripped; companion-txt verification gates regeneration.
 # Preventative Notes: Never render "(Job ID: )" with a blank ID again.
+#
+# [ENTRY #002]
+# Term: [TEST_FIXTURE_DEPII]
+# Timestamp: 2026-10-15 +05:30
+# Issue / Context: Test fixtures used the live candidate's real full_name,
+#                  which Guardrail P1 flags when purity runs against the live
+#                  profile (tests/*.py are now in scan scope).
+# Changes Made: Synthetic fixture identity ("Alex Rivera") everywhere.
+# Rationale: Tests must pass purity against default_user AND live profiles.
+# Preventative Notes: Never use real candidate names in test fixtures.
 # ==============================================================================
 
 import os
@@ -72,7 +82,7 @@ class TestCoverLetterJobId(unittest.TestCase):
         # Incident 210791831: "Hiring Organization" rendered as recipient
         # block and shipped. Missing/placeholder company must refuse loudly.
         from core.generate_professional_cover_letter import generate_tailored_cover_letter
-        cand = {"candidate": {"full_name": "Udaysagar Kandpal"}}
+        cand = {"candidate": {"full_name": "Alex Rivera"}}
         with tempfile.TemporaryDirectory() as d:
             for bad in ("", "Hiring Organization", "company", "Unknown"):
                 with self.assertRaises(ValueError, msg=f"company={bad!r} must refuse"):
@@ -87,7 +97,7 @@ class TestCoverLetterJobId(unittest.TestCase):
         # (Mumbai), never the candidate home address (Bengaluru).
         from unittest.mock import patch
         from core.generate_professional_cover_letter import generate_tailored_cover_letter
-        cand = {"candidate": {"full_name": "Udaysagar Kandpal",
+        cand = {"candidate": {"full_name": "Alex Rivera",
                               "location": "Bengaluru, Karnataka, India"}}
         jd = {"title": "Sr Manager of Software Engineering - Java, AWS, React",
               "job_id": "210791831",

@@ -33,7 +33,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 
 ## Key Features
 
-*   **Guardrail P1 (Codebase Purity Enforcer):** Automated runtime AST and token purity verification (`ctx.verify_codebase_purity()`) ensuring zero candidate PII or hardcoded values in `core/`.
+*   **Guardrail P1 (Codebase Purity Enforcer):** Automated runtime AST and token purity verification (`ctx.verify_codebase_purity()`) ensuring zero candidate PII or hardcoded values across root `*.py`, `core/`, `scripts/`, `CompanySiteApply/`, and `tests/`.
 *   **Dynamic Startup & Profile Auto-Discovery:** Automatic runtime profile discovery (making `--profile` optional) and pre-flight CDP port 9222 diagnostics before automation loops start.
 *   **Zero-Hardcoding Policy:** Complete separation of codebase and candidate data sandboxes (`profiles/`).
 *   **Platform Isolation:** Independent, decoupled execution environments for diverse job platforms (Naukri & LinkedIn).
@@ -94,7 +94,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles
 │   ├── reevaluate_ledger.py           # Ledger re-evaluation reset utility (utf-8-sig BOM safe)
 │   ├── test_colab_connection.py       # Colab gateway diagnostic (120s finite timeout)
-│   ├── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
+│   ├── phase_4_run.ps1                # 164 CompanySiteApply + 7 cover-letter tests -> build -> check -> 10 knowledge tests -> purity -> query gate
 │   └── legacy_company_apply/          # Archived one-off scripts (forensic reference only, never run)
 ├── tests/                               # Root regression suites (test_cover_letter_job_id.py [7], test_knowledge_index.py [10])
 ├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)

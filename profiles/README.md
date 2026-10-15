@@ -66,7 +66,7 @@ python core/02_profile_sync_naukri.py --profile profiles/<candidate_slug>
 ## Important Rules & Safeguards
 
 - **NEVER Manually Edit `output/applications/` or `APPLIED ON COMPANY WEBSITE/`**:
-  The `output/` directory and its `applications/` subfolder are automatically created and populated by the agent. They store generated application logs and tailored resumes. Never create, modify, or delete files inside `output/applications/` by hand. The same holds for `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` role folders (fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf`, no job-id filename suffixes) — uploaders resolve the exact role path first.
+  The `output/` directory and its `applications/` subfolder are automatically created and populated by the agent. They store generated application logs and tailored resumes. Never create, modify, or delete files inside `output/applications/` by hand. The same holds for `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` role folders (fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf`, no job-id filename suffixes) — uploaders never trust DOM draft filenames and execute remove-if-filled + upload + content/mtime verify on the exact role path (skipping upload as REVIEW_BLOCKED if Stage 4 failed).
 - **`default_user` Protection**:
   The core engine (`core/utils/profile_context.py`) automatically skips `default_user` when discovering candidates, guaranteeing that your starter blueprint remains untouched.
 - **Candidate Isolation**:

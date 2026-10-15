@@ -16,7 +16,7 @@ from CompanySiteApply.utils.application_docs import (
 
 class TestStructuredLayout(unittest.TestCase):
     def test_stem_title_case(self):
-        self.assertEqual(profile_stem({"candidate": {"full_name": "Udaysagar Kandpal"}}, "udaysagar_kandpal"),
+        self.assertEqual(profile_stem({"candidate": {"full_name": "Alex Rivera"}}, "udaysagar_kandpal"),
                          "Udaysagar_Kandpal")
         self.assertEqual(profile_stem({}, "udaysagar_kandpal"), "Udaysagar_Kandpal")
         self.assertEqual(profile_stem({"profile": "new_user_test"}, "new_user_test"),
@@ -79,7 +79,7 @@ class TestStructuredLayout(unittest.TestCase):
                 paths = ad.application_doc_paths("udaysagar_kandpal", "JPMorgan Chase & Co.",
                                                  "Sr Manager of Software Engineering - Java, AWS, React",
                                                  "210791831",
-                                                 {"candidate": {"full_name": "Udaysagar Kandpal"}})
+                                                 {"candidate": {"full_name": "Alex Rivera"}})
                 self.assertIn("210791831", str(paths["role_dir"]))
                 self.assertTrue(paths["cover_pdf"].name == "Udaysagar_Kandpal_Cover_Letter.pdf")
                 self.assertTrue(paths["resume_pdf"].name == "Udaysagar_Kandpal_Resume.pdf")

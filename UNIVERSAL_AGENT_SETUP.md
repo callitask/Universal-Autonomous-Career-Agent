@@ -97,9 +97,10 @@ F:\JOB AI AGENT\
 │   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles
 │   ├── reevaluate_ledger.py           # Ledger re-evaluation reset utility (utf-8-sig BOM safe)
 │   ├── test_colab_connection.py       # Colab gateway diagnostic (120s finite timeout)
-│   ├── phase_4_run.ps1                # Parser → build → check → knowledge → purity → query gate
+│   ├── phase_4_run.ps1                # 164 CompanySiteApply + 7 cover-letter tests -> build -> check -> 10 knowledge tests -> purity -> query gate
 │   └── legacy_company_apply/          # Archived one-off scripts (forensic reference only, never run)
 ├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)
+├── tests/                               # Root regression suites (test_cover_letter_job_id.py [7], test_knowledge_index.py [10])
 │
 ├── profiles/                             # Candidate profiles directory (Autonomous Sandboxes)
 │   └── default_user/                     # Master blueprint / schema exemplar
@@ -225,7 +226,7 @@ python core/continuous_career_agent.py --profile profiles/<candidate_name>
 ### Execution Cycle Walkthrough:
 1. **Startup & Purity Enforcer (`core/continuous_career_agent.py`):**
    - Conducts pre-flight CDP check on port 9222.
-   - Executes Guardrail P1 (`ctx.verify_codebase_purity()`) to guarantee zero candidate data is hardcoded in `core/`.
+   - Executes Guardrail P1 (`ctx.verify_codebase_purity()`) to guarantee zero candidate data is hardcoded across root `*.py`, `core/`, `scripts/`, `CompanySiteApply/`, and `tests/`.
 2. **Discovery (`core/04_job_discovery.py`):**
    - Scrapes fresh jobs using platform recency filters (`&jobAge=3` on Naukri, `&f_TPR=r259200` on LinkedIn) and dynamic URL parameters (`wfhType`, `companyJobs`).
    - Extracts complete SRP card metadata: Designation (`a.title`), Company (`a.comp-name`), Rating & Reviews (`a.rating`, `a.review`), Experience (`span.exp-wrap`), Salary (`span.sal-wrap`), Location (`span.loc-wrap`), Description snippet (`span.job-desc`), and Skill tags (`ul.tags-gt li`).

@@ -114,11 +114,22 @@ def run_active_page_apply(args, candidate_data, cdp_endpoint):
                         "[data-bind*='jobTitle' i]").first
                     if _t.count() > 0 and _t.is_visible():
                         _tj["title"] = _t.inner_text().strip()[:160]
+                        candidate_data.setdefault(
+                            "title", _tj["title"])
                 except Exception:
                     pass
-            if not candidate_data.get("company_name") and _url and (
-                    "jpmc" in _url.lower() or "chase" in _url.lower()):
-                candidate_data["company_name"] = "JPMorgan Chase & Co."
+            if "company_name" not in candidate_data and "company" not in candidate_data:
+                try:
+                    from CompanySiteApply.utils.application_docs import (
+                        resolve_company_name as _company_of,
+                    )
+                    _co = _company_of(candidate_data, candidate_data,
+                                      _url)
+                    if _co:
+                        candidate_data["company"] = _co
+                        candidate_data["company_name"] = _co
+                except Exception:
+                    pass
         finally:
             try:
                 _arm.disconnect()

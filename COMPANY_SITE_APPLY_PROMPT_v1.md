@@ -149,9 +149,9 @@ The agent executes the application pipeline in strict chronological order via [`
     - Grounded 100% in candidate profile via [`AIBrainResolver`](file:///f:/JOB%20AI%20AGENT/CompanySiteApply/ai_brain_resolver.py). Sync fast-path by default; external brains drive `answer_ipc_file()` against `wait_for_answers()`.
   - **Section 3 (Education & Experience):**
     - `EducationSubAgent` → `s3_education_tile.py`: Degree, Area of Study, Country — strictly profile-grounded, defers when truth is absent.
-    - `ExperienceSubAgent` → `s3_experience_tile.py` (per-tile `--tile-index N`, DOM re-queried every tile): Country, City, Internal=`No`, bulleted achievements. Falls back to `resume.md` via `utils/experience_matcher.py` when structured config is thin. Ordering enforced by `s3_experience_ordering.py` (numeric `YYYYMM`).
+    - `ExperienceSubAgent` → `s3_experience_tile.py` (per-tile `--tile-index N`, DOM re-queried every tile; healed tiles tracked by employer key so JET re-sorts can't skip/double-edit): Country, City, Internal=`No`, bulleted achievements. Falls back to company `resumes/BASE.md` then master `resume.md` via `utils/experience_matcher.py` when structured config is thin. Ordering enforced by `s3_experience_ordering.py` (numeric `YYYYMM`).
   - **Section 4 (Review, Documents & Diversity):**
-    - `DocumentsSubAgent` → independent `s4_resume_upload.py` / `s4_cover_letter_upload.py` (single delegation path, no duplicate actuation): stale cover → REMOVE → fresh tailored PDF; resume touched only when missing.
+    - `DocumentsSubAgent` → independent `s4_resume_upload.py` / `s4_cover_letter_upload.py` (single delegation path, no duplicate actuation; both accept `--job-id`): draft display names are never trusted; remove-if-filled + upload + verify on every run using session flags plus role-folder content verification for the active job_id (if Stage 4 failed, remove any stale draft cover letter, skip upload completely, and report REVIEW_BLOCKED).
     - `DiversitySubAgent`: Ethnicity, Gender, Military / Uniformed forces flexfields.
     - `SignatureSubAgent`: Full candidate legal name E-Signature.
 
@@ -209,7 +209,7 @@ When you receive an instruction to apply to company site jobs:
 4. **Inspect Proof:** View the generated Section 4 Review screenshot proof.
 5. **Halt & Prompt User:** Confirm all sections are complete, tailored cover letter is attached, Submit button is enabled, and prompt the user to review the open browser and click **SUBMIT**.
 6. **Attach Transcript:** Always include `artifacts/run_transcript_<status>_<ts>.json` and per-section proof filenames in the handover report.
-7. **Structured-Layout Mandate:** Stage 4 MUST generate directly into `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with FIXED `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` names (never flat-root files, never per-req filename suffixes, never literal `company`); uploaders MUST try the exact role path first (glob is legacy fallback only).
+7. **Structured-Layout Mandate:** Stage 4 MUST generate directly into `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with FIXED `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` names (never flat-root files, never per-req filename suffixes, never literal `company`); uploaders MUST remove-if-filled + upload + verify the exact role path (Job ID + title + PDF mtime) on every run (glob is legacy fallback only and is strictly disabled when Stage 4 tailoring fails).
 
 ================================================================================
 ## CONFIGURATION
