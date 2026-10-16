@@ -20,6 +20,17 @@
 #   no glob, no candidates[0], no renamed files.
 # Preventative Notes: Never reintroduce job_id-prefixed globs or per-req
 #   filename suffixes for upload. Fixed names only inside the role folder.
+#
+# [ENTRY #002]
+# Term: [BASE_MD_RESOLVER_REEXPORT]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: Base-markdown lookups lived only in company_workspace;
+#                  application_docs had no 3-tier entry point for Phase 3B.
+# Changes Made: Re-export resolve_base_resume_md / resolve_base_cover_letter_md
+#               from company_workspace (single contract, no logic duplicated).
+# Rationale: Stage 4 (Phase 3B) resolves base .md through application_docs;
+#            one import path prevents contract drift.
+# Preventative Notes: Never duplicate tier order here — import, don't copy.
 # ==============================================================================
 
 """Structured per-application document locations (profile-agnostic)."""
@@ -31,6 +42,28 @@ import re
 import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+
+# Canonical 3-tier base-markdown resolvers (single contract lives in
+# company_workspace; re-exported here for Stage 4 / Phase 3B consumers).
+from CompanySiteApply.utils.company_workspace import (
+    resolve_base_cover_letter_md,
+    resolve_base_resume_md,
+)
+
+__all__ = [
+    "profile_stem",
+    "profile_slug_of",
+    "resolve_company_name",
+    "resolve_job_location",
+    "application_dir",
+    "application_doc_paths",
+    "ensure_role_layout",
+    "mirror_fixed_files",
+    "resolve_master_resume",
+    "copy_into_role",
+    "resolve_base_resume_md",
+    "resolve_base_cover_letter_md",
+]
 
 
 def profile_stem(candidate_data: Optional[Dict[str, Any]] = None,

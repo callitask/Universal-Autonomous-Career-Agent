@@ -1,3 +1,6 @@
+# AI CONTEXT & CHANGE LOG
+# 2026-10-16: Fix Guardrail P1 purity violation by replacing hardcoded profile token with argparse/env fallback.
+import argparse
 import time
 import re
 import os
@@ -66,7 +69,10 @@ def match_experience(emp_name, exps):
     return None
 
 def main():
-    resume_path = r"profiles/udaysagar_kandpal/company_site_apply/resume.md"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--resume", default=os.path.join(os.environ.get("JOB_AGENT_PROFILE_DIR", "profiles/default_user"), "company_site_apply", "resume.md"))
+    args = parser.parse_args()
+    resume_path = args.resume
     exps = parse_resume(resume_path)
     print(f"Loaded {len(exps)} experiences from {resume_path}")
 
