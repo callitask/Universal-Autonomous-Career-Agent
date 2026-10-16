@@ -132,6 +132,20 @@
 # Rationale: Launchers carry CLI defaults — the highest-risk hardcoding site.
 # Preventative Notes: When adding new entry-point scripts at repo root, no
 #   scanner change is needed (root glob covers them); never add profile literals.
+#
+# [ENTRY #012]
+# Term: [LEGACY_ARCHIVE_SCAN_EXCLUSION]
+# Timestamp: 2026-10-16 14:22:45 +05:30
+# Issue / Context: verify_codebase_purity() scanned scripts/legacy_company_apply/
+#   (archived never-run one-offs) whose pre-policy hardcoded profile tokens fired
+#   a fatal violation at Daemon 1 launch, while default_user and vacuous-base
+#   checks passed and hid it.
+# Changes Made: Excluded legacy_company_apply from the P1 file walk (same scope
+#   as the test_08 knowledge-index exclusion); archived forensics stay untouched.
+# Rationale: Dead history must not gate live runs; the scanner guards code that
+#   can execute, not the archive.
+# Preventative Notes: Never re-add archived dirs to scan scope; never de-PII
+#   forensic history to satisfy the scanner — exclude, don't rewrite.
 # ================================================================================
 """
 ================================================================================
@@ -552,7 +566,11 @@ class ProfileContext:
         py_files = []
         for sdir in scan_dirs:
             if sdir.exists():
-                py_files.extend([f for f in sdir.rglob("*.py") if "__pycache__" not in str(f)])
+                # Archived never-run one-offs (legacy_company_apply) keep
+                # pre-policy hardcoded profile tokens as forensic history;
+                # they are excluded from the knowledge index (test_08) and
+                # from this scan alike — never edit them back into compliance.
+                py_files.extend([f for f in sdir.rglob("*.py") if "__pycache__" not in str(f) and "legacy_company_apply" not in f.parts])
         # NEW-7: repo-root launchers were never scanned (run_universal_apply.py
         # hardcoded default="udaysagar_kandpal" was invisible to Guardrail P1).
         try:
