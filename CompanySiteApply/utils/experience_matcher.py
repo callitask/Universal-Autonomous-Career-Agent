@@ -16,6 +16,20 @@
 # Preventative Notes: Never add employer/city literals here — keywords derive
 #                     dynamically from parsed employer names. Missing location
 #                     resolves to "" (caller skips the DOM step, never invents).
+#
+# [ENTRY #002]
+# Term: [ROLE_RESUME_BULLET_PRIORITY]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: Healers used structured-config bullets even when the
+#                  operator hand-tuned BASE.md or Stage 4 tailored a role
+#                  resume.md; role resume had no discovery path (title is
+#                  unavailable at heal time).
+# Changes Made: load_role_bullets_for_employer() — explicit path keys, then
+#               job_id-anchored APPLIED-tree discovery, then BASE hierarchy.
+#               Structured city/country/dates stay with the caller.
+# Rationale: Markdown edits must reach tiles without config copy-paste;
+#            job_id is unique per requisition so title is unnecessary.
+# Preventative Notes: Never invent bullets; return [] when nothing parses.
 # ==============================================================================
 
 """Resume.md-grounded work-experience parsing and fuzzy employer matching.
@@ -155,3 +169,97 @@ def load_resume_experience_map(
             if parsed:
                 return parsed
     return {}
+
+
+def _candidate_profile_dir(candidate_data: Optional[Dict[str, Any]]) -> Optional[Path]:
+    """Profile dir from explicit keys only — never guessed, never created."""
+    if isinstance(candidate_data, dict):
+        for key in ("profile_dir", "profile"):
+            val = candidate_data.get(key)
+            if val:
+                p = Path(str(val))
+                if p.is_dir():
+                    return p
+                if (p.parent / "candidate_config.json").exists():
+                    return p.parent
+    return None
+
+
+def _discover_role_resume_md(
+    candidate_data: Optional[Dict[str, Any]], job_id: str = ""
+) -> Optional[Path]:
+    """Locate <APPLIED>/<Company>/<Role>_<jobid>/resume.md without a title.
+
+    job_id values are unique per requisition, so the first
+    */*_<jobid>/resume.md match under the profile APPLIED root wins.
+    Returns None when anything is missing — never raises, never creates.
+    """
+    jid = re.sub(r"[^A-Za-z0-9_]", "_", str(job_id or "").strip()).strip("_")
+    if not jid:
+        return None
+    prof = _candidate_profile_dir(candidate_data)
+    if prof is None:
+        return None
+    root = prof / "APPLIED ON COMPANY WEBSITE"
+    if not root.is_dir():
+        return None
+    try:
+        hits = sorted(root.glob(f"*/*_{jid}/resume.md"))
+    except Exception:
+        return None
+    for hit in hits:
+        try:
+            if hit.is_file() and hit.stat().st_size > 0:
+                return hit
+        except OSError:
+            continue
+    return None
+
+
+def load_role_bullets_for_employer(
+    candidate_data: Optional[Dict[str, Any]] = None,
+    company: str = "",
+    employer_text: str = "",
+) -> list:
+    """Role-tailored resume.md -> BASE hierarchy bullet lookup.
+
+    Priority: explicit tailored-resume path keys on candidate_data, then
+    job_id-anchored APPLIED-tree discovery, then the canonical 4-tier
+    resolve_base_resume_md(profile_dir, company). Returns the matched
+    employer's bullets or [] — structured city/country/dates stay with the
+    caller and are never sourced here.
+    """
+    if not str(employer_text or "").strip():
+        return []
+    if isinstance(candidate_data, dict):
+        for key in ("role_resume_md", "tailored_resume_md", "active_role_resume"):
+            val = candidate_data.get(key)
+            if val:
+                matched = match_experience_entry(
+                    employer_text, parse_resume_experiences(val))
+                if matched and matched.get("bullets"):
+                    return list(matched["bullets"])
+        try:
+            jid = str(candidate_data.get("job_id")
+                      or candidate_data.get("_ipc_job_id") or "")
+            role_md = _discover_role_resume_md(candidate_data, jid)
+            if role_md is not None:
+                matched = match_experience_entry(
+                    employer_text, parse_resume_experiences(str(role_md)))
+                if matched and matched.get("bullets"):
+                    return list(matched["bullets"])
+        except Exception:
+            pass
+    try:
+        from CompanySiteApply.utils.company_workspace import resolve_base_resume_md
+        prof = _candidate_profile_dir(candidate_data)
+        if prof is not None:
+            base = resolve_base_resume_md(prof, company or "")
+            if base is not None:
+                matched = match_experience_entry(
+                    employer_text, parse_resume_experiences(str(base)))
+                if matched and matched.get("bullets"):
+                    return list(matched["bullets"])
+    except Exception:
+        pass
+    return []

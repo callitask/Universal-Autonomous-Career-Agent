@@ -18,6 +18,17 @@
 # Changes Made: Word-boundary degree regex for experience-tile filtering.
 # Rationale: Employer names must never match degree patterns partially.
 # Preventative Notes: Extend the pattern list, never revert to substrings.
+#
+# [ENTRY #003]
+# Term: [MARKDOWN_BULLET_PRIORITY]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: Structured-config bullets won even when the operator
+#                  hand-tuned BASE.md or Stage 4 tailored a role resume.md.
+# Changes Made: company_site_profile.employment joined as a structured
+#               source; load_role_bullets_for_employer() overrides achievements
+#               only — city/country/dates stay structured-grounded.
+# Rationale: Markdown edits must reach tiles without config copy-paste.
+# Preventative Notes: Never let markdown supply city/country/dates.
 # ==============================================================================
 
 import logging
@@ -68,6 +79,29 @@ def heal_single_experience_tile(
         _EDU_RE = _re_tile.compile(
             r"\b(bachelor|master'?s?|b\.?tech|m\.?tech|mba|degree|education|"
             r"university|college|school|diploma)\b", _re_tile.IGNORECASE)
+        # company_site_profile.employment structured source (product-company
+        # apply): same mapping the Oracle finger uses — designation/city/
+        # country/achievements ground tiles when work_experience is thin.
+        try:
+            _csa_emp = (candidate_data.get("company_site_profile", {}) or {}).get("employment", {}) or {}
+            if isinstance(_csa_emp, dict):
+                for _k, _v in _csa_emp.items():
+                    if not isinstance(_v, dict):
+                        continue
+                    _b = list(_v.get("achievements") or [])
+                    if not _b and _v.get("description"):
+                        _clean = str(_v.get("description", "")).replace("•", "").replace("\r", "")
+                        _b = [x.strip() for x in _clean.split("\n") if x.strip()]
+                    exp_list = list(exp_list) + [{
+                        "employer": str(_v.get("company") or _k or "").strip(),
+                        "title": str(_v.get("designation", "") or "").strip(),
+                        "country": str(_v.get("country") or cand.get("country") or "").strip(),
+                        "city": str(_v.get("city") or cand.get("city") or "").strip(),
+                        "bullets": [x for x in _b if x],
+                        "is_current": bool(_v.get("is_current", False)),
+                    }]
+        except Exception as _csa_e:
+            logger.debug(f"[s3_experience_tile] company_site_profile note: {_csa_e}")
         tiles = page.locator(".apply-flow-profile-item-tile").all()
         exp_tiles = []
         for t in tiles:
@@ -114,6 +148,24 @@ def heal_single_experience_tile(
                     logger.info("[s3_experience_tile] Grounded tile from resume.md fallback.")
             except Exception as rm_e:
                 logger.debug(f"[s3_experience_tile] Resume fallback note: {rm_e}")
+
+        # Markdown bullet priority — role-tailored resume.md, else the BASE
+        # hierarchy. Hand-tuned BASE.md / role edits win for achievements;
+        # city/country/dates stay grounded from structured employment above.
+        try:
+            from CompanySiteApply.utils.experience_matcher import (
+                load_role_bullets_for_employer as _role_bullets,
+            )
+            _md_bullets = _role_bullets(
+                candidate_data, _tile_company(page, candidate_data), tile_text)
+            if _md_bullets:
+                best_match = dict(best_match) if isinstance(best_match, dict) else {}
+                best_match["bullets"] = _md_bullets
+                if not str(best_match.get("employer") or "").strip():
+                    best_match["employer"] = tile_text.split("\n")[0].strip()
+                logger.info("[s3_experience_tile] Achievements from markdown priority.")
+        except Exception as _md_e:
+            logger.debug(f"[s3_experience_tile] Markdown bullet priority note: {_md_e}")
 
         # Click Edit icon on target tile
         edit_btn = target_tile.locator(

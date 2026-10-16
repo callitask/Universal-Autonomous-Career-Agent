@@ -11,6 +11,22 @@
 #               atomically into screening_answers.json.
 # Rationale: Guarantees 100% truthful, profile-grounded answers with zero hardcoding and zero bad fallbacks.
 # Preventative Notes: Never select negative/non-coding options for technical candidates.
+#
+# [ENTRY #002]
+# Term: [QA_LEDGER_DEDUP + ROLE_ANSWERS]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: Multi-pass Section 2 rescans appended duplicate rows and
+#                  persisted scanner-noise refusals/empties; per-role Q&A had
+#                  no interview-prep home. auto_learned_truths stays read-only
+#                  (this brain never writes candidate_config.json).
+# Changes Made: Noise filter (self-echo/None/empty/question==option) skips
+#               persistence; (job_id, normalized_question) in-place dedup
+#               with load-time compaction; role answers.json screening_qa
+#               mirror gated on existing Stage 4 role dir (never interrupts).
+# Rationale: screening_answers.json is a ledger, not a log; role folders
+#            carry their own interview-prep Q&A for operators.
+# Preventative Notes: Never persist noise rows; never create role dirs from
+#                     the mirror (write only when Stage 4 already made one).
 # ==============================================================================
 
 import os
@@ -34,8 +50,11 @@ class AIBrainResolver:
        - RADIO_PILL: Specific pill string to select (e.g. 'Advanced / Expert', 'At Least 10 Years')
        - BINARY_PILL: 'Yes' or 'No'
        - TEXT: Factual string/number
-    3. Persists all resolved questions atomically into screening_answers.json for full auditability.
-    4. Caches answers back to candidate_config.json to prevent regressions.
+    3. Persists answered screening questions atomically into screening_answers.json
+       (noise refusals/empties are returned but never stored; repeats update
+       in place by (job_id, normalized_question)). Reads auto_learned_truths
+       as ground truth — this brain never writes candidate_config.json.
+    4. Mirrors per-role screening Q&A into the Stage 4 role answers.json.
     """
 
     _instance: Optional["AIBrainResolver"] = None
@@ -88,28 +107,145 @@ class AIBrainResolver:
         inspections.mkdir(parents=True, exist_ok=True)
         return inspections / "screening_answers.json"
 
+    @staticmethod
+    def _normalize_question(text: Any) -> str:
+        """Deduplication key form: collapsed-whitespace lowercase."""
+        return re.sub(r"\s+", " ", str(text or "").strip().lower())
+
+    def _record_context(self) -> Tuple[str, str, str]:
+        """Best-effort (job_id, company, job_title) from job_context first,
+        then candidate_data. All strings, "" when unknown."""
+        job_id, company, title = "", "", ""
+        carriers = [self.job_context]
+        if isinstance(self.candidate_data, dict):
+            carriers.append(self.candidate_data)
+            cand = self.candidate_data.get("candidate")
+            if isinstance(cand, dict):
+                carriers.append(cand)
+        for carrier in carriers:
+            if not isinstance(carrier, dict):
+                continue
+            if not job_id:
+                job_id = str(carrier.get("job_id") or carrier.get("_ipc_job_id") or "").strip()
+            if not company:
+                company = str(
+                    carrier.get("company") or carrier.get("company_name")
+                    or carrier.get("target_company") or ""
+                ).strip()
+            if not title:
+                job = carrier.get("details") if isinstance(carrier.get("details"), dict) else {}
+                title = str(
+                    carrier.get("job_title") or carrier.get("title")
+                    or job.get("job_title") or job.get("title") or ""
+                ).strip()
+        return job_id, company, title
+
+    @staticmethod
+    def _is_noise_record(record: Dict[str, Any]) -> bool:
+        """Scanner-noise rows are returned to callers but never persisted."""
+        if not isinstance(record, dict):
+            return True
+        if record.get("source") == "REFUSED_SELF_ECHO":
+            return True
+        ans = record.get("answer")
+        if ans is None:
+            return True
+        if isinstance(ans, str) and not ans.strip():
+            return True
+        qn = AIBrainResolver._normalize_question(record.get("question"))
+        opts = record.get("options") or []
+        if qn and any(qn == AIBrainResolver._normalize_question(o) for o in opts):
+            return True
+        return False
+
     def _load_existing_answers(self) -> List[Dict[str, Any]]:
-        """Loads prior questions and answers from screening_answers.json."""
+        """Loads prior questions and answers from screening_answers.json.
+
+        Compacts on load: drops noise rows and exact (job_id,
+        normalized_question) duplicates (keeps the freshest), so history
+        heals the first time any brain with this file persists again.
+        """
         if self.output_json_path.exists():
             try:
                 data = json.loads(self.output_json_path.read_text("utf-8"))
                 if isinstance(data, list):
-                    return data
+                    return self._compact_history([
+                        r for r in data if isinstance(r, dict)
+                    ])
             except Exception as e:
                 logger.warning(f"[AIBrainResolver] Failed to load {self.output_json_path}: {e}")
         return []
 
-    def _persist_answer(self, record: Dict[str, Any]):
-        """Persists a Q&A record atomically to screening_answers.json."""
-        last = self.history[-1] if self.history else None
-        if (
-            last
-            and last.get("question") == record.get("question")
-            and last.get("answer") == record.get("answer")
-            and last.get("control_type") == record.get("control_type")
-        ):
-            return  # Identical consecutive record — skip file churn.
-        self.history.append(record)
+    @staticmethod
+    def _compact_history(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Drop noise rows; keep the last row per dedup key, ordered by
+        first appearance."""
+        seen: Dict[tuple, int] = {}
+        order: List[tuple] = []
+        latest: Dict[tuple, Dict[str, Any]] = {}
+        for r in rows:
+            if AIBrainResolver._is_noise_record(r):
+                continue
+            key = (str(r.get("job_id") or ""),
+                   AIBrainResolver._normalize_question(r.get("question")))
+            if key not in seen:
+                seen[key] = len(order)
+                order.append(key)
+            latest[key] = r
+        return [latest[k] for k in order]
+
+    def _persist_answer(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Persists a Q&A record atomically to screening_answers.json.
+
+        Noise rows are skipped. Repeats update the existing row in place by
+        (job_id, normalized_question); unchanged repeats skip the write.
+        Every stored row carries job_id/company for the role mirror.
+        """
+        if self._is_noise_record(record):
+            return record
+        job_id, company, _ = self._record_context()
+        record["job_id"] = str(record.get("job_id") or job_id or "")
+        if company and not str(record.get("company") or "").strip():
+            record["company"] = company
+        record["normalized_question"] = self._normalize_question(record.get("question"))
+        key = (record["job_id"], record["normalized_question"])
+        wrote = False
+        if key[1]:
+            for existing in self.history:
+                if not isinstance(existing, dict):
+                    continue
+                ekey = (str(existing.get("job_id") or ""),
+                        self._normalize_question(existing.get("question")))
+                if ekey != key:
+                    continue
+                if all(existing.get(f) == record.get(f) for f in
+                       ("question", "answer", "source", "rationale",
+                        "options", "control_type")):
+                    return record  # Identical repeat — skip file churn.
+                existing.update({
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "question": record.get("question"),
+                    "answer": record.get("answer"),
+                    "source": record.get("source"),
+                    "rationale": record.get("rationale"),
+                    "options": record.get("options"),
+                    "control_type": record.get("control_type"),
+                    "job_id": record["job_id"],
+                    "company": record.get("company", ""),
+                    "normalized_question": record["normalized_question"],
+                })
+                wrote = True
+                break
+        if not wrote:
+            last = self.history[-1] if self.history else None
+            if (
+                last
+                and last.get("question") == record.get("question")
+                and last.get("answer") == record.get("answer")
+                and last.get("control_type") == record.get("control_type")
+            ):
+                return record  # Identical consecutive record — skip file churn.
+            self.history.append(record)
         try:
             self.output_json_path.parent.mkdir(parents=True, exist_ok=True)
             temp_path = self.output_json_path.with_suffix(".tmp")
@@ -118,6 +254,79 @@ class AIBrainResolver:
             logger.info(f"[AIBrainResolver] Persisted Q&A record to {self.output_json_path}")
         except Exception as e:
             logger.error(f"[AIBrainResolver] Failed to persist Q&A record: {e}")
+            return record
+        if record.get("control_type") != "RECIPIENT_HEADER":
+            self._mirror_role_answers(record)
+        return record
+
+    def _mirror_role_answers(self, record: Dict[str, Any]) -> None:
+        """Maintain screening_qa inside the Stage 4 role answers.json.
+
+        Writes only when the role directory already exists (Stage 4 created
+        it); never creates directories, never raises, never touches the
+        blueprint. Existing top-level keys are preserved.
+        """
+        try:
+            job_id, company, title = self._record_context()
+            if not (job_id and company and title):
+                return
+            cd = self.candidate_data if isinstance(self.candidate_data, dict) else {}
+            slug = ""
+            for key in ("profile", "_ipc_profile"):
+                val = cd.get(key)
+                if val and isinstance(val, str) and val.strip():
+                    slug = val.strip()
+                    break
+            if not slug:
+                cand = cd.get("candidate", {})
+                if isinstance(cand, dict):
+                    for key in ("profile_name", "profile"):
+                        val = cand.get(key)
+                        if val and isinstance(val, str) and val.strip():
+                            slug = val.strip()
+                            break
+                if not slug:
+                    full = cand.get("full_name") or ""
+                    if full:
+                        slug = re.sub(r"[^a-zA-Z0-9_]", "_", str(full).strip().lower()).strip("_")
+            if not slug or slug in ("default_user", "candidate"):
+                return
+            from CompanySiteApply.utils.application_docs import application_dir
+            role_dir = application_dir(slug, company, title, job_id)
+            if not role_dir.is_dir():
+                return
+            target = role_dir / "answers.json"
+            data: Dict[str, Any] = {}
+            try:
+                if target.is_file():
+                    loaded = json.loads(target.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        data = loaded
+            except Exception:
+                data = {}
+            qn = self._normalize_question(record.get("question"))
+            qa = [e for e in data.get("screening_qa", [])
+                  if isinstance(e, dict)
+                  and self._normalize_question(e.get("question")) != qn]
+            qa.append({
+                "question": record.get("question"),
+                "answer": record.get("answer"),
+                "control_type": record.get("control_type"),
+                "options": record.get("options", []),
+                "source": record.get("source"),
+                "rationale": record.get("rationale"),
+                "timestamp": record.get("timestamp")
+                or time.strftime("%Y-%m-%d %H:%M:%S"),
+            })
+            data["screening_qa"] = qa
+            data["company"] = company
+            data["job_id"] = job_id
+            data["job_title"] = title
+            tmp = target.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(target)
+        except Exception as e:
+            logger.debug(f"[AIBrainResolver] Role answers mirror note: {e}")
 
     def _build_knowledge_index(self) -> Dict[str, Any]:
         """

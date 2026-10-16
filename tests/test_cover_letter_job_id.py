@@ -205,6 +205,35 @@ class TestBaseCoverLetterParser(unittest.TestCase):
         out = _parse_base_cover_letter_md("/nonexistent_dir_xyz/BASE.md", self._ctx())
         self.assertEqual(out, {"opening": [], "bullets": [], "closing": [], "rendered_md": ""})
 
+    def test_multiparagraph_transition_splits_html_paragraphs(self):
+        # Phase 4 Stage 1: \n\n-separated prose must render as separate <p>
+        # tags in HTML/PDF while staying \n\n-separated in Cover_Letter.txt.
+        from unittest.mock import MagicMock, patch
+        from core.generate_professional_cover_letter import generate_cover_letter_pdf
+        with tempfile.TemporaryDirectory() as d:
+            mock_page = MagicMock()
+            mock_browser = MagicMock()
+            mock_browser.new_page.return_value = mock_page
+            mock_ctx = MagicMock()
+            mock_ctx.__enter__.return_value = mock_browser
+            with patch("core.generate_professional_cover_letter.sync_playwright",
+                       return_value=mock_ctx):
+                generate_cover_letter_pdf(
+                    target_dir=d, candidate_name="Alex Rivera",
+                    location="Bengaluru", phone="+91-1", email="a@b.c",
+                    linkedin="link", date_str="October 17, 2026",
+                    hiring_team="Team", organization="Acme Corp",
+                    org_location="Mumbai", job_title="Engineer", job_id="3001",
+                    opening_p="Opening paragraph.",
+                    transition_p="Transition rationale.\n\nLead-in to bullets.",
+                    bullets=[{"title": "T", "body": "B"}],
+                    synthesis_p="Synthesis.", closing_p="Closing.")
+            html = open(os.path.join(d, "Cover_Letter.html"), encoding="utf-8").read()
+            self.assertIn("<p>Transition rationale.</p>", html)
+            self.assertIn("<p>Lead-in to bullets.</p>", html)
+            txt = open(os.path.join(d, "Cover_Letter.txt"), encoding="utf-8").read()
+            self.assertIn("Transition rationale.\n\nLead-in to bullets.", txt)
+
 
 if __name__ == "__main__":
     unittest.main()

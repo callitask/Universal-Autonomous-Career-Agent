@@ -284,5 +284,120 @@ class TestRecipientHeaderArbitration(unittest.TestCase):
         self.assertIn("Acme Corp", v["hiring_team"])
 
 
+class TestScreeningLedgerDedup(unittest.TestCase):
+    """Phase 4: noise filtering, in-place dedup, role answers.json mirror."""
+
+    def setUp(self):
+        self._tmp_ops = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ops.cleanup)
+        (Path(self._tmp_ops.name) / "profiles" / "synth_qa").mkdir(parents=True, exist_ok=True)
+        _patcher = unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": self._tmp_ops.name})
+        _patcher.start()
+        self.addCleanup(_patcher.stop)
+        AIBrainResolver._instance = None
+        self.candidate_data = {
+            "profile": "synth_qa",
+            "job_id": "3001",
+            "candidate": {"full_name": "Synth Qa", "country": "India",
+                          "total_experience_years": 10},
+            "ats_answers": {}, "taxonomy_skills": {},
+        }
+        self.job_context = {"job_id": "3001", "job_title": "Engineer",
+                            "company": "Acme Corp"}
+        self.brain = AIBrainResolver(self.candidate_data, dict(self.job_context))
+        self.brain.output_json_path = (
+            Path(self._tmp_ops.name) / "profiles" / "synth_qa" / "screening_answers.json")
+        self.brain.history = []
+
+    def _rows(self):
+        return json.loads(self.brain.output_json_path.read_text(encoding="utf-8"))
+
+    def test_noise_rows_not_persisted_but_returned(self):
+        rec = self.brain.resolve_question(
+            "No Prior Experience", "RADIO_CHIP",
+            ["No Prior Experience", "At least 1 year"])
+        self.assertEqual(rec.get("source"), "REFUSED_SELF_ECHO")
+        self.assertIsNone(rec.get("answer"))
+        rec2 = self.brain.resolve_question(
+            "Zqx jumbled wobble?", "RADIO_CHIP", ["Alpha", "Beta"])
+        self.assertEqual(rec2.get("answer"), "")
+        self.assertFalse(self.brain.output_json_path.exists())
+
+    def test_repeat_updates_in_place(self):
+        self.brain.resolve_question(
+            "Are you authorized to work?", "BINARY_PILL", ["Yes", "No"])
+        self.brain.resolve_question(
+            "  are   you AUTHORIZED to work?  ", "BINARY_PILL", ["Yes", "No"])
+        rows = self._rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["job_id"], "3001")
+        self.assertEqual(rows[0]["company"], "Acme Corp")
+
+    def test_load_compacts_legacy_noise_and_dupes(self):
+        legacy = [
+            {"question": "No Prior Experience", "control_type": "RADIO_CHIP",
+             "options": ["No Prior Experience", "At least 1 year"],
+             "source": "REFUSED_SELF_ECHO", "answer": None},
+            {"question": "Are you authorized?", "answer": "Yes",
+             "job_id": "3001", "source": "OLD", "control_type": "BINARY_PILL",
+             "options": ["Yes", "No"]},
+            {"questionorig": 0, "question": "are you authorized?", "answer": "Yes",
+             "job_id": "3001", "source": "OLD2", "control_type": "BINARY_PILL",
+             "options": ["Yes", "No"]},
+        ]
+        self.brain.output_json_path.write_text(json.dumps(legacy), encoding="utf-8")
+        AIBrainResolver._instance = None
+        fresh = AIBrainResolver(self.candidate_data, dict(self.job_context))
+        fresh.output_json_path = self.brain.output_json_path
+        fresh.history = fresh._load_existing_answers()
+        self.assertEqual(len(fresh.history), 1)
+        self.assertEqual(fresh.history[0]["source"], "OLD2")
+
+    def test_role_answers_json_mirror(self):
+        from CompanySiteApply.utils.application_docs import application_dir
+        role_dir = application_dir("synth_qa", "Acme Corp", "Engineer", "3001")
+        role_dir.mkdir(parents=True, exist_ok=True)
+        (role_dir / "answers.json").write_text(
+            json.dumps({"status": "OPEN", "screening_qa": []}), encoding="utf-8")
+        self.brain.resolve_question(
+            "Are you authorized to work?", "BINARY_PILL", ["Yes", "No"])
+        data = json.loads((role_dir / "answers.json").read_text(encoding="utf-8"))
+        self.assertEqual(data["status"], "OPEN")
+        self.assertEqual(data["job_id"], "3001")
+        self.assertEqual(len(data["screening_qa"]), 1)
+        self.assertEqual(data["screening_qa"][0]["answer"], "Yes")
+        # Repeat dedups the role list too.
+        self.brain.resolve_question(
+            "Are you authorized to work?", "BINARY_PILL", ["Yes", "No"])
+        data = json.loads((role_dir / "answers.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(data["screening_qa"]), 1)
+
+    def test_recipient_records_skip_mirror(self):
+        from CompanySiteApply.utils.application_docs import application_dir
+        role_dir = application_dir("synth_qa", "Acme Corp", "Engineer", "3001")
+        role_dir.mkdir(parents=True, exist_ok=True)
+        v = self.brain.resolve_recipient_header({
+            "job_id": "3001", "job_title": "Engineer",
+            "stamped_company": "Acme Corp", "page_url": "",
+            "portal_default_company": "", "candidate_company_hints": [],
+            "dom_location": "Bengaluru", "requisition_location": "",
+            "explicit_team": "", "workspace_provisioned": False})
+        self.assertTrue(v["success"])
+        self.assertFalse((role_dir / "answers.json").exists())
+
+    def test_auto_learned_truths_never_written(self):
+        before = json.dumps(self.candidate_data, sort_keys=True)
+        self.brain.resolve_question(
+            "Are you authorized to work?", "BINARY_PILL", ["Yes", "No"])
+        self.brain.resolve_recipient_header({
+            "job_id": "3001", "job_title": "Engineer",
+            "stamped_company": "Acme Corp", "page_url": "",
+            "portal_default_company": "", "candidate_company_hints": [],
+            "dom_location": "", "requisition_location": "",
+            "explicit_team": "", "workspace_provisioned": False})
+        self.assertEqual(json.dumps(self.candidate_data, sort_keys=True), before)
+        self.assertEqual(self.candidate_data.get("auto_learned_truths", "absent"), "absent")
+
+
 if __name__ == "__main__":
     unittest.main()

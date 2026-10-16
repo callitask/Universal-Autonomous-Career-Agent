@@ -13,6 +13,18 @@
 #            copy stays only as the no-BASE fallback (unit tests).
 # Preventative Notes: Never reorder validation (company refusal stays first);
 #                     never change generate_cover_letter_pdf() kwargs.
+#
+# [ENTRY #002]
+# Term: [MULTI_PARAGRAPH_HTML_SPLIT]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: Multi-paragraph transitions joined with \n\n inside one
+#                  <p> collapsed into a single HTML block in rendering.
+# Changes Made: _split_paragraphs() renders each \n\n-separated paragraph
+#               as its own <p> in HTML; txt keeps raw \n\n separators.
+# Rationale: Base letters carry multi-paragraph narratives; HTML must honor
+#            paragraph breaks while txt stays plain-text faithful.
+# Preventative Notes: Never change generate_cover_letter_pdf() signature;
+#                     split HTML only, never txt.
 # ==============================================================================
 
 import os
@@ -317,12 +329,12 @@ def generate_cover_letter_pdf(
         .replace("{org_location}", org_location)
         .replace("{job_title}", job_title)
         .replace("{job_id}", job_id)
-        .replace("{opening_p}", opening_p)
-        .replace("{transition_p}", transition_p)
+        .replace("{opening_p}", _split_paragraphs(opening_p))
+        .replace("{transition_p}", _split_paragraphs(transition_p))
         .replace("{bullets_html}", bullets_html)
         .replace("{contact_html}", contact_html)
-        .replace("{synthesis_p}", synthesis_p)
-        .replace("{closing_p}", closing_p)
+        .replace("{synthesis_p}", _split_paragraphs(synthesis_p))
+        .replace("{closing_p}", _split_paragraphs(closing_p))
     )
     
     (target_path / "Cover_Letter.html").write_text(html_content, encoding="utf-8")
@@ -381,6 +393,17 @@ Sincerely,
         
     print(f"[CoverLetterGenerator] Rendered clean enterprise cover letter PDF to: {pdf_out}")
     return str(pdf_out)
+
+
+def _split_paragraphs(text: str) -> str:
+    """Render each \\n\\n-separated paragraph as its own <p> block.
+
+    Single-paragraph input returns unchanged (backward compatible).
+    Applied to HTML template slots only — the .txt companion keeps raw
+    \\n\\n separators.
+    """
+    parts = [p.strip() for p in re.split(r"\n\s*\n", str(text or "").strip()) if p.strip()]
+    return "</p>\n<p>".join(parts)
 
 
 def _parse_base_cover_letter_md(base_md_path, ctx=None):
