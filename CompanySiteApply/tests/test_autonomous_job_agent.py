@@ -1,6 +1,8 @@
+import os
 import unittest
 import json
 import tempfile
+import unittest.mock
 from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -11,6 +13,22 @@ from CompanySiteApply.cognitive_job_matcher import CognitiveJobMatcher
 class TestAutonomousJobAgent(unittest.TestCase):
 
     def setUp(self):
+        # [CATCH-NEW-1] Sandbox isolation for requisition "3001" /
+        # "Staff Software Engineer - Distributed Systems": stage_1 derives
+        # slug "alex_rivera" from full_name "Alex Rivera" and stage_4 calls
+        # resolve_recipient_header which persists screening_answers.json.
+        # Without an isolated Operations root, resolve_profile_dir() falls
+        # back to the repo tree and writes
+        # F:\\JOB AI AGENT\\profiles\\alex_rivera\\screening_answers.json.
+        self._tmp_ops = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ops.cleanup)
+        for _slug in ("alex_rivera", "alice_smith", "test_structured_profile_xyz", "candidate"):
+            (Path(self._tmp_ops.name) / "profiles" / _slug).mkdir(parents=True, exist_ok=True)
+        _patcher = unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": self._tmp_ops.name})
+        _patcher.start()
+        self.addCleanup(_patcher.stop)
+        from CompanySiteApply.ai_brain_resolver import AIBrainResolver as _R
+        _R._instance = None
         self.tech_candidate = {
             "candidate": {
                 "full_name": "Alex Rivera",
@@ -31,7 +49,7 @@ class TestAutonomousJobAgent(unittest.TestCase):
 
         self.finance_candidate = {
             "candidate": {
-                "full_name": "Anshika Garg",
+                "full_name": "Alice Smith",
                 "current_title": "Internal Audit Associate",
                 "total_experience_years": 0.5,
                 "location": "Delhi",
@@ -55,7 +73,7 @@ class TestAutonomousJobAgent(unittest.TestCase):
         self.assertIn("Java", agent.matcher.candidate_skills)
 
         summary_fin = agent.stage_1_comprehend_profile(candidate_config=self.finance_candidate)
-        self.assertEqual(summary_fin["candidate_name"], "Anshika Garg")
+        self.assertEqual(summary_fin["candidate_name"], "Alice Smith")
         self.assertEqual(summary_fin["experience_years"], 0.5)
         self.assertIn("Internal Controls", agent.matcher.candidate_skills)
         self.assertNotIn("Java", agent.matcher.candidate_skills)
@@ -174,7 +192,7 @@ class TestAutonomousJobAgent(unittest.TestCase):
         with patch("CompanySiteApply.autonomous_job_agent.generate_tailored_cover_letter") as mock_gen:
             import tempfile as _tf
             _tmpd = _tf.mkdtemp()
-            _mock_pdf = Path(_tmpd, "Udaysagar_Kandpal_Cover_Letter.pdf")
+            _mock_pdf = Path(_tmpd, "Alice_Smith_Cover_Letter.pdf")
             _mock_pdf.write_bytes(b"%PDF-mock")
             mock_gen.side_effect = lambda cd, jd, td, pdf_filename=None: (
                 Path(td, pdf_filename or "x.pdf").write_bytes(b"%PDF-mock"),
@@ -183,9 +201,16 @@ class TestAutonomousJobAgent(unittest.TestCase):
             self.assertTrue(res["success"])
             # Structured layout: FIXED name inside role folder, never mock path.
             self.assertIn("3001", res["cover_letter_pdf"])
-            self.assertTrue(res["cover_letter_pdf"].endswith("Test_Structured_Profile_Xyz_Cover_Letter.pdf") or res["cover_letter_pdf"].endswith("Udaysagar_Kandpal_Cover_Letter.pdf"))
+            self.assertTrue(res["cover_letter_pdf"].endswith("Test_Structured_Profile_Xyz_Cover_Letter.pdf") or res["cover_letter_pdf"].endswith("Alice_Smith_Cover_Letter.pdf"))
             self.assertIn("JPMorgan_Chase_Co", res["applied_dir"])
             self.assertEqual(res["job_id"], "3001")
+            # [CATCH-NEW-1] Sandbox proof: screening_answers.json must live
+            # inside temp Operations (profiles/alex_rivera), never repo.
+            _sandbox_answers = Path(self._tmp_ops.name) / "profiles" / "alex_rivera" / "screening_answers.json"
+            self.assertTrue(_sandbox_answers.is_file(),
+                            f"sandbox screening_answers missing: {_sandbox_answers}")
+            self.assertFalse((Path("profiles") / "alex_rivera").exists(),
+                             "repo profiles/alex_rivera must never be created")
             # Cleanup isolated test profile (repo fallback, gitignored but keep tree clean).
             import shutil as _sh
             for _base in (Path("profiles") / "test_structured_profile_xyz",

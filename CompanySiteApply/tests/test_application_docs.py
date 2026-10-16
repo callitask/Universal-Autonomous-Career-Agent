@@ -16,9 +16,9 @@ from CompanySiteApply.utils.application_docs import (
 
 class TestStructuredLayout(unittest.TestCase):
     def test_stem_title_case(self):
-        self.assertEqual(profile_stem({"candidate": {"full_name": "Alex Rivera"}}, "udaysagar_kandpal"),
-                         "Udaysagar_Kandpal")
-        self.assertEqual(profile_stem({}, "udaysagar_kandpal"), "Udaysagar_Kandpal")
+        self.assertEqual(profile_stem({"candidate": {"full_name": "Alex Rivera"}}, "alice_smith"),
+                         "Alice_Smith")
+        self.assertEqual(profile_stem({}, "alice_smith"), "Alice_Smith")
         self.assertEqual(profile_stem({"profile": "new_user_test"}, "new_user_test"),
                          "New_User_Test")
 
@@ -69,6 +69,12 @@ class TestStructuredLayout(unittest.TestCase):
     def test_role_paths_fixed_names(self):
         with tempfile.TemporaryDirectory() as d:
             import os
+            # [CATCH-NEW-1] Pre-create the Operations profile so
+            # resolve_profile_dir() never falls back to the repo tree.
+            (Path(d) / "profiles" / "alice_smith").mkdir(parents=True, exist_ok=True)
+            (Path(d) / "profiles" / "alex_rivera").mkdir(parents=True, exist_ok=True)
+            (Path(d) / "profiles" / "someone").mkdir(parents=True, exist_ok=True)
+            (Path(d) / "profiles" / "candidate").mkdir(parents=True, exist_ok=True)
             os.environ["JOB_AGENT_OPERATIONS"] = d
             try:
                 from importlib import reload
@@ -76,13 +82,13 @@ class TestStructuredLayout(unittest.TestCase):
                 reload(rp)
                 import CompanySiteApply.utils.application_docs as ad
                 reload(ad)
-                paths = ad.application_doc_paths("udaysagar_kandpal", "JPMorgan Chase & Co.",
+                paths = ad.application_doc_paths("alice_smith", "JPMorgan Chase & Co.",
                                                  "Sr Manager of Software Engineering - Java, AWS, React",
                                                  "210791831",
                                                  {"candidate": {"full_name": "Alex Rivera"}})
                 self.assertIn("210791831", str(paths["role_dir"]))
-                self.assertTrue(paths["cover_pdf"].name == "Udaysagar_Kandpal_Cover_Letter.pdf")
-                self.assertTrue(paths["resume_pdf"].name == "Udaysagar_Kandpal_Resume.pdf")
+                self.assertTrue(paths["cover_pdf"].name == "Alice_Smith_Cover_Letter.pdf")
+                self.assertTrue(paths["resume_pdf"].name == "Alice_Smith_Resume.pdf")
                 self.assertIn("JPMorgan_Chase_Co", str(paths["role_dir"]))
             finally:
                 os.environ.pop("JOB_AGENT_OPERATIONS", None)
@@ -95,11 +101,11 @@ class TestStructuredLayout(unittest.TestCase):
             src_c = Path(d) / "gen_cover.pdf"
             src_r.write_bytes(b"R")
             src_c.write_bytes(b"C")
-            out = copy_into_role(role, "Udaysagar_Kandpal", str(src_r), str(src_c))
+            out = copy_into_role(role, "Alice_Smith", str(src_r), str(src_c))
             self.assertTrue(Path(out["resume_pdf"]).is_file())
             self.assertTrue(Path(out["cover_pdf"]).is_file())
-            self.assertTrue((role / "resume" / "Udaysagar_Kandpal_Resume.pdf").is_file())
-            self.assertTrue((role / "cover_letters" / "Udaysagar_Kandpal_Cover_Letter.pdf").is_file())
+            self.assertTrue((role / "resume" / "Alice_Smith_Resume.pdf").is_file())
+            self.assertTrue((role / "cover_letters" / "Alice_Smith_Cover_Letter.pdf").is_file())
 
 
 if __name__ == "__main__":

@@ -14,7 +14,11 @@
 # ==============================================================================
 
 import asyncio
+import os
+import tempfile
 import unittest
+import unittest.mock
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from CompanySiteApply.utils.question_hygiene import drop_option_titled_questions
@@ -45,10 +49,24 @@ class TestQuestionHygiene(unittest.TestCase):
 
 
 class TestBrainAnswerIntegrity(unittest.TestCase):
+    def setUp(self):
+        # [CATCH-NEW-1] Isolate synthetic slug "test_user" (derived from
+        # full_name "Test User"): brain persists screening_answers.json and
+        # would otherwise fall back to repo inspections/ tree.
+        self._tmp_ops = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ops.cleanup)
+        for _slug in ("test_user", "t", "candidate"):
+            (Path(self._tmp_ops.name) / "profiles" / _slug).mkdir(parents=True, exist_ok=True)
+        _patcher = unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": self._tmp_ops.name})
+        _patcher.start()
+        self.addCleanup(_patcher.stop)
+        from CompanySiteApply.ai_brain_resolver import AIBrainResolver as _R
+        _R._instance = None
+
     def _brain(self):
         from CompanySiteApply.ai_brain_resolver import AIBrainResolver
         AIBrainResolver._instance = None
-        return AIBrainResolver.get_instance({
+        b = AIBrainResolver.get_instance({
             "candidate": {
                 "full_name": "Test User",
                 "country": "India",
@@ -57,6 +75,11 @@ class TestBrainAnswerIntegrity(unittest.TestCase):
             "ats_answers": {},
             "taxonomy_skills": {},
         })
+        _sandbox = Path(self._tmp_ops.name) / "profiles" / "test_user" / "screening_answers.json"
+        if Path(str(b.output_json_path)) != _sandbox and "test_user" not in str(b.output_json_path):
+            b.output_json_path = _sandbox
+        b.history = []
+        return b
 
     def test_self_echo_refused(self):
         brain = self._brain()
@@ -130,6 +153,17 @@ class TestReviewBranchHonesty(unittest.TestCase):
 
 class TestCompetencyWrongPickCorrection(unittest.TestCase):
     """Incident 210788242: tier group showed 'No Prior Experience' selected."""
+
+    def setUp(self):
+        # [CATCH-NEW-1] heal_competency_questions() creates AIBrainResolver
+        # for slug "test_user" — isolate before any brain persistence.
+        self._tmp_ops = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ops.cleanup)
+        for _slug in ("test_user", "t", "candidate"):
+            (Path(self._tmp_ops.name) / "profiles" / _slug).mkdir(parents=True, exist_ok=True)
+        _patcher = unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": self._tmp_ops.name})
+        _patcher.start()
+        self.addCleanup(_patcher.stop)
 
     def test_wrong_pick_is_reclicked_to_truth(self):
         from CompanySiteApply.section_agents.scripts.s2_competency_questions import (
@@ -246,6 +280,17 @@ class TestEmailBranchGate(unittest.TestCase):
 
 class TestCompetencyAuditTruthCheck(unittest.TestCase):
     """Audit must flag answered-but-wrong picks, not just empties."""
+
+    def setUp(self):
+        # [CATCH-NEW-1] TechnicalCompetencySubAgent.audit() resolves the
+        # brain for slug "t" (full_name "T") — isolate Operations first.
+        self._tmp_ops = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ops.cleanup)
+        for _slug in ("t", "test_user", "candidate"):
+            (Path(self._tmp_ops.name) / "profiles" / _slug).mkdir(parents=True, exist_ok=True)
+        _patcher = unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": self._tmp_ops.name})
+        _patcher.start()
+        self.addCleanup(_patcher.stop)
 
     def test_wrong_pick_fails_audit(self):
         from CompanySiteApply.section_agents.sub_agents.technical_competency_subagent import (
@@ -535,6 +580,17 @@ class TestResumeFreshness(unittest.TestCase):
 
 class TestDropdownFilterTypingFallback(unittest.TestCase):
     """Incident 210772077: React listbox loads options only after filter text."""
+
+    def setUp(self):
+        # [CATCH-NEW-1] heal_dropdown_questions() creates AIBrainResolver
+        # for slug "t" — isolate Operations before brain persistence.
+        self._tmp_ops = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ops.cleanup)
+        for _slug in ("t", "test_user", "candidate"):
+            (Path(self._tmp_ops.name) / "profiles" / _slug).mkdir(parents=True, exist_ok=True)
+        _patcher = unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": self._tmp_ops.name})
+        _patcher.start()
+        self.addCleanup(_patcher.stop)
 
     def test_empty_fetch_triggers_filter_typing(self):
         from CompanySiteApply.section_agents.scripts.s2_dropdown_questions import (

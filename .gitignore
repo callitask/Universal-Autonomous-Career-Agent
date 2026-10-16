@@ -51,10 +51,12 @@ ENV/
 env.bak/
 venv.bak/
 
-# 3. Playwright & Browser Artifacts
+# 3. Playwright & Browser Artifacts (Runtime outputs live in Operations root)
 test-results/
 .playwright-artifacts/
 screenshots/
+artifacts/
+/company_site_apply/
 jpmc_job_matches.json
 
 # 4. Logs, Audit Dumps, and Databases

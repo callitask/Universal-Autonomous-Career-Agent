@@ -1,4 +1,8 @@
+import os
+import tempfile
 import unittest
+import unittest.mock
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from CompanySiteApply.section_agents import (
     BaseSectionAgent,
@@ -33,10 +37,22 @@ class MockPill:
 
 class TestSectionAgents(unittest.TestCase):
     def setUp(self):
+        # [CATCH-NEW-1] Review/Documents heal paths call
+        # AIBrainResolver.resolve_recipient_header() for slugs "alex_rivera"
+        # / "sarah_connor" — isolate Operations before any heal/audit.
+        self._tmp_ops = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ops.cleanup)
+        for _slug in ("alex_rivera", "sarah_connor", "test_user", "t", "candidate"):
+            (Path(self._tmp_ops.name) / "profiles" / _slug).mkdir(parents=True, exist_ok=True)
+        _patcher = unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": self._tmp_ops.name})
+        _patcher.start()
+        self.addCleanup(_patcher.stop)
+        from CompanySiteApply.ai_brain_resolver import AIBrainResolver as _R
+        _R._instance = None
         self.candidate_data = {
             "candidate": {
-                "first_name": "Udaysagar",
-                "last_name": "Kandpal",
+                "first_name": "Alex",
+                "last_name": "Rivera",
                 "full_name": "Alex Rivera",
                 "email": "alex.rivera@example.com",
                 "phone": "+91 9000000001",

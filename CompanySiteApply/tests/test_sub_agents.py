@@ -98,7 +98,7 @@ class TestSubAgents(unittest.TestCase):
     def test_documents_subagent_audit_both_attached(self):
         agent = DocumentsSubAgent()
         mock_page = MagicMock()
-        mock_page.evaluate.return_value = ["Udaysagar_Resume.pdf", "Udaysagar_Cover_Letter.pdf"]
+        mock_page.evaluate.return_value = ["Alice_Smith_Resume.pdf", "Alice_Smith_Cover_Letter.pdf"]
         res = agent.audit(mock_page, {})
         self.assertTrue(res["is_valid"])
         self.assertTrue(res["has_resume"])
@@ -107,7 +107,7 @@ class TestSubAgents(unittest.TestCase):
     def test_documents_subagent_audit_missing_cover(self):
         agent = DocumentsSubAgent()
         mock_page = MagicMock()
-        mock_page.evaluate.return_value = ["Udaysagar_Resume.pdf"]
+        mock_page.evaluate.return_value = ["Alice_Smith_Resume.pdf"]
         res = agent.audit(mock_page, {})
         self.assertFalse(res["is_valid"])
         self.assertTrue(res["has_resume"])
@@ -169,7 +169,7 @@ class TestSubAgents(unittest.TestCase):
         mock_page = MagicMock()
         mock_page.url = "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1002/job/210790129/apply/section/4"
         mock_page.evaluate.return_value = {
-            "resume": {"filled": True, "filename": "Udaysagar_Resume.pdf", "waiting": False, "hasRemove": True},
+            "resume": {"filled": True, "filename": "Alice_Smith_Resume.pdf", "waiting": False, "hasRemove": True},
             "cover": {"filled": True, "filename": "Old_Cover_Letter.pdf", "waiting": False, "hasRemove": True}
         }
         res = agent.audit(mock_page, {"job_id": "210790129"})

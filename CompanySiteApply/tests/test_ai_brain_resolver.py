@@ -1,6 +1,8 @@
+import os
 import unittest
 import json
 import tempfile
+import unittest.mock
 from pathlib import Path
 from CompanySiteApply.ai_brain_resolver import AIBrainResolver
 
@@ -8,6 +10,20 @@ from CompanySiteApply.ai_brain_resolver import AIBrainResolver
 class TestAIBrainResolver(unittest.TestCase):
 
     def setUp(self):
+        # [CATCH-NEW-1] Sandbox isolation: AIBrainResolver derives slug
+        # "alex_rivera" from full_name "Alex Rivera" (and "alice_smith"
+        # from the audit fixture). Without an isolated Operations root,
+        # resolve_profile_dir()/profiles_root() fall back to the repo tree
+        # and persist screening_answers.json into profiles/alex_rivera/.
+        self._tmp_ops = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ops.cleanup)
+        for _slug in ("alex_rivera", "alice_smith", "candidate"):
+            (Path(self._tmp_ops.name) / "profiles" / _slug).mkdir(parents=True, exist_ok=True)
+        _patcher = unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": self._tmp_ops.name})
+        _patcher.start()
+        self.addCleanup(_patcher.stop)
+        from CompanySiteApply.ai_brain_resolver import AIBrainResolver as _R
+        _R._instance = None
         # Sample synthetic tech candidate profile
         self.candidate_data = {
             "candidate": {
@@ -38,6 +54,13 @@ class TestAIBrainResolver(unittest.TestCase):
             }
         }
         self.brain = AIBrainResolver(self.candidate_data)
+        # Enforce sandbox: brain must resolve inside temp ops, never repo.
+        _expected = Path(self._tmp_ops.name) / "profiles" / "alex_rivera" / "screening_answers.json"
+        if Path(str(self.brain.output_json_path)) != _expected:
+            # If resolver picked inspections fallback (no company_site_apply
+            # subdir), redirect into the pre-created sandbox profile.
+            if "alex_rivera" not in str(self.brain.output_json_path):
+                self.brain.output_json_path = _expected
 
     def test_knowledge_index_extraction(self):
         idx = self.brain.knowledge_index
@@ -131,10 +154,10 @@ class TestAIBrainResolver(unittest.TestCase):
             self.assertEqual(loaded[0]["answer"], "Yes")
 
     def test_non_technical_candidate_resolution(self):
-        # Sample non-tech profile: Anshika Garg (Internal Audit)
+        # Sample non-tech profile: Alice Smith (Internal Audit)
         audit_data = {
             "candidate": {
-                "full_name": "Anshika Garg",
+                "full_name": "Alice Smith",
                 "current_title": "Internal Audit Associate",
                 "total_experience_years": 0.5,
                 "country": "India",
@@ -156,7 +179,7 @@ class TestAIBrainResolver(unittest.TestCase):
         }
         audit_brain = AIBrainResolver(audit_data)
         idx = audit_brain.knowledge_index
-        self.assertEqual(idx["candidate_name"], "Anshika Garg")
+        self.assertEqual(idx["candidate_name"], "Alice Smith")
         self.assertEqual(idx["primary_domain"], "Internal Audit & Risk")
         self.assertFalse(idx["is_tech_candidate"])
         self.assertEqual(idx["aws_proficiency"], "None")
@@ -176,16 +199,35 @@ class TestAIBrainResolver(unittest.TestCase):
 class TestRecipientHeaderArbitration(unittest.TestCase):
     """AG Brain owns the cover-letter recipient block (incident 210791831)."""
 
+    def setUp(self):
+        # [CATCH-NEW-1] Isolate Operations so resolve_recipient_header for
+        # requisition "3001"/"Staff Software Engineer - Distributed Systems"
+        # (and these 210791831 fixtures) persists inside temp ops, never
+        # into F:\\JOB AI AGENT\\profiles\\alex_rivera\\screening_answers.json.
+        self._tmp_ops = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ops.cleanup)
+        (Path(self._tmp_ops.name) / "profiles" / "alex_rivera").mkdir(parents=True, exist_ok=True)
+        (Path(self._tmp_ops.name) / "profiles" / "candidate").mkdir(parents=True, exist_ok=True)
+        _patcher = unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": self._tmp_ops.name})
+        _patcher.start()
+        self.addCleanup(_patcher.stop)
+        from CompanySiteApply.ai_brain_resolver import AIBrainResolver as _R
+        _R._instance = None
+
     def _brain(self):
-        import tempfile as _tf
-        from pathlib import Path as _P
         from CompanySiteApply.ai_brain_resolver import AIBrainResolver
         AIBrainResolver._instance = None
         b = AIBrainResolver.get_instance(
             {"candidate": {"full_name": "Alex Rivera"}})
-        # Never pollute the live screening_answers.json from unit tests.
-        b.output_json_path = _P(_tf.mkdtemp()) / "screening_answers.json"
+        # Sandbox proof: force output inside temp Operations profile dir.
+        _sandbox = Path(self._tmp_ops.name) / "profiles" / "alex_rivera" / "screening_answers.json"
+        b.output_json_path = _sandbox
         b.history = []
+        try:
+            if _sandbox.exists():
+                _sandbox.unlink()
+        except Exception:
+            pass
         return b
 
     def test_stamped_company_wins_with_location(self):

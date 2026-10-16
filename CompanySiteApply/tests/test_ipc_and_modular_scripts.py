@@ -33,7 +33,7 @@ class TestIPCManager(unittest.TestCase):
         self.ipc = IPCManager(
             session_id=self.session_id,
             job_id="210780039",
-            profile="udaysagar_kandpal",
+            profile="alice_smith",
             section="section_2",
             subsection="conditional_questions"
         )
