@@ -1,3 +1,20 @@
+# AI CONTEXT & CHANGE LOG
+# ==============================================================================
+# [ENTRY #001]
+# Term: [BASE_MD_COVER_SYNTHESIS]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: generate_tailored_cover_letter() synthesized hardcoded
+#                  fallback paragraphs/bullets and never read the company
+#                  cover_letters/BASE.md, so per-company tone work was dead.
+# Changes Made: _parse_base_cover_letter_md() (token substitution, empty-ID
+#               strip, ".." dedup, salutation/sign-off body parse); resolver
+#               integration with hardcoded fallback; body CSS 9.2pt/1.4.
+# Rationale: Company-framed base letters must ground synthesis; hardcoded
+#            copy stays only as the no-BASE fallback (unit tests).
+# Preventative Notes: Never reorder validation (company refusal stays first);
+#                     never change generate_cover_letter_pdf() kwargs.
+# ==============================================================================
+
 import os
 import re
 from pathlib import Path
@@ -19,8 +36,8 @@ COVER_LETTER_HTML_TEMPLATE = """<!DOCTYPE html>
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     color: #2D3748;
-    line-height: 1.45;
-    font-size: 9.5pt;
+    line-height: 1.4;
+    font-size: 9.2pt;
     margin: 0;
     padding: 0;
   }
@@ -366,6 +383,80 @@ Sincerely,
     return str(pdf_out)
 
 
+def _parse_base_cover_letter_md(base_md_path, ctx=None):
+    """Parse a base cover-letter markdown file into template-ready parts.
+
+    Substitutes bracket/mustache tokens from ctx, strips empty job-ID refs,
+    collapses ".." artifacts, then splits the salutation-to-sign-off body
+    into opening paragraphs, "- "/"* " bullets (Markdown bold stripped —
+    generate_cover_letter_pdf() re-applies <strong> to titles), and closing
+    paragraphs. Returns {"opening", "bullets", "closing", "rendered_md"}
+    with bullets as (title, body) tuples. Never raises on bad input.
+    """
+    out = {"opening": [], "bullets": [], "closing": [], "rendered_md": ""}
+    ctx = ctx if isinstance(ctx, dict) else {}
+    try:
+        raw = Path(base_md_path).read_text(encoding="utf-8")
+    except OSError:
+        return out
+    text = raw
+    subs = [
+        ("[Date]", ctx.get("date_str", "")),
+        ("{{DATE}}", ctx.get("date_str", "")),
+        ("[DATE]", ctx.get("date_str", "")),
+        ("[Company Name]", ctx.get("organization", "")),
+        ("{{COMPANY_NAME}}", ctx.get("organization", "")),
+        ("[COMPANY_NAME]", ctx.get("organization", "")),
+        ("[City, State, Country]", ctx.get("org_location", "")),
+        ("{{COMPANY_LOCATION}}", ctx.get("org_location", "")),
+        ("[COMPANY_LOCATION]", ctx.get("org_location", "")),
+        ("[Job Title]", ctx.get("job_title", "")),
+        ("{{JOB_TITLE}}", ctx.get("job_title", "")),
+        ("[JOB_TITLE]", ctx.get("job_title", "")),
+        ("[Job ID]", str(ctx.get("job_id", "") or "").strip()),
+        ("{{JOB_ID}}", str(ctx.get("job_id", "") or "").strip()),
+        ("[JOB_ID]", str(ctx.get("job_id", "") or "").strip()),
+    ]
+    for old, new in subs:
+        if old in text:
+            text = text.replace(old, str(new))
+    text = clean_empty_job_id_refs(text)
+    while ".." in text:
+        text = text.replace("..", ".")
+    out["rendered_md"] = text
+    lines = text.splitlines()
+    start = 0
+    for i, ln in enumerate(lines):
+        if ln.strip().lower().startswith("dear "):
+            start = i + 1
+            break
+    end = len(lines)
+    for i, ln in enumerate(lines):
+        if re.match(r"^(sincerely,|best regards,)\s*$", ln.strip(), re.IGNORECASE):
+            end = i
+            break
+    body = lines[start:end]
+    bullet_idx = [i for i, ln in enumerate(body) if re.match(r"^\s*[-*]\s+", ln)]
+    if bullet_idx:
+        first, last = bullet_idx[0], bullet_idx[-1]
+        out["opening"] = [ln.strip() for ln in body[:first] if ln.strip()]
+        for i in bullet_idx:
+            item = re.sub(r"^\s*[-*]\s+", "", body[i]).strip()
+            item = re.sub(r"\*\*(.+?)\*\*", r"\1", item)
+            if ":" in item:
+                title, rest = item.split(":", 1)
+                if title.strip():
+                    out["bullets"].append((title.strip(), rest.strip()))
+                elif rest.strip():
+                    out["bullets"].append((rest.strip(), ""))
+            elif item:
+                out["bullets"].append((item, ""))
+        out["closing"] = [ln.strip() for ln in body[last + 1:] if ln.strip()]
+    else:
+        out["opening"] = [ln.strip() for ln in body if ln.strip()]
+    return out
+
+
 def generate_tailored_cover_letter(
     candidate_data: dict,
     jd_data: dict,
@@ -408,14 +499,60 @@ def generate_tailored_cover_letter(
     company_s = company.rstrip(".")
     
     today_str = date.today().strftime("%B %d, %Y")
+    # Phase 3B: base-letter-driven synthesis. Resolve the company BASE.md via
+    # the 3-tier hierarchy; parsed content replaces the hardcoded fallback
+    # below. Validation above stays first — refusal still precedes synthesis.
+    base_parsed = None
+    try:
+        from CompanySiteApply.utils.company_workspace import resolve_base_cover_letter_md
+        from CompanySiteApply.utils.runtime_paths import resolve_profile_dir
+        _prof_dir = None
+        if isinstance(candidate_data, dict):
+            _hint = candidate_data.get("profile_dir")
+            if _hint and Path(_hint).is_dir():
+                _prof_dir = Path(_hint)
+            elif candidate_data.get("profile"):
+                try:
+                    _cand = resolve_profile_dir(str(candidate_data["profile"]))
+                    if _cand.is_dir():
+                        _prof_dir = _cand
+                except Exception:
+                    _prof_dir = None
+        if _prof_dir is not None:
+            _base_md = resolve_base_cover_letter_md(_prof_dir, company)
+            if _base_md is not None:
+                base_parsed = _parse_base_cover_letter_md(
+                    _base_md,
+                    {"date_str": today_str, "organization": company,
+                     "org_location": org_loc, "hiring_team": team,
+                     "job_title": job_title, "job_id": job_id,
+                     "candidate_name": name},
+                )
+                try:
+                    (Path(target_dir) / "Cover_Letter.md").write_text(
+                        base_parsed["rendered_md"], encoding="utf-8")
+                except OSError:
+                    pass
+    except Exception as _e:
+        print(f"[CoverLetterGenerator] Base-letter note: {_e}", flush=True)
+        base_parsed = None
     if not pdf_filename:
         clean_name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
         # Per-requisition filename so letters never overwrite each other.
         clean_jid = re.sub(r'[^a-zA-Z0-9_]', '_', job_id) if job_id else ""
         pdf_filename = f"{clean_name}_Cover_Letter_{clean_jid}.pdf" if clean_jid else f"{clean_name}_Cover_Letter.pdf"
-    
-    # Generate content via AIClient if available, otherwise synthesize from config
-    opening_p = (
+
+    if base_parsed and (base_parsed["opening"] or base_parsed["bullets"]):
+        _open = base_parsed["opening"]
+        _close = base_parsed["closing"]
+        opening_p = _open[0]
+        transition_p = "\n\n".join(_open[1:])
+        bullets = [{"title": t, "body": b} for (t, b) in base_parsed["bullets"]]
+        synthesis_p = _close[0] if _close else ""
+        closing_p = "\n\n".join(_close[1:])
+    else:
+        # Generate content via AIClient if available, otherwise synthesize from config
+        opening_p = (
         f"I am writing to express my enthusiastic interest in the <strong>{job_title}</strong> "
         f"position" + (f" (Job ID: {job_id})" if job_id else "") + f" at {company_s}. "
         f"With over {cand.get('total_experience_years', 10)}+ years of software engineering leadership "

@@ -72,6 +72,21 @@
 #   self.ctx.browser_context); local headless fallback untouched.
 # Rationale: One helper, per-profile config, fail-fast over wrong-session.
 # Preventative Notes: Never index browser.contexts directly here again.
+#
+# [ENTRY #006]
+# Term: [STAGE4_BASE_MD_TAILORING]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: build_tailored_resume() always read profile resume.md and
+#   run() rendered guardrail HTML comments into PDFs; Stage 4 had no
+#   BASE.md-driven role-resume path and AI calls could stall on IPC.
+# Changes Made: base_resume_md_path override on __init__/build (guardrail
+#   compares against the same template); allow_ipc=False deterministic path
+#   skipping both AI calls; _strip_html_comments() in both render paths;
+#   tailor_and_compile_role_resume() role tailor+compile helper.
+# Rationale: Company BASE.md must ground role resumes; markers stay in .md
+#   audit trail, never in rendered PDFs; Stage 4 must never block on IPC.
+# Preventative Notes: Never render HTML comments into PDFs; never default
+#   Stage 4 tailoring to AI-gated paths.
 # ================================================================================
 """
 ================================================================================
@@ -204,10 +219,16 @@ HTML_WRAPPER = """<!doctype html>
 
 
 class ResumeTailorEngine:
-    def __init__(self, profile_path=None):
+    def __init__(self, profile_path=None, base_resume_md_path=None, allow_ipc=True):
         self.ctx = ProfileContext(profile_path, BASE)
         self.cfg = self.ctx.config
         self.resume_md_path = self.ctx.resume_path
+        # Optional company BASE.md override (Phase 3B Stage 4 tailoring).
+        self.base_resume_md_path = Path(base_resume_md_path) if base_resume_md_path else None
+        # allow_ipc=False forces the deterministic path (reorder + skills
+        # sort + guardrail) and skips every AIClient call, so Stage 4 never
+        # blocks on pending_question.json with no brain watching.
+        self._allow_ipc = bool(allow_ipc)
         self.cdp_url = self.ctx.cdp_url
         self.ai = AIClient(self.ctx)
 
@@ -329,7 +350,9 @@ class ResumeTailorEngine:
             if "SUMMARY" in heading or "PROFILE" in heading:
                 if len(section["lines"]) > 0:
                     orig_summary = " ".join([l.strip() for l in section["lines"] if l.strip()])
-                    tailored_data = self.ai.tailor_resume_content(jd_text, master_resume_text)
+                    # Deterministic Stage 4 path skips the AI summary call —
+                    # original lines survive; skills sorting below still runs.
+                    tailored_data = {} if not self._allow_ipc else self.ai.tailor_resume_content(jd_text, master_resume_text)
                     if tailored_data.get("tailored_summary"):
                         section["lines"] = [tailored_data["tailored_summary"]]
 
@@ -443,6 +466,9 @@ class ResumeTailorEngine:
         # clients configured), fast reorder-only on Gemini/Colab API runs.
         # Rationale: per-job rewriting costs ~10 min/application — acceptable
         # for watched AG Brain runs, wrong for high-volume API runs.
+        # Deterministic Stage 4 override (allow_ipc=False): never reframe.
+        if not self._allow_ipc:
+            return sections
         try:
             _flag = ((self.cfg.get("target_jobs", {}) or {}).get("resume_bullet_reframing", "auto"))
         except Exception:
@@ -511,12 +537,18 @@ class ResumeTailorEngine:
         return (tailored_md.rstrip() + "\n\n<!-- restored by zero-omission guardrail -->\n"
                 + "\n".join(missing) + "\n")
 
-    def build_tailored_resume(self, jd_text):
-        if not self.resume_md_path.exists():
-            print(f"  [!] Master Resume Template not found at {self.resume_md_path}", flush=True)
+    def build_tailored_resume(self, jd_text, base_resume_md_path=None):
+        resume_src = Path(base_resume_md_path) if base_resume_md_path else self.base_resume_md_path
+        if resume_src is not None and not resume_src.exists():
+            print(f"  [!] Base resume override not found at {resume_src} — falling back to master.", flush=True)
+            resume_src = None
+        if resume_src is None:
+            resume_src = self.resume_md_path
+        if not resume_src.exists():
+            print(f"  [!] Master Resume Template not found at {resume_src}", flush=True)
             return None, 0
 
-        template_md = self.resume_md_path.read_text(encoding="utf-8")
+        template_md = resume_src.read_text(encoding="utf-8")
         sections = self.parse_resume_sections(template_md)
         sections = self.tailor_summary_and_competencies(sections, jd_text, template_md)
         reordered = self.reorder_bullets_by_jd(sections, jd_text)
@@ -599,6 +631,8 @@ class ResumeTailorEngine:
 
                 pdf_path = folder / f"{resume_base}.pdf"
                 clean_md = tailored_md.lstrip('\ufeff\u200b\r\n ')
+                # Guardrail markers are markdown-audit metadata — never prose.
+                clean_md = _strip_html_comments(clean_md)
                 html_body = markdown.markdown(clean_md, extensions=['extra', 'tables', 'nl2br', 'sane_lists'])
                 full_html = HTML_WRAPPER.replace("{body}", html_body)
                 
@@ -624,6 +658,63 @@ class ResumeTailorEngine:
 
         manifest_path.write_text(json.dumps(jobs, indent=2), encoding="utf-8")
         print("=== ALL TAILORED RESUMES RENDERED SUCCESSFULLY ===\n", flush=True)
+
+
+def _strip_html_comments(md_text: str) -> str:
+    """Remove <!-- ... --> audit markers so they never render into PDFs."""
+    return re.sub(r"<!--.*?-->", "", str(md_text or ""), flags=re.DOTALL)
+
+
+def tailor_and_compile_role_resume(
+    profile_dir,
+    base_md_path,
+    jd_text: str,
+    out_md_path,
+    out_pdf_path,
+    allow_ipc: bool = False,
+):
+    """Tailor a company BASE.md for one requisition and compile its PDF.
+
+    Deterministic by default (allow_ipc=False): reorder + JD skill/bullet
+    prioritization + zero-omission guardrail, no AIClient calls, so Stage 4
+    never blocks on pending_question.json. Writes tailored markdown to
+    out_md_path and the A4 PDF to out_pdf_path; returns out_pdf_path.
+    Raises on failure — callers fall back to the master-resume copy path.
+    """
+    from playwright.sync_api import sync_playwright
+
+    out_md_path = Path(out_md_path)
+    out_pdf_path = Path(out_pdf_path)
+    engine = ResumeTailorEngine(profile_dir, base_resume_md_path=base_md_path, allow_ipc=allow_ipc)
+    tailored_md, _ = engine.build_tailored_resume(jd_text or "", base_resume_md_path=base_md_path)
+    if not tailored_md:
+        raise RuntimeError(f"tailoring produced no output from {base_md_path}")
+    out_md_path.parent.mkdir(parents=True, exist_ok=True)
+    out_md_path.write_text(tailored_md, encoding="utf-8")
+    clean_md = _strip_html_comments(tailored_md.lstrip('\ufeff\u200b\r\n '))
+    html_body = markdown.markdown(clean_md, extensions=['extra', 'tables', 'nl2br', 'sane_lists'])
+    full_html = HTML_WRAPPER.replace("{body}", html_body)
+    out_pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(full_html, wait_until="load")
+            page.wait_for_timeout(200)
+            page.pdf(
+                path=str(out_pdf_path),
+                format="A4",
+                print_background=True,
+                margin={"top": "6mm", "bottom": "6mm", "left": "10mm", "right": "10mm"},
+            )
+        finally:
+            try:
+                browser.close()
+            except Exception:
+                pass
+    if not out_pdf_path.is_file() or out_pdf_path.stat().st_size == 0:
+        raise RuntimeError(f"PDF compilation produced no output at {out_pdf_path}")
+    return str(out_pdf_path)
 
 
 if __name__ == "__main__":

@@ -27,6 +27,19 @@
 #               the exact blocked status with ready_for_submission False.
 # Rationale: Fill everything, upload nothing unverified, halt loudly.
 # Preventative Notes: Never report READY when any stage reports blocked.
+#
+# [ENTRY #003]
+# Term: [STAGE4_BASE_MD_RESUME_TAILORING]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: Stage 4 staged only a static master PDF; the company
+#                  BASE.md resolvers had no consumer in the resume path.
+# Changes Made: Stage 4 resolves base resume .md, tailors+compiles the role
+#               resume deterministically off-loop (allow_ipc=False), mirrors
+#               via copy_into_role; any failure falls back to master copy.
+# Rationale: Role resumes must derive from company-framed BASE.md without
+#            ever blocking on IPC or breaking existing unit tests.
+# Preventative Notes: Never make Stage 4 resume tailoring AI-gated; never
+#                     drop the master-copy fallback.
 # ==============================================================================
 
 import os
@@ -447,15 +460,63 @@ class AutonomousJobAgent:
                 pass
             cover_fixed = fixed.get("cover_pdf", str(paths["cover_pdf"]))
 
-            # Resume: copy master (company resumes/ first) with FIXED name.
-            resume_master = resolve_master_resume(self.candidate_data, company)
+            # Resume: tailor the company BASE.md into role resume.md + FIXED
+            # PDF (deterministic, never IPC-gated); fall back to master copy.
             resume_fixed = ""
-            if resume_master:
-                fixed_r = copy_into_role(role_dir, stem, resume_master, None)
-                resume_fixed = fixed_r.get("resume_pdf", "")
-                logger.info(f"[Stage 4] Master resume staged at: {resume_fixed}")
-            else:
-                logger.warning("[Stage 4] No master resume PDF found — upload will defer.")
+            try:
+                from CompanySiteApply.utils.company_workspace import (
+                    resolve_base_resume_md as _resolve_base_md,
+                )
+                from CompanySiteApply.utils.runtime_paths import (
+                    resolve_profile_dir as _rpd,
+                )
+                from core.generate_factual_tailored import (
+                    tailor_and_compile_role_resume as _tailor_role,
+                )
+                _prof_dir = None
+                if isinstance(self.candidate_data, dict):
+                    _hint = self.candidate_data.get("profile_dir")
+                    if _hint and Path(_hint).is_dir():
+                        _prof_dir = Path(_hint)
+                    else:
+                        try:
+                            _cand_dir = _rpd(profile)
+                            if _cand_dir.is_dir():
+                                _prof_dir = _cand_dir
+                        except Exception:
+                            _prof_dir = None
+                _base_md = _resolve_base_md(_prof_dir, company) if _prof_dir is not None else None
+                _jd_text = str(det.get("full_text", "") or "")
+                if _base_md is not None and _prof_dir is not None:
+                    def _gen_resume() -> str:
+                        return _tailor_role(
+                            _prof_dir, _base_md, _jd_text,
+                            role_dir / "resume.md",
+                            role_dir / f"__tmp_{job_id or 'resume'}_Resume.pdf",
+                            allow_ipc=False,
+                        )
+                    _tmp_resume = call_sync_offloaded(_gen_resume)
+                    try:
+                        _fixed_r = copy_into_role(role_dir, stem, _tmp_resume, None)
+                    finally:
+                        try:
+                            Path(_tmp_resume).unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    resume_fixed = _fixed_r.get("resume_pdf", "")
+                    logger.info(f"[Stage 4] Tailored role resume at: {resume_fixed}")
+                else:
+                    raise RuntimeError("no company BASE.md resolved; using master copy")
+            except Exception as _resume_err:
+                logger.info(f"[Stage 4] Role-resume tailor note ({_resume_err}); master-copy fallback.")
+                # Resume: copy master (company resumes/ first) with FIXED name.
+                resume_master = resolve_master_resume(self.candidate_data, company)
+                if resume_master:
+                    fixed_r = copy_into_role(role_dir, stem, resume_master, None)
+                    resume_fixed = fixed_r.get("resume_pdf", "")
+                    logger.info(f"[Stage 4] Master resume staged at: {resume_fixed}")
+                else:
+                    logger.warning("[Stage 4] No master resume PDF found — upload will defer.")
 
             archived = str(role_dir)
             return {

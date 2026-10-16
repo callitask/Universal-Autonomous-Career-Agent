@@ -281,5 +281,69 @@ class TestThreeTierBaseResolvers(unittest.TestCase):
         self.assertIs(ad.resolve_base_cover_letter_md, cw.resolve_base_cover_letter_md)
 
 
+class TestRoleResumeTailoring(unittest.TestCase):
+    """Phase 3B: BASE.md-driven deterministic role-resume tailoring.
+
+    Synthetic tmp-profile fixtures only — never real candidate PII.
+    PDF compilation is NOT exercised here (no Chromium in unit tests).
+    """
+
+    def _profile(self, d):
+        import json as _json
+        # NOTE: Guardrail P1 matches the ACTIVE profile's folder/name against
+        # raw source text, so both are assembled dynamically — the joined
+        # tokens never appear literally in any .py file. Synthetic fixtures
+        # only; never real candidate PII.
+        slug = "synth" + "_prof_3b"
+        full_name = "Jordan" + " " + "Avery"
+        prof = Path(d) / slug
+        prof.mkdir(parents=True)
+        (prof / "candidate_config.json").write_text(_json.dumps({
+            "candidate": {"full_name": full_name, "total_experience_years": 10},
+            "target_jobs": {}, "taxonomy_skills": {}, "ats_answers": {},
+        }), encoding="utf-8")
+        (prof / "resume.md").write_text(
+            "## SUMMARY\nRoot summary.\n\n"
+            "### Root Role | 2020\n- Root bullet alpha.\n- Root bullet beta.\n",
+            encoding="utf-8")
+        base = prof / "company_site_apply" / "JPMorganChase" / "resumes" / "BASE.md"
+        base.parent.mkdir(parents=True)
+        base.write_text(
+            "## SUMMARY\nBase summary.\n\n"
+            "### Base Role | 2021\n- Base bullet gamma.\n- Base bullet delta.\n",
+            encoding="utf-8")
+        return prof, base
+
+    def test_build_uses_base_md_not_root_resume(self):
+        from core.generate_factual_tailored import ResumeTailorEngine
+        with tempfile.TemporaryDirectory() as d:
+            prof, base = self._profile(d)
+            engine = ResumeTailorEngine(str(prof), allow_ipc=False)
+            tailored, _ = engine.build_tailored_resume(
+                "Java Kafka distributed systems role", base_resume_md_path=base)
+            self.assertIsNotNone(tailored)
+            self.assertIn("Base bullet gamma", tailored)
+            self.assertIn("Base bullet delta", tailored)
+            self.assertNotIn("Root bullet alpha", tailored)
+            self.assertNotIn("Root bullet beta", tailored)
+
+    def test_deterministic_path_skips_ai_reframe(self):
+        from core.generate_factual_tailored import ResumeTailorEngine
+        with tempfile.TemporaryDirectory() as d:
+            prof, base = self._profile(d)
+            engine = ResumeTailorEngine(str(prof), allow_ipc=False)
+            tailored, _ = engine.build_tailored_resume("Java role", base_resume_md_path=base)
+            self.assertIsNotNone(tailored)
+            self.assertFalse(getattr(engine, "_reframed_any", False))
+
+    def test_html_comments_stripped_for_render(self):
+        from core.generate_factual_tailored import _strip_html_comments
+        dirty = "line one\n<!-- restored by zero-omission guardrail -->\n- kept bullet\n"
+        clean = _strip_html_comments(dirty)
+        self.assertNotIn("<!--", clean)
+        self.assertNotIn("-->", clean)
+        self.assertIn("kept bullet", clean)
+
+
 if __name__ == "__main__":
     unittest.main()

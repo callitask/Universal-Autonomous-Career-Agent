@@ -20,6 +20,16 @@
 # Changes Made: Synthetic fixture identity ("Alex Rivera") everywhere.
 # Rationale: Tests must pass purity against default_user AND live profiles.
 # Preventative Notes: Never use real candidate names in test fixtures.
+#
+# [ENTRY #003]
+# Term: [BASE_MD_PARSER_TESTS]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: Phase 3B added _parse_base_cover_letter_md(); parser
+#                  token/paragraph/bullet behavior needed regression pins.
+# Changes Made: TestBaseCoverLetterParser (tokens, empty-ID strip, ".."
+#               dedup, paragraph/bullet extraction, missing-file guard).
+# Rationale: Parser output feeds PDF kwargs; pin it with synthetic data.
+# Preventative Notes: Never use real candidate names in test fixtures.
 # ==============================================================================
 
 import os
@@ -112,6 +122,89 @@ class TestCoverLetterJobId(unittest.TestCase):
                 self.assertEqual(kwargs["org_location"], "Mumbai, Maharashtra, India")
                 self.assertIn("JPMorgan Chase & Co. Engineering Team",
                               kwargs["hiring_team"])
+
+class TestBaseCoverLetterParser(unittest.TestCase):
+    """Phase 3B: BASE.md token substitution, parsing, and hygiene."""
+
+    def _base_md(self, d, body):
+        p = os.path.join(d, "BASE.md")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(body)
+        return p
+
+    def _ctx(self, job_id="210791831"):
+        return {"date_str": "October 17, 2026", "organization": "JPMorgan Chase & Co.",
+                "org_location": "Mumbai, Maharashtra, India",
+                "hiring_team": "JPMorgan Chase & Co. Engineering Team",
+                "job_title": "Sr Manager of Software Engineering",
+                "job_id": job_id, "candidate_name": "Alex Rivera"}
+
+    def _fixture(self):
+        return (
+            "Dear Hiring Team,\n"
+            "\n"
+            "I am Alex Rivera applying for [Job Title] (Job ID: [JOB_ID]) at "
+            "[Company Name] in [City, State, Country] on [Date].\n"
+            "\n"
+            "My transition to product engineering drives me.\n"
+            "\n"
+            "- **Distributed Systems:** Led high-throughput services.\n"
+            "- **Cloud Platforms:** Shipped Kubernetes workloads.\n"
+            "\n"
+            "I welcome the chance to contribute to [Company Name]. Thank you.\n"
+            "\n"
+            "Sincerely,\n"
+            "Alex Rivera\n"
+        )
+
+    def test_substitutes_all_tokens(self):
+        from core.generate_professional_cover_letter import _parse_base_cover_letter_md
+        with tempfile.TemporaryDirectory() as d:
+            p = self._base_md(d, self._fixture())
+            out = _parse_base_cover_letter_md(p, self._ctx())
+            self.assertIn("Sr Manager of Software Engineering", out["opening"][0])
+            self.assertIn("JPMorgan Chase & Co.", out["opening"][0])
+            self.assertIn("Mumbai, Maharashtra, India", out["opening"][0])
+            self.assertIn("October 17, 2026", out["opening"][0])
+            self.assertIn("(Job ID: 210791831)", out["opening"][0])
+            for token in ("[Job Title]", "[JOB_ID]", "[Company Name]",
+                          "[City, State, Country]", "[Date]"):
+                self.assertNotIn(token, out["rendered_md"])
+
+    def test_strips_empty_job_id_parens(self):
+        from core.generate_professional_cover_letter import _parse_base_cover_letter_md
+        with tempfile.TemporaryDirectory() as d:
+            p = self._base_md(d, self._fixture())
+            out = _parse_base_cover_letter_md(p, self._ctx(job_id=""))
+            self.assertNotIn("(Job ID: )", out["rendered_md"])
+            self.assertNotIn("(Job ID:)", out["opening"][0])
+
+    def test_dedupes_double_periods(self):
+        from core.generate_professional_cover_letter import _parse_base_cover_letter_md
+        with tempfile.TemporaryDirectory() as d:
+            p = self._base_md(d, "Dear Hiring Team,\n\nWelcome to [Company Name].\n\nSincerely,\nAlex Rivera\n")
+            out = _parse_base_cover_letter_md(p, self._ctx())
+            self.assertNotIn("..", out["rendered_md"])
+            self.assertIn("JPMorgan Chase & Co.", out["rendered_md"])
+
+    def test_extracts_paragraphs_and_bullets(self):
+        from core.generate_professional_cover_letter import _parse_base_cover_letter_md
+        with tempfile.TemporaryDirectory() as d:
+            p = self._base_md(d, self._fixture())
+            out = _parse_base_cover_letter_md(p, self._ctx())
+            self.assertEqual(len(out["opening"]), 2)
+            self.assertEqual(len(out["bullets"]), 2)
+            self.assertEqual(out["bullets"][0][0], "Distributed Systems")
+            self.assertIn("high-throughput", out["bullets"][0][1])
+            self.assertEqual(len(out["closing"]), 1)
+            for title, body in out["bullets"]:
+                self.assertNotIn("**", title + body)
+
+    def test_missing_file_returns_empty(self):
+        from core.generate_professional_cover_letter import _parse_base_cover_letter_md
+        out = _parse_base_cover_letter_md("/nonexistent_dir_xyz/BASE.md", self._ctx())
+        self.assertEqual(out, {"opening": [], "bullets": [], "closing": [], "rendered_md": ""})
+
 
 if __name__ == "__main__":
     unittest.main()
