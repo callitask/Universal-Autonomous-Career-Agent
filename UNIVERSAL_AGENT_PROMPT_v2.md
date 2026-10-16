@@ -257,6 +257,7 @@ If any daemon dies (crash, cancellation, environment timeout):
 [ERROR] **Never let** a PENDING IPC question expire unanswered — respond within 90 seconds  
 [ERROR] **Never write** profile-specific data, logs, or temp files outside `profiles/$TARGET_PROFILE/`  
 [ERROR] **Never commit** `profiles/` to git — verify `.gitignore` blocks it
+[LOG] **Log every file change in detail:** whenever you modify any file, append a dated entry (timestamp, exact change, reason with evidence) to that file's `# AI CONTEXT & CHANGE LOG` header without deleting prior entries, and echo the same entry in your session output, so all changes are tracked in logs with appropriate reasons.
 
 ================================================================================
 ## EXECUTION MANDATE UPON PROMPT RECEIPT
