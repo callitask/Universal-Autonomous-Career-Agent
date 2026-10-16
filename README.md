@@ -34,7 +34,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 ## Key Features
 
 *   **Guardrail P1 (Codebase Purity Enforcer):** Automated runtime AST and token purity verification (`ctx.verify_codebase_purity()`) ensuring zero candidate PII or hardcoded values across root `*.py`, `core/`, `scripts/`, `CompanySiteApply/`, and `tests/`.
-*   **Dynamic Startup & Profile Auto-Discovery:** Automatic runtime profile discovery (making `--profile` optional) and pre-flight CDP port 9222 diagnostics before automation loops start.
+*   **Dynamic Startup & Profile Auto-Discovery:** Automatic runtime profile discovery from `F:\Operations JOB AI AGENT\profiles\` (`--profile` may be omitted when exactly 1 live profile exists; pass `--profile <slug>` explicitly when more than one live profile exists) and pre-flight CDP port 9222 diagnostics before automation loops start.
 *   **Zero-Hardcoding Policy:** Complete separation of codebase and candidate data sandboxes (`profiles/`).
 *   **Platform Isolation:** Independent, decoupled execution environments for diverse job platforms (Naukri & LinkedIn).
 *   **Self-Learning Ledger:** $O(1)$ exact-match caching for recurring screening questions to minimize API overhead and ensure deterministic truth scaling.

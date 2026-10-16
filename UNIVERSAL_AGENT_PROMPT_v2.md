@@ -75,9 +75,9 @@ profiles/$TARGET_PROFILE/resume.md               ← Candidate's master resume (
 
 **Step 1 — Verify Zero-Trust Purity (Guardrail P1):**
 ```powershell
-python -c "from core.utils.profile_context import ProfileContext; ctx = ProfileContext('profiles/$TARGET_PROFILE'); is_pure, errs = ctx.verify_codebase_purity(); print('Pure:', is_pure, errs)"
+python -c "from CompanySiteApply.utils.runtime_paths import resolve_profile_dir; from core.utils.profile_context import ProfileContext; ctx = ProfileContext(resolve_profile_dir('$TARGET_PROFILE')); is_pure, errs = ctx.verify_codebase_purity(); print('Pure:', is_pure, errs)"
 ```
-Must return `Pure: True []`. If it fails, stop and investigate before proceeding.
+Must return `Pure: True []`. If it fails, stop and investigate before proceeding. (`resolve_profile_dir()` resolves live profiles under `F:\Operations JOB AI AGENT\profiles\`; a repo-relative `'profiles/$TARGET_PROFILE'` path would miss Operations profiles.)
 
 **Step 2 — Verify sandbox I/O isolation:**
 All dynamic outputs MUST be restricted to `profiles/$TARGET_PROFILE/output/`:

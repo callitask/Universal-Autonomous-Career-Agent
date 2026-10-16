@@ -181,7 +181,7 @@ When applying to any company website (CompanySiteApply scope — distinct from t
 2. **Submission gates (all portals):** final submission is human-only — finger adapters (Oracle, Greenhouse, Workday) require explicit `allow_submit=True`, which agents never pass.
 2. **Profile Template Standards**:
    - Master generic templates live at `profiles/default_user/cover_letter_template.md`.
-   - Candidate-specific base cover letters live at `profiles/{profile_name}/cover_letter.md`.
+   - Candidate-specific base cover letters live at `profiles/{profile_name}/company_site_apply/<CompanySlug>/cover_letters/BASE.md`.
    - Core automation scripts must strictly consume from config and profile files without hardcoding names, companies, or answers.
 
 ---

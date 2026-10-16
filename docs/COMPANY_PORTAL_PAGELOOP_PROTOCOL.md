@@ -123,7 +123,7 @@ with real keystrokes, ArrowDown + Enter, native-setter + event chain.
 ## 5. Standing Rules for Future Portal Work (binds all sessions)
 
 - Preload this file + `SCOPE_OF_EDIT.md` before any new finger/nail/scraper.
-- **Application Tracking & Tailoring:** Before applying, the agent MUST stage tailored artifacts under the candidate sandbox: `profiles/<profile>/company_site_apply/` (cover letter PDF + `Cover_Letter.txt` naming the requisition ID) and track under `profiles/<profile>/output/` (ledger, manifests). Resolved past tailored files live under `APPLIED ON COMPANY WEBSITE/`. Never invent paths outside the sandbox.
+- **Application Tracking & Tailoring:** Before applying, the agent MUST work inside the candidate sandbox: per-company inputs live at `profiles/<profile>/company_site_apply/<CompanySlug>/` (root `README.md`-only + `resumes/BASE.md` + `cover_letters/BASE.md`); tailored artifacts go to `APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` with FIXED `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` names (never job-id filename suffixes) and track under `profiles/<profile>/output/` (ledger, manifests). Resolved past tailored files live under `APPLIED ON COMPANY WEBSITE/`. Never invent paths outside the sandbox.
 - Shared-first: portal-wide fixes go in `dom_helpers.py`/shared libs with
   regression tests; per-company files carry selectors + truth-gating only.
 - No hardcoded field lists, city names, IDs, model names, or profile paths.

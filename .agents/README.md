@@ -46,9 +46,9 @@ All candidate-specific data is dynamically resolved at runtime from:
 
 **Step 1 — Verify Zero-Trust Purity (Guardrail P1):**
 ```powershell
-python -c "from core.utils.profile_context import ProfileContext; ctx = ProfileContext('profiles/$TARGET_PROFILE'); is_pure, errs = ctx.verify_codebase_purity(); print('Pure:', is_pure, errs)"
+python -c "from CompanySiteApply.utils.runtime_paths import resolve_profile_dir; from core.utils.profile_context import ProfileContext; ctx = ProfileContext(resolve_profile_dir('$TARGET_PROFILE')); is_pure, errs = ctx.verify_codebase_purity(); print('Pure:', is_pure, errs)"
 ```
-Must return `Pure: True []`. If it fails, stop and investigate before proceeding.
+Must return `Pure: True []`. If it fails, stop and investigate before proceeding. (`resolve_profile_dir()` resolves live profiles under `F:\Operations JOB AI AGENT\profiles\`; a repo-relative `'profiles/$TARGET_PROFILE'` path would miss Operations profiles.)
 
 **Step 2 — Verify sandbox I/O isolation:**
 Live runtime data lives under the Operations root (`F:\Operations JOB AI AGENT\`, env-overridable via `JOB_AGENT_OPERATIONS`); the repo keeps code + the `default_user` blueprint only. All dynamic outputs MUST resolve there (Operations first, repo fallback for blueprints):

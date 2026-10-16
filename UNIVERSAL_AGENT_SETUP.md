@@ -156,7 +156,7 @@ chrome.exe --remote-debugging-port=9222 --user-data-dir="C:\ChromeProfiles\JobAg
 ### C. AI Intelligence Mode Configuration
 
 #### Mode 1: Zero-API Antigravity 2.0 Mode (Recommended & Default)
-No API key is required. When `GEMINI_API_KEY` is not set, `AIClient` automatically routes cognitive reasoning tasks (profile synthesis, borderline job match arbitration, screening questions) to `profiles/<profile>/output/pending_question.json`.
+No API key is required. `gemini_credentials.json` and `colab_credentials.json` carry `"engine_enabled": false` by default, which keeps Zero-API AG Brain IPC mode active even if `GEMINI_API_KEY` is set in the environment. When engines are disabled, `AIClient` automatically routes cognitive reasoning tasks (profile synthesis, borderline job match arbitration, screening questions) to `profiles/<profile>/output/pending_question.json`.
 
 #### Mode 2: Gemini API Hosted Mode (Optional)
 If you prefer hosted Gemini API execution, export your API key before launching:
@@ -176,7 +176,10 @@ If you prefer hosted Gemini API execution, export your API key before launching:
 The agent supports any number of candidate profiles inside the Operations `profiles/` root.
 
 ### Step 4.1: Create Profile Sandbox Directory
-Create a folder inside `F:\Operations JOB AI AGENT\profiles\` (e.g., `F:\Operations JOB AI AGENT\profiles\john_doe\`).
+Create a folder inside `F:\Operations JOB AI AGENT\profiles\` (e.g., `F:\Operations JOB AI AGENT\profiles\john_doe\`):
+```powershell
+Copy-Item -Recurse profiles/default_user "F:\Operations JOB AI AGENT\profiles\<candidate_slug>"
+```
 
 ### Step 4.2: Populate `resume.md`
 Add the candidate's master resume in markdown format (`profiles/<candidate_name>/resume.md`):
@@ -214,7 +217,7 @@ Launch the master continuous career agent:
 ```bash
 python core/continuous_career_agent.py --profile profiles/<candidate_name>
 ```
-*(Tip: `--profile` is optional; if omitted, the agent automatically discovers the active profile in `profiles/` and verifies codebase purity via Guardrail P1).*
+*(Tip: `--profile` auto-discovers the active profile when exactly 1 live profile exists in `F:\Operations JOB AI AGENT\profiles\`; pass `--profile <slug>` explicitly when more than one live profile exists. Discovery runs Batch v2.0 `ARM -> BRAIN -> EXECUTE`: cards are collected, sent to the AG Brain via `batch_question.json`, and decisions return in `batch_answer.json` within the 120s SLA, with the Guardrail C24 card-level `exp_text` experience gate applied.)*
 
 ### Supported CLI Flags:
 | Flag | Description |

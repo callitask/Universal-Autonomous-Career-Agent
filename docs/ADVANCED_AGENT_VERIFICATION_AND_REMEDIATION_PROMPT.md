@@ -51,7 +51,7 @@ You must walk the tree file-by-file. No sampling. For **every** `.py`, `.md`, `.
   - `parser_doctor/`: `__init__.py`, `line_wrap_healer.py`, `education_healer.py`, `review_verifier.py`
   - `utils/`: `__init__.py`, `dom_helpers.py`, `honeypot_guard.py`, `config_resolver.py`, `experience_matcher.py`, `match_report.py`, `question_hygiene.py`, `sync_bridge.py`, `company_workspace.py`
   - `inspections/`: gitignored runtime DOM snapshots (count varies; never copy PII out)
-  - `tests/`: 20 files, 164 tests (re-count via `grep def test_` including `async def test_`)
+  - `tests/`: CompanySiteApply suite files, 164 tests (re-count via `grep def test_` including `async def test_`); plus 7 cover-letter-id tests in `tests/` and 10 knowledge index tests (`181` total via `scripts/phase_4_run.ps1`)
   - Docs: `README.md`, `SCOPE_OF_EDIT.md`
 - `scripts/`: `build_knowledge_index.py`, `reevaluate_ledger.py`, `test_colab_connection.py`, `phase_4_run.ps1`, plus `legacy_company_apply/` (archived one-offs, never run)
 - `docs/`: `WORKSPACE_RULES.md`, `ARCHITECTURE_REFERENCE.md`, `PLATFORM_KNOWLEDGE.md`, `GEMINI_WEB_AI_PROMPTS.md`, `REFERENCE_DEPLOYMENT_GUIDE.md`, `COMPANY_ATS_KNOWLEDGE.md`, `ORACLE_HCM_ATS_DEEP_DIVE.md`, `STRATEGIC_RESUME_TAILORING.md`, `UNIVERSAL_ATS_REVERSE_ENGINEERING_PLAYBOOK.md`, `KNOWLEDGE_GRAPH_CHANGELOG.md`, `DEPRECATED_SYSTEMS_CHANGELOG.md`, plus this brief

@@ -666,7 +666,7 @@ F:\JOB AI AGENT\
 │   └── <profile_name>/
 │       ├── candidate_config.json      # Master configuration (all candidate truths)
 │       ├── resume.md                  # Factual reverse-chronological resume
-│       ├── company_site_apply/        # Per-company inputs: <Slug>/resumes|cover_letters (+ resume.md, cover_letters/BASE.md)
+│       ├── company_site_apply/        # Per-company inputs: <Slug>/ with root README.md-only + resumes/BASE.md + cover_letters/BASE.md
 │       ├── APPLIED ON COMPANY WEBSITE/ # Per-application outputs: <Company>/<Role>_<jobid>/ with fixed <Stem>_Resume.pdf / <Stem>_Cover_Letter.pdf + resume/ + cover_letters/ subfolders + Cover_Letter.txt/.html (no job-id filename suffixes; profile-agnostic)
 │       └── output/                    # Live under Operations root (F:\Operations JOB AI AGENT\profiles\<profile>\...), repo keeps default_user blueprint only
 │           ├── applications/          # Per-job tailored resume folders

@@ -59,13 +59,13 @@ The Company Site Apply subsystem (`CompanySiteApply/`) provides 100% config-driv
 Simply instruct Antigravity:
 > *"Run the autonomous company site application agent for profile [profile_name] on JPMC career portal. Follow the 6-stage lifecycle in CompanySiteApply/autonomous_job_agent.py, ensure all sub-agents execute with zero hardcoding, and halt at Section 4 before clicking SUBMIT."*
 
-### Command-Line Execution (`--profile` optional — auto-discovers the sole live profile under `F:\Operations JOB AI AGENT\profiles\`):
+### Command-Line Execution (live profiles resolve under `F:\Operations JOB AI AGENT\profiles\`; `--profile` auto-discovers the sole live profile, or pass `--profile <profile_slug>` explicitly when more than one live profile exists):
 ```powershell
-# Run full autonomous lifecycle
-.venv\Scripts\python run_universal_apply.py --autonomous
+# Run full autonomous lifecycle (add --profile <slug> when >1 live profile exists in Operations)
+.venv\Scripts\python run_universal_apply.py --profile <profile_slug> --autonomous
 
-# Run active tab application (for forms already open)
-.venv\Scripts\python run_universal_apply.py
+# Run active tab application (for forms already open; ATSArm scrapes job_id/title/company from the open tab)
+.venv\Scripts\python run_universal_apply.py --profile <profile_slug>
 
 # Run test suite
 .venv\Scripts\python -m unittest discover -s CompanySiteApply/tests

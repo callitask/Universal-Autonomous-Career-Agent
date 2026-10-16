@@ -274,7 +274,7 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
 [Section 4: Review, Supporting Documents & Hard Stop]
     -> Verify Documents: Ensure tailored Resume PDF and Cover Letter PDF both display green checkmark and "REMOVE" button (click "Use" if pending).
     -> Verify Diversity: Ethnicity ("Asian"), Gender ("Male"), Military ("No").
-    -> Verify E-Signature: Full Name ("Udaysagar Kandpal").
+    -> Verify E-Signature: Full Name (candidate legal name from profile).
     -> Capture per-section proof (`{section}_audited_<ts>.png` into `section_proofs`).
     -> HARD STOP: Do NOT click SUBMIT. Halt for human principal architect review.
 ```
@@ -443,7 +443,7 @@ An autonomous career agent must **NEVER** bypass Section 1 without uploading the
   3. Inspect `input[id^='countryCode']`. If not set to candidate country (e.g. `India`), click toggle button `button[id^='countryCode'][id$='-toggle-button']`, click the dropdown list item (`India`), and verify commit.
   4. Inspect `input[name='employerCity']`. Populate candidate city (e.g. `Bengaluru`, `Noida`, `Delhi`) based on candidate employment metadata, dispatching `input` and `change` events.
   5. Check `Internal` radio pills (`button.cx-select-pill-section`). If neither is active, explicitly click `No` (`button:has-text('No')`).
-  6. Retrieve authentic achievements from candidate profile (`company_site_apply/resume.md`). Format into clean bulleted text prefixed with `• ` and double-spaced (`\n\n• `). Populate `textarea[name='achievements']` and dispatch `input`/`change` events.
+  6. Retrieve authentic achievements from the company base resume (`company_site_apply/<Slug>/resumes/BASE.md`, falling back to master `resume.md`). Format into clean bulleted text prefixed with `• ` and double-spaced (`\n\n• `). Populate `textarea[name='achievements']` and dispatch `input`/`change` events.
   7. Click `SAVE` (`button.save-btn`), wait for modal to close (`page.wait_for_selector("input[id^='employerName']:visible", state="hidden")`), and allow 1 second for Knockout DOM re-indexing.
 
 ### Trap 26: Section 3 Education Modal School Field Combobox Autocomplete & Disabled SAVE Button

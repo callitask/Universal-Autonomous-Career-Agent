@@ -74,11 +74,10 @@ When tailoring for specific job focus areas (e.g. Kafka, AWS, Cassandra):
 > **Output-path split (by design):** portal-pipeline roles (Naukri/LinkedIn via `core/`) write to `profiles/<profile>/output/applications/<Company>_<Role>/`; direct company-site applications (via `CompanySiteApply/`) write below. Never mix the two trees.
 Every tailored resume must be saved strictly in the official company application folder:
 ```
-profiles/<profile_name>/APPLIED ON COMPANY WEBSITE/<Company_Name>/<Job_Title>/
-├── <Candidate_Name>_Resume.pdf            # Exact tailored 2-page PDF
-├── <Candidate_Name>_Cover_Letter.pdf      # Tailored Cover Letter
-├── resume.md                              # Role-tailored markdown source
-└── Job_Description.md                     # Raw Job Description
+profiles/<profile_name>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/
+├── <Stem>_Resume.pdf                     # Exact tailored 2-page PDF (FIXED name, mirrored in resume/)
+├── <Stem>_Cover_Letter.pdf               # Tailored Cover Letter (FIXED name, mirrored in cover_letters/)
+├── Cover_Letter.txt / Cover_Letter.html  # Role-specific companions (Job ID + title verified)
 ```
 
 ---
