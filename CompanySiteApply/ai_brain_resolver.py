@@ -27,6 +27,25 @@
 #            carry their own interview-prep Q&A for operators.
 # Preventative Notes: Never persist noise rows; never create role dirs from
 #                     the mirror (write only when Stage 4 already made one).
+#
+# [ENTRY #003]
+# Term: [F_CSA_02_CONTEXT_PRESERVATION + MIRROR_FALLBACK]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-CSA-02] get_instance(candidate_data) with no
+#                  job_context rebuilt the instance with {} and wiped the
+#                  requisition context Stage 4 had stamped, so
+#                  _mirror_role_answers() bailed on empty company/title and
+#                  role answers.json was never written. _resolve_output_json_path
+#                  also derived its slug from full_name instead of the profile
+#                  key.
+# Changes Made: get_instance preserves an existing job_context unless the
+#               caller supplies a different job_id; output path prefers
+#               profile_slug_of(); mirror now requires only job_id and falls
+#               back to job_id-anchored role-dir discovery (still never
+#               creating directories).
+# Rationale: Screening Q&A is only useful per requisition.
+# Preventative Notes: Never reset job_context implicitly; never require
+#                     company+title when a job_id can locate the role folder.
 # ==============================================================================
 
 import os
@@ -70,6 +89,16 @@ class AIBrainResolver:
     def get_instance(cls, candidate_data: Optional[Dict[str, Any]] = None, job_context: Optional[Dict[str, Any]] = None) -> "AIBrainResolver":
         if cls._instance is None or candidate_data is not None:
             cand = candidate_data or {}
+            # [F-CSA-02] Section scripts call get_instance(candidate_data) with
+            # no job_context; rebuilding with {} wiped the requisition context
+            # Stage 4 had stamped and silently disabled the role answers.json
+            # mirror. Preserve an existing context unless the caller supplies a
+            # new job_id or an explicit job_context.
+            if job_context is None and cls._instance is not None and cls._instance.job_context:
+                _old = cls._instance.job_context or {}
+                _new_job = str((cand.get("job_id") or cand.get("_ipc_job_id") or "")).strip()
+                if not _new_job or _new_job == str(_old.get("job_id") or "").strip():
+                    job_context = _old
             cls._instance = cls(cand, job_context)
         return cls._instance
 
@@ -81,9 +110,19 @@ class AIBrainResolver:
         """
         from CompanySiteApply.utils.runtime_paths import profiles_root
 
-        cand = self.candidate_data.get("candidate", {})
-        cand_name = cand.get("full_name") or cand.get("name") or "candidate"
-        cand_slug = re.sub(r'[^a-zA-Z0-9_]', '_', cand_name.lower())
+        # [F-CSA-02] Prefer the real profile identity: candidate_data["profile"]
+        # (set by Stage 1) beats a full_name-derived slug, which can collide or
+        # point nowhere when the display name differs from the folder name.
+        cand_slug = ""
+        try:
+            from CompanySiteApply.utils.application_docs import profile_slug_of
+            cand_slug = profile_slug_of(self.candidate_data, "")
+        except Exception:
+            cand_slug = ""
+        if not cand_slug or cand_slug == "default_user":
+            cand = self.candidate_data.get("candidate", {})
+            cand_name = cand.get("full_name") or cand.get("name") or "candidate"
+            cand_slug = re.sub(r'[^a-zA-Z0-9_]', '_', cand_name.lower())
 
         # Operations profile first
         ops_csa = profiles_root() / cand_slug / "company_site_apply"
@@ -268,8 +307,8 @@ class AIBrainResolver:
         """
         try:
             job_id, company, title = self._record_context()
-            if not (job_id and company and title):
-                return
+            if not job_id:
+                return  # No requisition -> nothing role-scoped to mirror.
             cd = self.candidate_data if isinstance(self.candidate_data, dict) else {}
             slug = ""
             for key in ("profile", "_ipc_profile"):
@@ -292,8 +331,30 @@ class AIBrainResolver:
             if not slug or slug in ("default_user", "candidate"):
                 return
             from CompanySiteApply.utils.application_docs import application_dir
-            role_dir = application_dir(slug, company, title, job_id)
-            if not role_dir.is_dir():
+            role_dir = None
+            if company and title:
+                _cand = application_dir(slug, company, title, job_id)
+                if _cand.is_dir():
+                    role_dir = _cand
+            if role_dir is None:
+                # [F-CSA-02] Job-id-anchored discovery: Section 2/3 callers may
+                # carry only job_id (title/company unstamped or renamed), but
+                # the role folder name always ends with _<jobid>. Still never
+                # creates a directory.
+                try:
+                    from CompanySiteApply.utils.runtime_paths import resolve_profile_dir
+                    _jid = re.sub(r"[^A-Za-z0-9_]", "_", str(job_id)).strip("_")
+                    _root = resolve_profile_dir(slug) / "APPLIED ON COMPANY WEBSITE"
+                    if _jid and _root.is_dir():
+                        for _hit in sorted(_root.glob(f"*/*_{_jid}")):
+                            if _hit.is_dir():
+                                role_dir = _hit
+                                if not company:
+                                    company = _hit.parent.name
+                                break
+                except Exception:
+                    role_dir = None
+            if role_dir is None or not role_dir.is_dir():
                 return
             target = role_dir / "answers.json"
             data: Dict[str, Any] = {}
@@ -321,7 +382,7 @@ class AIBrainResolver:
             data["screening_qa"] = qa
             data["company"] = company
             data["job_id"] = job_id
-            data["job_title"] = title
+            data["job_title"] = title or role_dir.name
             tmp = target.with_suffix(".tmp")
             tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
             tmp.replace(target)

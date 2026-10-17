@@ -146,6 +146,27 @@
 #   can execute, not the archive.
 # Preventative Notes: Never re-add archived dirs to scan scope; never de-PII
 #   forensic history to satisfy the scanner — exclude, don't rewrite.
+#
+# [ENTRY #013]
+# Term: [CODE_ROOT_VS_DATA_ROOT_SPLIT]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-CTX-01] Once live profiles exist, _default_base()
+#   returns the Operations DATA root, so docs pre-flight read a nonexistent
+#   <ops>/docs (false MISSING FILES) and verify_codebase_purity() scanned
+#   ZERO .py files (vacuous pass); ProfileContext("profiles/default_user")
+#   created a phantom <ops>/profiles/default_user with an empty config.
+#   [F-CSA-01] live-slug document literals ("<Name>_Resume.pdf") escaped the
+#   forbidden-token set.
+# Changes Made: self.code_root (base_path when it holds code, else
+#   PROJECT_ROOT) drives docs pre-flight, scan_dirs, root glob and relative
+#   paths; relative profile paths prefer the root that actually has the
+#   config; forbidden tokens now include "<slug>_resume",
+#   "<slug>_cover_letter", "<slug>_coverletter" (slug + flattened forms).
+# Rationale: A guardrail that scans nothing is worse than no guardrail; the
+#            data root and code root are different trees by design.
+# Preventative Notes: Never scan/resolve docs via base_path; never assume the
+#                     repo holds live profiles; test purity with an explicit
+#                     repo base so the scan can never be vacuous.
 # ================================================================================
 """
 ================================================================================
@@ -378,7 +399,12 @@ class ProfileContext:
         base_path: Optional[Union[str, Path]] = None
     ):
         self.base_path = Path(base_path).resolve() if base_path else _default_base()
-        
+        # Code root is where engine source lives (F:\JOB AI AGENT); base_path is
+        # the DATA root (Operations). They diverge once live profiles exist, so
+        # docs pre-flight and the purity scan must use the code root (F-CTX-01).
+        self.code_root = (self.base_path if (self.base_path / "core").is_dir()
+                          else PROJECT_ROOT)
+
         # 1. Resolve Profile Directory Path
         (self.base_path / "profiles").mkdir(parents=True, exist_ok=True)
         if profile_path:
@@ -386,7 +412,33 @@ class ProfileContext:
             if p_path.is_absolute():
                 self.profile_path = p_path.resolve()
             else:
-                self.profile_path = (self.base_path / p_path).resolve()
+                # A relative path may name the blueprint (profiles/default_user,
+                # repo only) or a live profile (Operations data root). Callers
+                # such as the IPC daemons pass the CODE root as base_path, so
+                # the Operations root must be consulted before falling back to
+                # a code-root path that only "exists" because mkdir created it.
+                _data = (self.base_path / p_path)
+                _code = (self.code_root / p_path)
+                _slug = p_path.name
+                _is_blueprint = (_slug == "default_user"
+                                 or str(p_path).replace("\\", "/").endswith("profiles/default_user"))
+                if (_data / "candidate_config.json").exists():
+                    self.profile_path = _data.resolve()
+                elif _is_blueprint and _code.exists():
+                    self.profile_path = _code.resolve()
+                else:
+                    try:
+                        from CompanySiteApply.utils.runtime_paths import (
+                            resolve_profile_dir,
+                        )
+                        _ops = resolve_profile_dir(_slug)
+                        if (_ops / "candidate_config.json").exists() or _ops.is_dir():
+                            self.profile_path = _ops.resolve()
+                        else:
+                            self.profile_path = _data.resolve()
+                    except Exception:
+                        self.profile_path = (_code if (_code / "candidate_config.json").exists()
+                                             else _data).resolve()
         else:
             self.profile_path = self._auto_discover_profile_dir()
 
@@ -440,7 +492,8 @@ class ProfileContext:
         Guarantees that every script launch verifies all core documentation and
         explicitly establishes the dynamic sandbox boundaries for profiles/.
         """
-        docs_dir = self.base_path / "docs"
+        docs_dir = (self.base_path / "docs" if (self.base_path / "docs").is_dir()
+                    else self.code_root / "docs")
         rules_file = docs_dir / "WORKSPACE_RULES.md"
         arch_file = docs_dir / "ARCHITECTURE_REFERENCE.md"
         plat_file = docs_dir / "PLATFORM_KNOWLEDGE.md"
@@ -518,11 +571,14 @@ class ProfileContext:
         4. All parameters are dynamically derived from candidate_config.json via ProfileContext.
         Raises CodebasePurityViolationError if any violation is detected.
         """
+        # Code root, NOT the data root: with live profiles present base_path is
+        # F:\Operations JOB AI AGENT, where no engine source exists — scanning
+        # there vacuously passed on zero files (F-CTX-01).
         scan_dirs = [
-            self.base_path / "core",
-            self.base_path / "scripts",
-            self.base_path / "CompanySiteApply",  # Fix #13: was missing — hardcoded PII in finger files
-            self.base_path / "tests",              # Fix #13: was missing — external path refs in tests
+            self.code_root / "core",
+            self.code_root / "scripts",
+            self.code_root / "CompanySiteApply",  # Fix #13: was missing — hardcoded PII in finger files
+            self.code_root / "tests",              # Fix #13: was missing — external path refs in tests
         ]
         violations = []
         cand = self.config.get("candidate", {})
@@ -562,6 +618,15 @@ class ProfileContext:
             if _slug and _slug != "default_user":
                 forbidden_strings.add(f'default="{_slug}"')
                 forbidden_strings.add(f"default='{_slug}'")
+                # F-CSA-01: Title-Cased document literals ("<Name>_Resume.pdf")
+                # dodged the slug/name checks because those use underscores or
+                # spaces. Forbid the underscore variants explicitly.
+                if len(_slug) > 3:
+                    _flat = re.sub(r'[^a-z0-9]+', '', _slug)
+                    if len(_flat) > 3:
+                        for _suffix in ("_resume", "_cover_letter", "_coverletter"):
+                            forbidden_strings.add(f"{_slug}{_suffix}")
+                            forbidden_strings.add(f"{_flat}{_suffix}")
 
         py_files = []
         for sdir in scan_dirs:
@@ -575,11 +640,18 @@ class ProfileContext:
         # hardcoded default="udaysagar_kandpal" was invisible to Guardrail P1).
         try:
             py_files.extend(
-                [f for f in self.base_path.glob("*.py")
+                [f for f in self.code_root.glob("*.py")
                  if "__pycache__" not in str(f) and f not in py_files]
             )
         except Exception:
             pass
+
+        def _rel(f: Path) -> str:
+            """Repo-relative path (code root may differ from base_path)."""
+            try:
+                return str(f.relative_to(self.code_root))
+            except Exception:
+                return str(f)
 
         for py_file in py_files:
             try:
@@ -596,16 +668,16 @@ class ProfileContext:
                 # 1. Check for candidate personal data / profile path
                 for s in forbidden_strings:
                     if s in s_line.lower():
-                        violations.append(f"Hardcoded candidate token '{s}' at {py_file.relative_to(self.base_path)}:{idx}")
+                        violations.append(f"Hardcoded candidate token '{s}' at {_rel(py_file)}:{idx}")
 
                 # 2. Check for hardcoded Windows user paths
                 if re.search(r"C:\\Users\\[a-zA-Z0-9_-]+", s_line, re.IGNORECASE):
-                    violations.append(f"Hardcoded Windows user directory at {py_file.relative_to(self.base_path)}:{idx}: {s_line}")
+                    violations.append(f"Hardcoded Windows user directory at {_rel(py_file)}:{idx}: {s_line}")
 
             # 3. Check for self-modifying scripts writing to .py files
             write_py_matches = re.findall(r'open\s*\([^)]*\.py[\'\"][^)]*[\'\"a-zA-Z]*w', content)
             if write_py_matches:
-                violations.append(f"Potential self-modifying write to .py found in {py_file.relative_to(self.base_path)}: {write_py_matches}")
+                violations.append(f"Potential self-modifying write to .py found in {_rel(py_file)}: {write_py_matches}")
 
         if violations:
             err_msg = "[GUARDRAIL P1 VIOLATION] Hardcoded data or PII detected in codebase:\n" + "\n".join(f"  - {v}" for v in violations)

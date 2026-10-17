@@ -24,6 +24,17 @@
 #   never consulted. Fatal message updated to name both sources.
 # Rationale: Single secure secrets source; matches test_colab_connection policy.
 # Preventative Notes: Never re-add cfg candidate key/model reads here.
+#
+# [ENTRY #004]
+# Term: [F_IPC_01_OPERATIONS_PROFILE_RESOLUTION]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-IPC-01] run() joined BASE_DIR / profile_dir and defaulted
+#                  to the literal "profiles/TARGET_PROFILE"; live Operations
+#                  profiles were unreachable.
+# Changes Made: _resolve_profile_path() via ProfileContext (slug / relative /
+#               absolute / auto-discovery); --profile optional.
+# Rationale: The resolver must watch the sandbox IPC files are written to.
+# Preventative Notes: Never resolve profile dirs by joining the code root.
 # ================================================================================
 
 import os, sys, json, time, argparse, traceback
@@ -146,8 +157,25 @@ def resolve(ipc_path, client, model):
     return True
 
 
-def run(profile_dir="profiles/TARGET_PROFILE", poll=2.0):
-    profile_path = BASE_DIR / profile_dir
+def _resolve_profile_path(profile_dir):
+    """[F-IPC-01] Resolve live profiles under the Operations data root.
+
+    BASE_DIR / profile_dir only matched repo-local profiles; the Operations
+    sandbox (where every live candidate lives) was never polled.
+    """
+    from core.utils.profile_context import ProfileContext
+    raw = str(profile_dir or "").strip()
+    if raw:
+        p = Path(raw)
+        if p.is_absolute():
+            return p
+        ctx = ProfileContext(raw if raw.startswith("profiles") else f"profiles/{raw}", BASE_DIR)
+        return ctx.profile_path
+    return ProfileContext(None, BASE_DIR).profile_path
+
+
+def run(profile_dir=None, poll=2.0):
+    profile_path = _resolve_profile_path(profile_dir)
     cfg = json.loads((profile_path / 'candidate_config.json').read_text(encoding='utf-8'))
     ipc_path = profile_path / 'output' / 'pending_question.json'
     name = cfg.get('candidate', {}).get('full_name', profile_dir)
@@ -178,7 +206,7 @@ def run(profile_dir="profiles/TARGET_PROFILE", poll=2.0):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('--profile', required=True)
+    ap.add_argument('--profile', default=None, help='Profile slug or dir; auto-discovers when omitted')
     ap.add_argument('--poll', type=float, default=2.0)
     args = ap.parse_args()
     run(args.profile, args.poll)

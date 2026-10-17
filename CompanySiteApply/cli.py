@@ -161,29 +161,6 @@ def cmd_apply_flow(args):
     print(json.dumps(res, indent=2))
 
 
-def main():
-    parser = argparse.ArgumentParser(description="CompanySiteApply - Enterprise ATS Multi-Finger Tool")
-    parser.add_argument("--cdp-url", default=None, help="CDP connection endpoint (falls back to CDP_URL env var)")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # apply-flow (Autonomous master pipeline)
-    p_af = subparsers.add_parser("apply-flow", help="Autonomously execute end-to-end application lifecycle through Section Mini-Agents")
-    p_af.add_argument("--config", required=True, help="Path to candidate config JSON")
-
-    # inspect
-    p_insp = subparsers.add_parser("inspect", help="Deeply inspect active tab, detect ATS, flag honeypots, save schema")
-    
-    # detect
-    p_det = subparsers.add_parser("detect", help="Quick print of detected ATS platform and confidence")
-
-    # heal
-    p_heal = subparsers.add_parser("heal", help="Run Parser Doctor to heal broken line wraps and education anomalies")
-
-    # fill
-    p_fill = subparsers.add_parser("fill", help="Fill active step and advance")
-    p_fill.add_argument("--email", help="Candidate email for email step")
-    p_fill.add_argument("--config", help="Path to candidate config JSON")
-
 def cmd_heal_subagent(args):
     arm = ATSArm(cdp_url=args.cdp_url)
     try:

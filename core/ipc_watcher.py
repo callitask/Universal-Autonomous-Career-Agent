@@ -36,6 +36,19 @@
 # Changes Made: Added `run(args.profile, args.poll)` beneath `args = ap.parse_args()`.
 # Rationale: Enables direct execution as Daemon 2 without python -c workaround.
 # Preventative Notes: Always invoke the main run() loop after argparse.parse_args() in runnable CLIs.
+#
+# [ENTRY #004]
+# Term: [F_IPC_01_OPERATIONS_PROFILE_RESOLUTION]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-IPC-01] run() joined BASE_DIR / profile_dir, so for every
+#                  live Operations candidate the watcher polled a repo path
+#                  that does not exist and exited FATAL.
+# Changes Made: _resolve_profile_path() routes bare slugs / relative /
+#               absolute paths and auto-discovery through ProfileContext;
+#               --profile is now optional (default=None) per
+#               docs/REFERENCE_DEPLOYMENT_GUIDE.md.
+# Rationale: Daemons must watch the sandbox where IPC files are written.
+# Preventative Notes: Never resolve profile dirs by joining the code root.
 # ================================================================================
 
 """
@@ -143,8 +156,27 @@ def print_batch_block(data: dict, batch_answer_path: Path):
     print(sep, flush=True)
 
 
+def _resolve_profile_path(profile_dir):
+    """[F-IPC-01] Resolve live profiles under the Operations data root.
+
+    BASE_DIR / profile_dir only ever found repo-local profiles, so the
+    watcher polled a path that does not exist for every Operations candidate.
+    Accepts a bare slug, "profiles/<slug>", a relative or absolute path, and
+    falls back to auto-discovery when omitted.
+    """
+    from core.utils.profile_context import ProfileContext
+    raw = str(profile_dir or "").strip()
+    if raw:
+        p = Path(raw)
+        if p.is_absolute():
+            return p
+        ctx = ProfileContext(raw if raw.startswith("profiles") else f"profiles/{raw}", BASE_DIR)
+        return ctx.profile_path
+    return ProfileContext(None, BASE_DIR).profile_path
+
+
 def run(profile_dir: str, poll: float = 2.0):
-    profile_path = BASE_DIR / profile_dir
+    profile_path = _resolve_profile_path(profile_dir)
     cfg_path     = profile_path / 'candidate_config.json'
     ipc_path     = profile_path / 'output' / 'pending_question.json'
     batch_q_path = profile_path / 'output' / 'batch_question.json'
@@ -234,7 +266,7 @@ def run(profile_dir: str, poll: float = 2.0):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description='IPC Watcher - AG Brain Signal Relay')
-    ap.add_argument('--profile', required=True, help='Profile dir (e.g. profiles/TARGET_PROFILE)')
+    ap.add_argument('--profile', default=None, help='Profile slug or dir (e.g. TARGET_PROFILE or profiles/TARGET_PROFILE); auto-discovers when omitted')
     ap.add_argument('--poll', type=float, default=2.0, help='Poll interval seconds (default: 2.0)')
     args = ap.parse_args()
     run(args.profile, args.poll)

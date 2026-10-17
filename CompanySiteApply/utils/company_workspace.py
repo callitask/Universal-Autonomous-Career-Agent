@@ -46,6 +46,19 @@
 #            prefer the closest company-framed source over the generic master.
 # Preventative Notes: Never write into a real BASE.md from seeding logic;
 #                     never add a fourth tier without auditor approval.
+#
+# [ENTRY #004]
+# Term: [F_CSA_02_BARE_SLUG_PROFILE_DIR]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-CSA-02] ensure_company_workspace() and
+#                  _profile_dir_of() only accepted cwd-relative profile dirs;
+#                  candidate_data["profile"]="<slug>" (production shape) fell
+#                  through to cwd, so workspaces were seeded outside the
+#                  Operations sandbox and then never found again.
+# Changes Made: Single-segment slugs resolve through resolve_profile_dir().
+# Rationale: Workspace provisioning must target the same sandbox every other
+#            resolver uses.
+# Preventative Notes: Never treat a profile slug as a relative filesystem path.
 # ==============================================================================
 
 """Per-company workspace contract for CompanySiteApply document resolution."""
@@ -115,6 +128,16 @@ def ensure_company_workspace(
                 cand_dir = p if p.is_dir() else None
                 if cand_dir is None and (p.parent / "candidate_config.json").exists():
                     cand_dir = p.parent
+                if cand_dir is None and not p.is_absolute() and len(p.parts) == 1:
+                    # [F-CSA-02] Bare slug ("<profile>") -> Operations root;
+                    # a workspace created under cwd was never found again.
+                    try:
+                        from CompanySiteApply.utils.runtime_paths import resolve_profile_dir
+                        ops_p = resolve_profile_dir(str(val))
+                        if ops_p.is_dir():
+                            cand_dir = ops_p
+                    except Exception:
+                        cand_dir = None
                 if cand_dir is not None:
                     profile_dir = cand_dir
                     break
@@ -454,6 +477,15 @@ def _profile_dir_of(candidate_data: Optional[Dict[str, Any]], roots: List[str]) 
                     return p
                 if (p.parent / "candidate_config.json").exists():
                     return p.parent
+                if not p.is_absolute() and len(p.parts) == 1:
+                    # [F-CSA-02] Bare slug -> Operations profile root.
+                    try:
+                        from CompanySiteApply.utils.runtime_paths import resolve_profile_dir
+                        ops_p = resolve_profile_dir(str(val))
+                        if ops_p.is_dir():
+                            return ops_p
+                    except Exception:
+                        pass
     return next(
         (Path(r).parent if Path(r).name == "company_site_apply" else Path(r)
          for r in roots if Path(r).exists()),

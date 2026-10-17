@@ -40,6 +40,25 @@
 #            ever blocking on IPC or breaking existing unit tests.
 # Preventative Notes: Never make Stage 4 resume tailoring AI-gated; never
 #                     drop the master-copy fallback.
+#
+# [ENTRY #004]
+# Term: [F_CSA_01_STEM_ONLY + F_CSA_02_CONTEXT_PROPAGATION]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-CSA-01] _archive_application_docs carried a hardcoded
+#                  live-candidate resume filename as a sibling fallback.
+#                  [F-CSA-02] profile_slug was derived from full_name (not the
+#                  profile key) and Stages 4/5 stamped no requisition context,
+#                  so Section 2/3 could not resolve role answers.json or role
+#                  resume bullets.
+# Changes Made: Strict <Stem> filename only; stage_1 derives the slug via
+#               profile_slug_of() and stamps candidate_data["profile"];
+#               stage_4/stage_5 stamp job_id/title/job_title/company/
+#               company_name (+ role_resume_md) onto candidate_data and
+#               mirror context keys onto target_job.
+# Rationale: Role-scoped artifacts must resolve from the same identity the
+#            Operations resolvers use.
+# Preventative Notes: Never hardcode candidate document filenames; never rely
+#                     on full_name to derive a profile slug.
 # ==============================================================================
 
 import os
@@ -109,7 +128,10 @@ def _archive_application_docs(
     try:
         res_src = resume_pdf_path
         if not res_src:
-            for cand_name in (f"{stem}_Resume.pdf", "Udaysagar_Kandpal_Resume.pdf"):
+            # [F-CSA-01] Strict <Stem> contract only — a hardcoded live
+            # candidate filename here silently shipped someone else's resume
+            # whenever the role folder lacked one.
+            for cand_name in (f"{stem}_Resume.pdf",):
                 cand_p = Path(source_dir) / cand_name
                 if cand_p.is_file():
                     res_src = str(cand_p)
@@ -161,8 +183,19 @@ class AutonomousJobAgent:
         
         if candidate_config:
             self.candidate_data = candidate_config
+            # [F-CSA-02] Derive the slug from the profile identity that
+            # candidate_config already carries (or the caller's profile_name),
+            # NOT from full_name — a bare slug is what every Operations
+            # resolver (resolve_profile_dir / application_dir) expects.
+            from CompanySiteApply.utils.application_docs import profile_slug_of
             cand = self.candidate_data.get("candidate", self.candidate_data)
-            self.profile_slug = cand.get("full_name", "candidate").lower().replace(" ", "_")
+            self.profile_slug = profile_slug_of(
+                self.candidate_data,
+                str(profile_name or "").strip()
+                or (str(cand.get("full_name") or "candidate").lower().replace(" ", "_")),
+            )
+            if isinstance(self.candidate_data, dict):
+                self.candidate_data["profile"] = self.profile_slug
         else:
             from CompanySiteApply.utils.runtime_paths import resolve_profile_dir
 
@@ -429,6 +462,23 @@ class AutonomousJobAgent:
         (role_dir / "cover_letters").mkdir(parents=True, exist_ok=True)
         stem = profile_stem(self.candidate_data, profile)
 
+        # [F-CSA-02] Stamp requisition context onto candidate_data so every
+        # downstream consumer (Section 2/3 scripts, AIBrainResolver role
+        # answers.json mirror, experience bullet lookup) can resolve the role
+        # without re-deriving it. Mirrored onto target_job for Stage 5/6.
+        if isinstance(self.candidate_data, dict):
+            self.candidate_data["job_id"] = job_id
+            self.candidate_data["title"] = job_title
+            self.candidate_data["job_title"] = job_title
+            self.candidate_data["company"] = company
+            self.candidate_data["company_name"] = company
+        for _carrier in (target_job, self.candidate_data):
+            if isinstance(_carrier, dict):
+                _carrier.setdefault("job_id", job_id)
+                _carrier.setdefault("title", job_title)
+                _carrier.setdefault("job_title", job_title)
+                _carrier.setdefault("company", company)
+
         jd_data = {
             "job_id": job_id,
             "title": job_title,
@@ -498,6 +548,14 @@ class AutonomousJobAgent:
                     _tmp_resume = call_sync_offloaded(_gen_resume)
                     try:
                         _fixed_r = copy_into_role(role_dir, stem, _tmp_resume, None)
+                        # Role resume.md is now the markdown source of truth
+                        # for Section 3 bullets — hand it to consumers.
+                        _role_resume = role_dir / "resume.md"
+                        if _role_resume.is_file():
+                            if isinstance(self.candidate_data, dict):
+                                self.candidate_data["role_resume_md"] = str(_role_resume)
+                            if isinstance(target_job, dict):
+                                target_job["role_resume_md"] = str(_role_resume)
                     finally:
                         try:
                             Path(_tmp_resume).unlink(missing_ok=True)
@@ -559,6 +617,31 @@ class AutonomousJobAgent:
                        "_fix_command"):
                 if _k in target_job and _k not in self.candidate_data:
                     self.candidate_data[_k] = target_job[_k]
+
+        # [F-CSA-02] Re-stamp requisition context: Stage 4 may have been
+        # skipped/deferred, but Section 2/3/4 still need job_id + title +
+        # company to resolve role folders, the answers.json mirror, and
+        # Section 3 role-resume bullets.
+        if isinstance(target_job, dict) and isinstance(self.candidate_data, dict):
+            _det = target_job.get("details") if isinstance(target_job.get("details"), dict) else {}
+            _title = str(target_job.get("title") or target_job.get("job_title")
+                          or _det.get("title") or "").strip()
+            _company = str(target_job.get("company") or target_job.get("company_name")
+                           or self.candidate_data.get("company")
+                           or self.candidate_data.get("company_name")
+                           or _det.get("company") or "").strip()
+            if job_id:
+                self.candidate_data.setdefault("job_id", job_id)
+                self.candidate_data.setdefault("_ipc_job_id", job_id)
+            if _title:
+                self.candidate_data.setdefault("title", _title)
+                self.candidate_data.setdefault("job_title", _title)
+            if _company:
+                self.candidate_data.setdefault("company", _company)
+                self.candidate_data.setdefault("company_name", _company)
+            if target_job.get("role_resume_md"):
+                self.candidate_data.setdefault("role_resume_md",
+                                               target_job["role_resume_md"])
 
         # Enter via the job page + APPLY NOW (bare .../apply deep links 404
         # on Oracle CX without session form tokens).

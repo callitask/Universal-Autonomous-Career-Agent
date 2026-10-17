@@ -30,6 +30,18 @@
 # Rationale: Markdown edits must reach tiles without config copy-paste;
 #            job_id is unique per requisition so title is unnecessary.
 # Preventative Notes: Never invent bullets; return [] when nothing parses.
+#
+# [ENTRY #003]
+# Term: [F_CSA_02_BARE_SLUG_PROFILE_RESOLUTION]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-CSA-02] _candidate_profile_dir() only accepted cwd-
+#                  relative dirs, so candidate_data["profile"]=<slug> (what
+#                  production carries) resolved to None and every role
+#                  resume/BASE bullet lookup silently returned [].
+# Changes Made: Bare single-segment slugs now resolve through
+#               resolve_profile_dir() (Operations root first).
+# Rationale: Lookup helpers must accept the identity production passes.
+# Preventative Notes: Never assume a profile slug is a cwd-relative path.
 # ==============================================================================
 
 """Resume.md-grounded work-experience parsing and fuzzy employer matching.
@@ -172,7 +184,14 @@ def load_resume_experience_map(
 
 
 def _candidate_profile_dir(candidate_data: Optional[Dict[str, Any]]) -> Optional[Path]:
-    """Profile dir from explicit keys only — never guessed, never created."""
+    """Profile dir from explicit keys only — never guessed, never created.
+
+    [F-CSA-02] A bare slug ("udaysagar_kandpal") is NOT a cwd-relative dir:
+    production candidate_data carries candidate_data["profile"] as a slug,
+    and the real sandbox lives under the Operations root. Route those through
+    resolve_profile_dir() or every role-resume/BASE lookup silently returns
+    nothing at runtime.
+    """
     if isinstance(candidate_data, dict):
         for key in ("profile_dir", "profile"):
             val = candidate_data.get(key)
@@ -182,6 +201,15 @@ def _candidate_profile_dir(candidate_data: Optional[Dict[str, Any]]) -> Optional
                     return p
                 if (p.parent / "candidate_config.json").exists():
                     return p.parent
+                if not p.is_absolute() and len(p.parts) == 1:
+                    # Bare slug -> Operations profile root.
+                    try:
+                        from CompanySiteApply.utils.runtime_paths import resolve_profile_dir
+                        ops_p = resolve_profile_dir(str(val))
+                        if ops_p.is_dir():
+                            return ops_p
+                    except Exception:
+                        pass
     return None
 
 

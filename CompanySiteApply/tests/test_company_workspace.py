@@ -13,6 +13,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import json as _json_mod
+import unittest.mock
+
 from CompanySiteApply.utils.company_workspace import (
     company_cover_tone,
     company_kind,
@@ -279,6 +282,191 @@ class TestThreeTierBaseResolvers(unittest.TestCase):
         import CompanySiteApply.utils.company_workspace as cw
         self.assertIs(ad.resolve_base_resume_md, cw.resolve_base_resume_md)
         self.assertIs(ad.resolve_base_cover_letter_md, cw.resolve_base_cover_letter_md)
+
+
+class TestOperationsRootContextIntegrity(unittest.TestCase):
+    """[F-CTX-01]/[F-CSA-01]/[F-CSA-02]/[F-IPC-01] regression pins."""
+
+    def test_purity_scans_repo_even_when_ops_is_default_base(self):
+        from pathlib import Path as _P
+        from core.utils.profile_context import ProfileContext, PROJECT_ROOT
+        ctx = ProfileContext("profiles/default_user")
+        # Blueprint resolves from the REPO, not a phantom Operations folder.
+        self.assertEqual(ctx.profile_path,
+                         (PROJECT_ROOT / "profiles" / "default_user").resolve())
+        # Data root may be Operations; the CODE root must always be the repo.
+        self.assertEqual(ctx.code_root, PROJECT_ROOT)
+        self.assertEqual(ctx.profile_path.parent.parent, PROJECT_ROOT)
+        self.assertTrue((ctx.profile_path / "candidate_config.json").is_file())
+        self.assertFalse(ctx.config.get("candidate", {}).get("full_name") == "")
+        # Non-vacuous scan: the purity pass must actually read source files.
+        scanned = []
+        for d in (ctx.code_root / "core", ctx.code_root / "scripts",
+                  ctx.code_root / "CompanySiteApply", ctx.code_root / "tests"):
+            if d.exists():
+                scanned += [f for f in d.rglob("*.py")
+                            if "__pycache__" not in str(f)
+                            and "legacy_company_apply" not in f.parts]
+        self.assertGreater(len(scanned), 50)
+        self.assertEqual(ctx.verify_codebase_purity(), (True, []))
+
+    def test_candidate_profile_dir_resolves_bare_ops_slug(self):
+        from CompanySiteApply.utils.experience_matcher import (
+            _candidate_profile_dir,
+            _discover_role_resume_md,
+            load_role_bullets_for_employer,
+        )
+        with tempfile.TemporaryDirectory() as d:
+            slug = "synth_" + "slug_ctx"
+            prof = Path(d) / "profiles" / slug
+            prof.mkdir(parents=True)
+            (prof / "candidate_config.json").write_text('{"candidate": {}}', encoding="utf-8")
+            (prof / "company_site_apply" / "JPMorganChase" / "resumes").mkdir(parents=True)
+            (prof / "company_site_apply" / "JPMorganChase" / "resumes" / "BASE.md").write_text(
+                "## PROFESSIONAL EXPERIENCE\n\n"
+                "### **Acme Technologies**\n*Bengaluru, India | 2022 - Present*\n"
+                "- Base bullet\n", encoding="utf-8")
+            role_dir = (prof / "APPLIED ON COMPANY WEBSITE" / "Acme_Corp" / "Engineer_210999")
+            role_dir.mkdir(parents=True)
+            (role_dir / "resume.md").write_text(
+                "## PROFESSIONAL EXPERIENCE\n\n"
+                "### **Acme Technologies**\n*Bengaluru, India | 2022 - Present*\n"
+                "- Role bullet\n", encoding="utf-8")
+            # BARE SLUG ONLY — no profile_dir key (production shape).
+            cand = {"profile": slug, "job_id": "210999"}
+            with unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": d}):
+                self.assertEqual(_candidate_profile_dir(cand), prof)
+                self.assertEqual(_discover_role_resume_md(cand, "210999"), role_dir / "resume.md")
+                self.assertEqual(
+                    load_role_bullets_for_employer(cand, "Acme Corp", "Acme Technologies"),
+                    ["Role bullet"])
+                self.assertEqual(
+                    load_role_bullets_for_employer(cand, "JPMorgan Chase & Co.",
+                                                   "Acme Technologies"),
+                    ["Role bullet"])
+
+    def test_company_workspace_provisions_under_ops_for_bare_slug(self):
+        from CompanySiteApply.utils.company_workspace import ensure_company_workspace
+        with tempfile.TemporaryDirectory() as d:
+            slug = "synth_" + "slug_ws"
+            prof = Path(d) / "profiles" / slug
+            prof.mkdir(parents=True)
+            (prof / "candidate_config.json").write_text('{"candidate": {}}', encoding="utf-8")
+            (prof / "company_site_apply").mkdir(parents=True)
+            (prof / "resume.md").write_text("## PROFESSIONAL EXPERIENCE\n\n### **Acme**\n- x\n",
+                                            encoding="utf-8")
+            cand = {"profile": slug}
+            with unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": d}):
+                work = ensure_company_workspace(cand, "JPMorgan Chase & Co.")
+            self.assertTrue(str(work).startswith(str(prof)),
+                            f"workspace provisioned outside the sandbox: {work}")
+            self.assertTrue(work.is_dir())
+
+    def test_stage4_stamps_context_and_stage5_repropagates(self):
+        from CompanySiteApply.autonomous_job_agent import AutonomousJobAgent
+        with tempfile.TemporaryDirectory() as d:
+            slug = "synth_" + "slug_stage4"
+            prof = Path(d) / "profiles" / slug
+            prof.mkdir(parents=True)
+            (prof / "candidate_config.json").write_text('{"candidate": {}}', encoding="utf-8")
+            (prof / "company_site_apply" / "JPMorganChase" / "cover_letters").mkdir(parents=True)
+            (prof / "company_site_apply" / "JPMorganChase" / "cover_letters" / "BASE.md").write_text(
+                "Dear Hiring Team,\n\nPara one.\n\n- **X:** y\n\nClosing.\n\nSincerely,\nQ\n",
+                encoding="utf-8")
+            cand = {"profile": slug, "candidate": {"full_name": "Synth" + " Stage4"}}
+            agent = AutonomousJobAgent.__new__(AutonomousJobAgent)
+            agent.candidate_data = cand
+            agent.profile_slug = slug
+            agent.scraper = None
+            import tempfile as _tf
+            agent.ledger_path = Path(_tf.mkdtemp()) / "l.json"
+            with unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": d}):
+                from CompanySiteApply.ai_brain_resolver import AIBrainResolver
+                AIBrainResolver._instance = None
+                with unittest.mock.patch(
+                    "CompanySiteApply.autonomous_job_agent.generate_tailored_cover_letter"
+                ) as gen:
+                    gen.return_value = "cover.pdf"
+                    with unittest.mock.patch(
+                        "CompanySiteApply.utils.application_docs.copy_into_role",
+                        return_value={"cover_pdf": "c.pdf"},
+                    ):
+                        res = agent.stage_4_tailor_documents({
+                            "job_id": "3001", "title": "Staff Engineer",
+                            "location": "Bengaluru, India",
+                            "details": {"company": "JPMorgan Chase & Co."}})
+                self.assertTrue(res["success"])
+                for k, v in (("job_id", "3001"), ("title", "Staff Engineer"),
+                             ("job_title", "Staff Engineer"),
+                             ("company", "JPMorgan Chase & Co.")):
+                    self.assertEqual(agent.candidate_data.get(k), v, k)
+                # Section-2 style call: no job_context -> context must survive.
+                brain = AIBrainResolver.get_instance(agent.candidate_data)
+                self.assertEqual(brain.job_context.get("job_id"), "3001")
+
+    def test_stage5_repropagates_context_when_stage4_skipped(self):
+        from CompanySiteApply.autonomous_job_agent import AutonomousJobAgent
+        with tempfile.TemporaryDirectory() as d:
+            slug = "synth_" + "slug_stage5"
+            prof = Path(d) / "profiles" / slug
+            prof.mkdir(parents=True)
+            (prof / "candidate_config.json").write_text('{"candidate": {}}', encoding="utf-8")
+            (prof / "output").mkdir(exist_ok=True)
+            agent = AutonomousJobAgent.__new__(AutonomousJobAgent)
+            agent.candidate_data = {"profile": slug, "candidate": {"full_name": "S5"}}
+            agent.orchestrator = unittest.mock.MagicMock()
+            agent.orchestrator.run.return_value = {"status": "REVIEW_BLOCKED"}
+
+            class _P:
+                url = "https://jpmc.fa.oraclecloud.com/hcmUI/job/4001"
+
+            import asyncio
+            with unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": d}):
+                asyncio.run(agent.stage_5_apply_form(
+                    _P(), {"job_id": "4001", "title": "Principal Engineer",
+                           "company": "JPMorgan Chase & Co."}))
+            self.assertEqual(agent.candidate_data["job_id"], "4001")
+            self.assertEqual(agent.candidate_data["title"], "Principal Engineer")
+            self.assertEqual(agent.candidate_data["company"], "JPMorgan Chase & Co.")
+
+    def test_mirror_falls_back_to_job_id_role_discovery(self):
+        from CompanySiteApply.ai_brain_resolver import AIBrainResolver
+        with tempfile.TemporaryDirectory() as d:
+            slug = "synth_" + "slug_mirror"
+            prof = Path(d) / "profiles" / slug
+            prof.mkdir(parents=True)
+            (prof / "candidate_config.json").write_text('{"candidate": {}}', encoding="utf-8")
+            role = (prof / "APPLIED ON COMPANY WEBSITE" / "Acme_Corp" / "Engineer_3001")
+            role.mkdir(parents=True)
+            (role / "answers.json").write_text('{"status": "OPEN"}', encoding="utf-8")
+            AIBrainResolver._instance = None
+            with unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": d}):
+                brain = AIBrainResolver.get_instance(
+                    {"profile": slug, "job_id": "3001",
+                     "candidate": {"full_name": "Synth" + " Mirror"}})
+                brain.output_json_path = prof / "screening_answers.json"
+                brain.history = []
+                brain.resolve_question("Are you authorized?", "BINARY_PILL", ["Yes", "No"])
+            data = _json_mod.loads((role / "answers.json").read_text(encoding="utf-8"))
+            self.assertEqual(data["status"], "OPEN")
+            self.assertEqual(len(data["screening_qa"]), 1)
+            self.assertEqual(data["company"], "Acme_Corp")
+
+    def test_ipc_watcher_resolves_operations_profile(self):
+        from core.ipc_watcher import _resolve_profile_path
+        from core.utils.profile_context import PROJECT_ROOT
+        with tempfile.TemporaryDirectory() as d:
+            slug = "synth_" + "slug_ipc"
+            (Path(d) / "profiles" / slug).mkdir(parents=True)
+            (Path(d) / "profiles" / slug / "candidate_config.json").write_text(
+                '{"candidate": {"full_name": "Synth"}}', encoding="utf-8")
+            # Guard: this test must never provision under the repo tree.
+            with unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": d}):
+                got = _resolve_profile_path(slug)
+            self.assertEqual(Path(got), (Path(d) / "profiles" / slug).resolve())
+            # Repo-relative form still resolves to the repo blueprint.
+            self.assertEqual(Path(_resolve_profile_path("profiles/default_user")),
+                             PROJECT_ROOT / "profiles" / "default_user")
 
 
 class TestRoleResumeTailoring(unittest.TestCase):

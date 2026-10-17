@@ -151,7 +151,7 @@ if __name__ == "__main__":
     import argparse
     import sys
     from CompanySiteApply.ats_arm import ATSArm
-    from CompanySiteApply.utils.config_resolver import ConfigResolver
+    from CompanySiteApply.utils.config_resolver import resolve_candidate_config
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     parser = argparse.ArgumentParser(description="Heal Education tile.")
@@ -162,7 +162,12 @@ if __name__ == "__main__":
     arm = ATSArm(cdp_url=args.cdp_url)
     try:
         page = arm.connect()
-        candidate_data = ConfigResolver.load_candidate_config(args.profile)
+        # [F-CSA-03] ConfigResolver never existed; resolve_candidate_config()
+        # is the real loader and honors --config/candidate_data/profile.
+        candidate_data = resolve_candidate_config(
+            explicit_path=getattr(args, "config", None),
+            candidate_data={"profile": args.profile},
+        )
         res = heal_education_tile(page, candidate_data)
         print(f"Education Tile Heal Result: {res}")
         sys.exit(0 if res.get("success") else 1)

@@ -205,8 +205,11 @@ class TestAutonomousJobAgent(unittest.TestCase):
             self.assertIn("JPMorgan_Chase_Co", res["applied_dir"])
             self.assertEqual(res["job_id"], "3001")
             # [CATCH-NEW-1] Sandbox proof: screening_answers.json must live
-            # inside temp Operations (profiles/alex_rivera), never repo.
-            _sandbox_answers = Path(self._tmp_ops.name) / "profiles" / "alex_rivera" / "screening_answers.json"
+            # inside temp Operations under the ACTIVE profile folder
+            # ("test_structured_profile_xyz" — Stage 1 now derives the slug
+            # from the profile key, not full_name), never in the repo.
+            _sandbox_answers = (Path(self._tmp_ops.name) / "profiles"
+                                / "test_structured_profile_xyz" / "screening_answers.json")
             self.assertTrue(_sandbox_answers.is_file(),
                             f"sandbox screening_answers missing: {_sandbox_answers}")
             self.assertFalse((Path("profiles") / "alex_rivera").exists(),
