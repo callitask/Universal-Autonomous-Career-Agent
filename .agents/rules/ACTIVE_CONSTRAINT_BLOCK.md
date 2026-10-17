@@ -1,5 +1,5 @@
 # ACTIVE CONSTRAINT BLOCK - Read Before Every Action (Non-Negotiable)
-# Version: 1.5 | Updated: 2026-10-14 | Loaded: auto (global + workspace)
+# Version: 1.6 | Updated: 2026-10-17 | Loaded: auto (global + workspace)
 # Token budget: minimal. Do NOT expand beyond one-line amendments.
 
 ## 11 HARD GATES - Verify ALL before proceeding with any action:
@@ -17,7 +17,7 @@ You are forbidden from editing production code without: Report -> Review -> Manu
 Never run git commit or git push without: (a) --no-gpg-sign, (b) git pull --rebase origin main FIRST. Use guard.safe_git_push() in Sophron context. Never raw git in Career Agent context.
 
 [GATE 5 - PROFILES DIRECTORY ISOLATION]
-profiles/ is the runtime sandbox. During development or code editing, you NEVER touch profiles/ files. The reference schema is profiles/default_user only. Live data resolves under the Operations root (F:\Operations JOB AI AGENT\profiles\, env JOB_AGENT_OPERATIONS, repo fallback for blueprints). CompanySiteApply layout: inputs company_site_apply/<Slug>/ (root README.md-only + resumes/BASE.md + cover_letters/BASE.md), outputs APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/ with fixed <Stem>_Resume.pdf / <Stem>_Cover_Letter.pdf (no job-id suffixes; uploaders remove-if-filled + upload + verify exact role path). Suite: 164 + 7 + 10 tests.
+profiles/ is the runtime sandbox. During development or code editing, you NEVER touch profiles/ files. The reference schema is profiles/default_user only. Live data resolves under the Operations root (F:\Operations JOB AI AGENT\profiles\, env JOB_AGENT_OPERATIONS, repo fallback for blueprints). CompanySiteApply layout: inputs company_site_apply/<Slug>/ (root README.md-only + resumes/BASE.md + cover_letters/BASE.md), outputs APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/ with fixed <Stem>_Resume.pdf / <Stem>_Cover_Letter.pdf (no job-id suffixes; uploaders remove-if-filled + upload + verify exact role path). Suite: 193 + 15 + 10 tests (218 total).
 
 [GATE 6 - SOPHRON WRITE PROTOCOL]
 All Sophron file writes use guard.safe_write_json() or guard.safe_append_line(). Never open()+json.dump(). The SophronWriteGuard must be instantiated and guard.register_session() called BEFORE any Sophron read or write.

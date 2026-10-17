@@ -59,6 +59,18 @@
 # Rationale: Workspace provisioning must target the same sandbox every other
 #            resolver uses.
 # Preventative Notes: Never treat a profile slug as a relative filesystem path.
+#
+# [ENTRY #005]
+# Term: [F_DOC_01_BLUEPRINT_PLACEHOLDER_GUARD]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-DOC-01] default_user's cover_letters/BASE.md used the
+#                  token "[FULL NAME]", which _is_real_base_md() did not reject,
+#                  so the unedited blueprint resolved as a real cover letter.
+# Changes Made: Guard rejects BOTH "[FIRSTNAME LASTNAME]" and "[FULL NAME]";
+#               blueprint template tokens normalized to the documented set
+#               ([Job Title], [Company Name], [City, State, Country], "- **" bullets).
+# Rationale: A template must never synthesize a letter.
+# Preventative Notes: When adding a token variant, add it to the guard too.
 # ==============================================================================
 
 """Per-company workspace contract for CompanySiteApply document resolution."""
@@ -322,7 +334,10 @@ def _is_real_base_md(path: Path, extra_tokens: tuple = ()) -> bool:
         text = path.read_text(encoding="utf-8", errors="ignore")
         if not text.strip():
             return False
-        if "[FIRSTNAME LASTNAME]" in text:
+        # [F-DOC-01] Both blueprint placeholder spellings must be rejected:
+        # the cover_letters template shipped "[FULL NAME]" while resumes used
+        # "[FIRSTNAME LASTNAME]", so the unedited blueprint passed as real.
+        if "[FIRSTNAME LASTNAME]" in text or "[FULL NAME]" in text:
             return False
         return not any(tok in text for tok in extra_tokens)
     except OSError:

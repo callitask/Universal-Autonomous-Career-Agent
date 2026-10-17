@@ -1,4 +1,4 @@
-Write-Host "==== 1. COMPANYSITEAPPLY 184/184 + COVER LETTER 13/13 ===="
+Write-Host "==== 1. COMPANYSITEAPPLY 193/193 + COVER LETTER 15/15 ===="
 python -m unittest discover -s CompanySiteApply/tests
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 python -m unittest tests/test_cover_letter_job_id.py

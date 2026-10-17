@@ -167,6 +167,19 @@
 # Preventative Notes: Never scan/resolve docs via base_path; never assume the
 #                     repo holds live profiles; test purity with an explicit
 #                     repo base so the scan can never be vacuous.
+#
+# [ENTRY #014]
+# Term: [F_DOC_02_BLUEPRINT_NOT_A_SANDBOX]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-DOC-02] ProfileContext("profiles/default_user") runs on
+#                  every phase_4_run.ps1 step 6; _ensure_cognitive_profile_
+#                  analyzed() synthesized and WROTE cognitive_profile.json
+#                  into the tracked blueprint with bracketed placeholder text.
+# Changes Made: default_user short-circuits synthesis (returns loaded data or
+#               {}); no runtime artifact is written into the blueprint again.
+# Rationale: profiles/default_user is a schema blueprint tracked in git, not
+#            a runtime sandbox (Gate 5).
+# Preventative Notes: Never write runtime state under the blueprint; assert it.
 # ================================================================================
 """
 ================================================================================
@@ -754,6 +767,13 @@ class ProfileContext:
         cog_data = self.load_cognitive_profile()
         if cog_data and cog_data.get("candidate_domain") and cog_data.get("core_domain_skills"):
             return cog_data
+
+        # [F-DOC-02] default_user is a tracked schema blueprint, never a
+        # runtime sandbox. Synthesizing into it wrote a placeholder-tainted
+        # cognitive_profile.json into the repo on every purity check
+        # (phase_4_run.ps1 step 6 constructs it on every run).
+        if self.profile_path.name == "default_user":
+            return cog_data or {}
 
         try:
             from core.ai_client import AIClient

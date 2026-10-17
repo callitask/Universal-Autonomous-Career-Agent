@@ -41,6 +41,18 @@
 # Preventative Notes: Never hoist fallback assignments out of `else:`; never
 #                     trust a client-supplied full-file replacement verbatim —
 #                     re-derive from disk and pin both branches with tests.
+#
+# [ENTRY #005]
+# Term: [F_DOC_01_PARSER_TOKEN_AND_BULLET_TOLERANCE]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-DOC-01] _parse_base_cover_letter_md() substituted only the
+#                  documented tokens and matched only "- "/"* " bullets, so
+#                  hand-authored BASE.md files using [Exact Job Title],
+#                  [Company], [Company Location] or "•" bullets rendered with
+#                  literal placeholder text / unparsed bullets.
+# Changes Made: Alternate tokens substituted; bullet regex accepts "•".
+# Rationale: Operators write BASE.md by hand — the parser must tolerate it.
+# Preventative Notes: When a token variant is accepted, pin it in tests.
 # ==============================================================================
 
 import os
@@ -459,6 +471,12 @@ def _parse_base_cover_letter_md(base_md_path, ctx=None):
     for old, new in subs:
         if old in text:
             text = text.replace(old, str(new))
+    # [F-DOC-01] Alternate spellings used by real BASE.md files.
+    for _alt, _key in (("[Exact Job Title]", "job_title"),
+                       ("[Company]", "organization"),
+                       ("[Company Location]", "org_location")):
+        if _alt in text:
+            text = text.replace(_alt, str(ctx.get(_key, "")))
     text = clean_empty_job_id_refs(text)
     while ".." in text:
         text = text.replace("..", ".")
@@ -475,12 +493,14 @@ def _parse_base_cover_letter_md(base_md_path, ctx=None):
             end = i
             break
     body = lines[start:end]
-    bullet_idx = [i for i, ln in enumerate(body) if re.match(r"^\s*[-*]\s+", ln)]
+    # [F-DOC-01] Accept "•" bullets as well as "- " / "* ".
+    bullet_idx = [i for i, ln in enumerate(body)
+                  if re.match(r"^\s*[-*\u2022]\s+", ln)]
     if bullet_idx:
         first, last = bullet_idx[0], bullet_idx[-1]
         out["opening"] = [ln.strip() for ln in body[:first] if ln.strip()]
         for i in bullet_idx:
-            item = re.sub(r"^\s*[-*]\s+", "", body[i]).strip()
+            item = re.sub(r"^\s*[-*\u2022]\s+", "", body[i]).strip()
             item = re.sub(r"\*\*(.+?)\*\*", r"\1", item)
             if ":" in item:
                 title, rest = item.split(":", 1)

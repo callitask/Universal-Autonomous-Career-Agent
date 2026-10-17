@@ -1,7 +1,7 @@
 # Universal Autonomous Career Agent — Setup & Execution Guide
 
-> **Document Version:** 4.3 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC, Structured Role Outputs, Tailoring Gate & 46 Guardrails  
-> **Last Updated:** 2026-10-15  
+> **Document Version:** 4.4 — Batch Architecture v2.0, Three-Daemon Runtime, Dual-Channel IPC, Structured Role Outputs, Tailoring Gate & 46 Guardrails  
+> **Last Updated:** 2026-10-17  
 > **Proprietary Notice:** Confidential and Proprietary. Copyright (c) 2026 Amitsagar Kandpal. All Rights Reserved. No public license granted.
 
 Welcome to the **Universal Autonomous Career Agent** (`F:\JOB AI AGENT`). This system is an enterprise-grade, multi-agent autonomous pipeline engineered to execute end-to-end job discovery, cognitive profile synthesis, factual resume tailoring, and automated ATS application submission across platforms including LinkedIn and Naukri.
@@ -82,7 +82,7 @@ F:\JOB AI AGENT\
 │   ├── ats_detector.py                   # Portal platform detection engine
 │   ├── section_agents/                   # Coordinators + discrete scripts/ + sub_agents/
 │   ├── ipc/                              # Section IPC bus (ipc_manager.py)
-│   ├── tests/                            # Regression suite (164 tests)
+│   ├── tests/                            # Regression suite (193 tests)
 │   ├── anatomy/                          # Portal anatomy models
 │   ├── fingers/                          # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
 │   ├── nails/                            # Company-specific ATS customizations (nails/oracle: JPMC, Bristlecone)
@@ -97,7 +97,7 @@ F:\JOB AI AGENT\
 │   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles
 │   ├── reevaluate_ledger.py           # Ledger re-evaluation reset utility (utf-8-sig BOM safe)
 │   ├── test_colab_connection.py       # Colab gateway diagnostic (120s finite timeout)
-│   ├── phase_4_run.ps1                # 164 CompanySiteApply + 7 cover-letter tests -> build -> check -> 10 knowledge tests -> purity -> query gate
+│   ├── phase_4_run.ps1                # 193 CompanySiteApply + 15 cover-letter tests -> build -> check -> 10 knowledge tests -> purity -> query gate
 │   └── legacy_company_apply/          # Archived one-off scripts (forensic reference only, never run)
 ├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)
 ├── tests/                               # Root regression suites (test_cover_letter_job_id.py [7], test_knowledge_index.py [10])

@@ -1,5 +1,5 @@
 # STRATEGIC RESUME TAILORING ARCHITECTURE & COMPILATION GOVERNANCE
-# Version: 1.1 | Upgraded: 2026-09-27 | Universal Autonomous Career Agent
+# Version: 1.2 | Upgraded: 2026-10-17 | Universal Autonomous Career Agent
 
 ---
 
@@ -106,3 +106,42 @@ profiles/<profile_name>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/
     │  Audit 0 validation errors
     │  STOP at Section 4 without clicking final Submit until human review
 ```
+
+---
+
+## 6. CompanySiteApply Stage 4 — `BASE.md`-Driven Role-Resume Tailoring
+
+The ATS flow applies the same factual-tailoring doctrine deterministically,
+per role, with no brain round-trip:
+
+1. **Resolve the base** — `resolve_base_resume_md(profile_dir, company_name)`
+   (`CompanySiteApply/utils/company_workspace.py`) walks 4 tiers:
+   `company_site_apply/<Slug>/resumes/BASE.md` →
+   `company_site_apply/<legacy>/resumes/BASE.md` →
+   `company_site_apply/resume.md` → `profile_dir/resume.md`.
+   Seeding is 3-tier and **never overwrites** a hand-written base
+   (`_is_real_base_md()` rejects `[FIRSTNAME LASTNAME]`, `[FULL NAME]`, and
+   `{{FULL_NAME}}`).
+2. **Tailor + compile** — `tailor_and_compile_role_resume(..., allow_ipc=False)`
+   (`core/generate_factual_tailored.py`) tailors the resolved base into
+   `<role_dir>/resume.md` and compiles `<Stem>_Resume.pdf`.
+   `allow_ipc=False` keeps the standalone compiler off the IPC brain — the ATS
+   run already holds full context, so re-querying AG Brain would add latency
+   without adding truth.
+3. **Strip audit markers** — `_strip_html_comments()` removes `<!-- ... -->`
+   annotation comments before PDF rendering so internal markers never reach the
+   employer-facing artifact.
+4. **Fallback is explicit** — a master-PDF copy happens **only** when no
+   `BASE.md` resolves or compilation fails; it is never a silent default.
+5. **Cover letter, same base discipline** —
+   `_parse_base_cover_letter_md()` substitutes the `BASE.md` placeholder set
+   (including alternate spellings `[Exact Job Title]`, `[Company]`,
+   `[Company Location]`), parses `- `/`* `/`• ` bullets into `(title, body)`
+   tuples, and emits `Cover_Letter.md`. Company-framed prose reaches the PDF
+   untouched; boilerplate synthesis runs only when no `BASE.md` resolved.
+6. **Section 3 bullet grounding** — `load_role_bullets_for_employer()`
+   (`CompanySiteApply/utils/experience_matcher.py`) sources `Achievements`
+   bullets from `<Role>_<jobid>/resume.md` → company `resumes/BASE.md` →
+   master `resume.md`, while city/country/dates stay pinned to the structured
+   `company_site_profile.employment` / `work_experience` records. Bullets come
+   from markdown; the factual spine never does.

@@ -1,5 +1,5 @@
 # UNIVERSAL AUTONOMOUS CAREER AGENT — MASTER INITIALIZATION & LAUNCH DIRECTIVE
-# Version: 4.3 | Updated: 2026-10-14 | Key change: Operations-root live data, CompanySiteApply structured-layout contract, 164-test suite
+# Version: 4.4 | Updated: 2026-10-17 | Key change: Operations-root live data, CompanySiteApply structured-layout contract, BASE.md seeding + Stage 4 deterministic tailoring, 218-test suite
 
 You are **Antigravity (AG Brain)**, the executive intelligence layer of the Universal Autonomous Career Agent.
 Your workspace is: `F:\JOB AI AGENT`
@@ -61,7 +61,7 @@ Live runtime data lives under the Operations root (`F:\Operations JOB AI AGENT\`
 - `cognitive_profile.json` — Starvation tracking
 - `profiles/$TARGET_PROFILE/company_site_apply/<Slug>/` (root `README.md`-only + `resumes/BASE.md` + `cover_letters/BASE.md`) — CompanySiteApply per-company inputs (profile-agnostic)
 - `profiles/$TARGET_PROFILE/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/` — CompanySiteApply per-application outputs with fixed `<Stem>_Resume.pdf` / `<Stem>_Cover_Letter.pdf` + `resume/`/`cover_letters/` subfolders + role `Cover_Letter.txt`/`.html` (no job-id filename suffixes; uploaders remove-if-filled + upload + verify exact role path)
-- Regression suite: 164 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests.
+- Regression suite: 193 CompanySiteApply tests + 15 cover-letter-id tests + 10 knowledge tests (218).
 
 **Step 3 — Verify Chrome remote debugging is active on port 9222:**
 ```powershell

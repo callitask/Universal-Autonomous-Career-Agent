@@ -25,8 +25,9 @@ Top enterprise hiring committees and executive engineering directors prioritize:
   - Name: `20pt - 22pt`, Bold (`font-weight: 700`), Uppercase
   - Contact Line: `9pt - 9.5pt`, Regular, separated by middle dots (`•`)
   - Date & Address Lines: `9.5pt`, Line Height: `1.4`
-  - Body Paragraphs: `9.5pt - 10pt`, Line Height: `1.45 - 1.48`
-  - Bullets: `9.5pt`, Line Height: `1.4`
+  - Body Paragraphs: `9.2pt`, Line Height: `1.4` (as emitted by the `body` rule of `COVER_LETTER_HTML_TEMPLATE` in `core/generate_professional_cover_letter.py`)
+  - Bullets: `9.2pt`, Line Height: `1.4`
+  - Paragraph rendering: `_split_paragraphs()` maps each `\n\n`-separated block to its own `<p>` tag in HTML/PDF (blank lines never collapse into one run-on paragraph); the raw `\n\n` separators are preserved verbatim in `Cover_Letter.txt`.
   - Sign-off Name: `10.5pt`, Bold (`#1B365D`)
 * **Page Margins (A4):**
   - Top: `14mm` | Bottom: `14mm` | Left: `18mm` | Right: `18mm`

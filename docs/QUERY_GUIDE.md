@@ -64,7 +64,7 @@ To rescan both repositories, re-chunk, re-compute BM25 IDF weights, and atomical
 ```powershell
 python scripts/build_knowledge_index.py --build
 ```
-Execution takes < 3.0 seconds across 360+ files and 2,200+ graph nodes (verified 2026-10-13: 368 files, 2324 nodes, 4950 edges, 964 chunks).
+Execution takes < 3.0 seconds across 380+ files and 2,700+ graph nodes (verified 2026-10-17: 381 files, 2705 nodes, 5560 edges, 1099 chunks).
 
 ---
 

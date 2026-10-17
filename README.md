@@ -52,7 +52,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── 03_profile_sync_linkedin.py    # LinkedIn profile updater
 │   ├── 04_job_discovery.py            # Batched discovery orchestrator, SRP scraper & match score extractor
 │   ├── 05_apply_jobs.py               # DOM interaction, chatbot solver & Easy Apply handler
-│   ├── generate_factual_tailored.py      # Factual ATS resume tailor (Naukri flow) — CompanySiteApply uses master-PDF staging + tailored cover letters
+│   ├── generate_factual_tailored.py      # Factual ATS resume tailor & PDF compiler (Naukri flow + CompanySiteApply Stage 4 BASE.md role-resume tailoring)
 │   ├── generate_professional_cover_letter.py # Cover letter PDF + Job-ID/title/company refusal + PDF-freshness verification
 │   ├── ai_client.py                   # Dual-engine brain (API: Gemini+Colab / Integrity 2.0: AG IPC)
 │   ├── ai_rate_manager.py               # SmartRateManager (3.5s floor, 120s model ban)
@@ -81,7 +81,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── ats_detector.py                # Portal platform detection engine
 │   ├── section_agents/                # Coordinators (5) + scripts/ (9 discrete actuators) + sub_agents/ (12)
 │   ├── ipc/                           # Section IPC bus (ipc_manager.py; runtime section_question.json)
-│   ├── tests/                         # Regression suite (164 tests)
+│   ├── tests/                         # Regression suite (193 tests)
 │   ├── fingers/                       # Platform adapters: Oracle Cloud HCM, Workday, Greenhouse, generic
 │   ├── nails/oracle/                  # Company overrides: JPMC, Bristlecone (on top of Oracle finger)
 │   ├── CompanyScraper/                # Direct career-site scrapers (JPMorgan example) + cli_scraper.py
@@ -94,7 +94,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles
 │   ├── reevaluate_ledger.py           # Ledger re-evaluation reset utility (utf-8-sig BOM safe)
 │   ├── test_colab_connection.py       # Colab gateway diagnostic (120s finite timeout)
-│   ├── phase_4_run.ps1                # 164 CompanySiteApply + 7 cover-letter tests -> build -> check -> 10 knowledge tests -> purity -> query gate
+│   ├── phase_4_run.ps1                # 193 CompanySiteApply + 15 cover-letter tests -> build -> check -> 10 knowledge tests -> purity -> query gate
 │   └── legacy_company_apply/          # Archived one-off scripts (forensic reference only, never run)
 ├── tests/                               # Root regression suites (test_cover_letter_job_id.py [7], test_knowledge_index.py [10])
 ├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)

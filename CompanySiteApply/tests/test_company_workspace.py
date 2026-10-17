@@ -284,6 +284,30 @@ class TestThreeTierBaseResolvers(unittest.TestCase):
         self.assertIs(ad.resolve_base_cover_letter_md, cw.resolve_base_cover_letter_md)
 
 
+class TestBlueprintPlaceholders(unittest.TestCase):
+    """[F-DOC-01] the tracked blueprint templates must never read as real."""
+
+    def test_blueprint_cover_base_md_is_not_real(self):
+        from core.utils.profile_context import PROJECT_ROOT
+        from CompanySiteApply.utils.company_workspace import (
+            _is_real_base_md,
+            resolve_base_cover_letter_md,
+            resolve_base_resume_md,
+        )
+        csa = PROJECT_ROOT / "profiles" / "default_user" / "company_site_apply" / "JPMorganChase"
+        cover = csa / "cover_letters" / "BASE.md"
+        resume = csa / "resumes" / "BASE.md"
+        self.assertTrue(cover.is_file(), f"blueprint cover BASE.md missing: {cover}")
+        self.assertTrue(resume.is_file(), f"blueprint resume BASE.md missing: {resume}")
+        self.assertFalse(_is_real_base_md(cover, ("{{FULL_NAME}}",)),
+                         "unedited cover blueprint must not pass as real")
+        self.assertFalse(_is_real_base_md(resume),
+                         "unedited resume blueprint must not pass as real")
+        prof = PROJECT_ROOT / "profiles" / "default_user"
+        self.assertIsNone(resolve_base_cover_letter_md(prof, "JPMorgan Chase & Co."))
+        self.assertIsNone(resolve_base_resume_md(prof, "JPMorgan Chase & Co."))
+
+
 class TestOperationsRootContextIntegrity(unittest.TestCase):
     """[F-CTX-01]/[F-CSA-01]/[F-CSA-02]/[F-IPC-01] regression pins."""
 

@@ -1,6 +1,6 @@
 # Handover: Enterprise ATS & Company Site Autonomous Application Subsystem
 
-> **Status:** Fully Integrated, Tested (164 CompanySiteApply Unit Tests + 7 Cover Letter Tests + 10 Knowledge Index Tests Passing as of 2026-10-15), and Production-Ready
+> **Status:** Fully Integrated, Tested (193 CompanySiteApply Unit Tests + 15 Cover Letter Tests + 10 Knowledge Index Tests Passing as of 2026-10-17), and Production-Ready
 > *(Historical snapshots in this handover citing older counts describe the state at authoring time.)*  
 > **Architecture:** 6-Stage Autonomous Lifecycle, Cognitive Sub-Agent Dispatch, Dynamic Brain Q&A, and Stale Document Healing  
 > **Key Constraint:** **STRICT HUMAN SUBMISSION GATE (Never click SUBMIT on Section 4).**
@@ -31,9 +31,11 @@ The Company Site Apply subsystem (`CompanySiteApply/`) provides 100% config-driv
   → Ranks unapplied candidate roles and selects the top-scoring requisition.
 [Stage 4: Document Tailoring] 
   → Generates bespoke, ATS-compliant cover letter PDF matching exact job_id and title, directly into the structured role folder. Recipient header is AG-Brain-owned (refusals halt). On failure: stamps `_tailoring_failed`, fills all sections anyway, skips document upload, halts `REVIEW_BLOCKED` (`TAILORING_BLOCKED`) with missing document + single-step `s4_*_upload.py --job-id` fix command.
+  → `BASE.md`-driven, both artifacts: `resolve_base_resume_md()` / `resolve_base_cover_letter_md()` walk 4 tiers with 3-tier non-overwriting seeding (`_is_real_base_md()` rejects `[FIRSTNAME LASTNAME]` / `[FULL NAME]` / `{{FULL_NAME}}`, so a hand-written base is never clobbered). Cover prose is synthesized from `cover_letters/BASE.md` via `_parse_base_cover_letter_md()` (`Cover_Letter.md` + `_split_paragraphs()` `<p>` rendering, `9.2pt`/`1.4`); the role resume is tailored deterministically by `tailor_and_compile_role_resume(..., allow_ipc=False)` into `<role_dir>/resume.md` + `<Stem>_Resume.pdf`, with `_strip_html_comments()` removing audit markers. Master-PDF copy is an explicit fallback only when no `BASE.md` resolves or compilation fails.
 [Stage 5: Section Mini-Agent Dispatch (Form Apply)] 
   → Enters via the job page + APPLY NOW click (bare `.../apply` deep links 404).
   → Coordinates Section 1 -> Section 2 -> Section 3 -> Section 4 with pre-audit, surgical micro-heal, and post-audit.
+  → Section 3 bullets prefer markdown: `load_role_bullets_for_employer()` reads `Achievements` from `<Role>_<jobid>/resume.md` -> company `resumes/BASE.md` -> master `resume.md`, while city/country/dates stay pinned to structured `employment`/`work_experience`. Section 2 Q&A is deduplicated on `(job_id, normalized_question)` and mirrored into `<Role>_<jobid>/answers.json` as `screening_qa`.
   → Failing sections halt as `SECTION_BLOCKED`/`REVIEW_BLOCKED` — never advance past unverified work. Intentionally skipped steps carry `skip_retry=True` (no pointless retries). Mid-run login walls halt as `SECTION_BLOCKED` (`SESSION_EXPIRED_OR_LOGIN_REQUIRED`).
 [Stage 6: Visual Audit & Human Submission Gate] 
   → Captures high-res verification screenshot.

@@ -647,13 +647,13 @@ F:\JOB AI AGENT\
 │   ├── ats_detector.py                # Portal platform detection engine
 │   ├── section_agents/                # Coordinators + discrete scripts/ + sub_agents/
 │   ├── ipc/                           # Section IPC bus (ipc_manager.py)
-│   ├── tests/                         # Regression suite (164 CompanySiteApply tests + 7 cover-letter-id tests + 10 knowledge tests)
+│   ├── tests/                         # Regression suite (193 CompanySiteApply tests + 15 cover-letter-id tests + 10 knowledge tests)
 │   ├── anatomy/                       # Portal anatomy models
 │   ├── fingers/                       # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
 │   ├── nails/                         # Company-specific ATS customizations (nails/oracle: JPMC, Bristlecone)
 │   ├── CompanyScraper/                # Direct company career site scrapers
 │   ├── parser_doctor/                 # ATS resume parsing healing and review verification
-│   └── utils/                         # dom_helpers, honeypot_guard, config_resolver, experience_matcher
+│   └── utils/                         # 10 modules: application_docs, company_workspace, config_resolver, dom_helpers, experience_matcher, honeypot_guard, match_report, question_hygiene, runtime_paths, sync_bridge
 │
 ├── scripts/                           # Operational and maintenance utilities
 │   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles
@@ -692,10 +692,17 @@ F:\JOB AI AGENT\
 | `generate_factual_tailored.py` | `core.utils.profile_context.ProfileContext`, `core.ai_client.AIClient` |
 | `02_profile_sync_naukri.py` | `ai_client.AIClient`, `core.utils.profile_context.ProfileContext` |
 | `02b_naukri_fast_resume_upload.py` | `core.utils.profile_context.ProfileContext` |
-| `03_profile_sync_linkedin.py` | `google.genai` (separate SDK instance) |
+| `03_profile_sync_linkedin.py` | `core.utils.profile_context.ProfileContext`, `core.utils.browser_manager.resolve_worker_context`, `core.ai_client.AIClient` |
 | `continuous_career_agent.py` | `subprocess` only (shell orchestration) |
 | `ipc_watcher.py` | Standard library only (`os`, `sys`, `json`, `time`, `pathlib`, `argparse`, `datetime`) |
-| `ipc_auto_resolver.py` | `google.genai`, `argparse`, `json`, `pathlib`, `sys`, `time` |
+| `ipc_auto_resolver.py` | Standard library only (`os`, `sys`, `json`, `time`, `argparse`, `traceback`, `pathlib`, `datetime`) |
 | `search_state_manager.py` | `json`, `os`, `pathlib`, `typing` |
 
-**WARNING:** `03_profile_sync_linkedin.py` uses `from google import genai` (new SDK only). `ai_client.py` and `ipc_auto_resolver.py` dual-support both `google.genai` and legacy `google.generativeai`; all other scripts use the legacy SDK. These are **different packages**. Do not mix them.
+**WARNING (corrected 2026-10-17):** there is **no** mixed-SDK situation.
+`03_profile_sync_linkedin.py` performs **zero** direct `google.genai` /
+`google.generativeai` imports — it reaches the brain exclusively through the
+shared `core.ai_client.AIClient` facade (same for `ipc_watcher.py` and
+`ipc_auto_resolver.py`, which are standard-library only). `google.genai` and
+the legacy `google.generativeai` are **different packages** and are imported in
+exactly one place (`core/ai_client.py`, which dual-supports both). Any future
+script must import `AIClient`, never an SDK directly.

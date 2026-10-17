@@ -375,12 +375,35 @@ In `02_profile_sync_naukri.py`, duplicate evaluation strictly enforces a 3-way m
 
 ---
 
-### 3.5 `profile_context.py` — Multi-User Sandbox Manager (~750 lines)
+### 3.5 `profile_context.py` — Multi-User Sandbox Manager (~770 lines)
+
+**Two-Root Split (`self.code_root` vs. `self.base_path`):**
+
+| Attribute | Resolves to | Role |
+| :--- | :--- | :--- |
+| `self.base_path` | `JOB_AGENT_OPERATIONS/profiles/<slug>` (env-overridable; repo `profiles/` only as blueprint fallback) | **Data root** — resume, config, ledger, logs, artifacts |
+| `self.code_root` | `PROJECT_ROOT` (the repo) | **Code root** — every module scanned by the P1 purity gate |
+
+Document/knowledge lookups and the P1 scan resolve via `code_root`; live
+candidate I/O resolves via `base_path`. Before this split, a profile constructed
+with an Operations data root made `verify_codebase_purity()` scan the empty
+Operations tree and **pass vacuously over 0 files**.
 
 **Profile Resolution Hierarchy:**
 1. Explicit `profile_path` parameter
-2. CLI `--profile <path>` argument
-3. Auto-discover: first valid candidate subdirectory in `profiles/` with `candidate_config.json` (strictly excluding `default_user`, which serves as the immutable template blueprint)
+2. CLI `--profile <path>` argument (slug or path)
+3. Auto-discover: first valid candidate subdirectory under the **Operations** `profiles/` root with `candidate_config.json` (strictly excluding `default_user`, which serves as the immutable template blueprint)
+
+**Guardrail P1 — Zero-Trust Codebase Purity:** scans all 5 scopes
+(`core/`, `CompanySiteApply/`, `scripts/`, `tests/`, root `*.py`) — 127+ files —
+for forbidden candidate-PII tokens, including `<slug>_resume` and
+`<slug>_cover_letter` artifact-name forms. `scripts/legacy_company_apply/` is
+excluded (archived, never executed).
+
+**Blueprint Guard (`default_user`):** `profiles/default_user` is a tracked
+schema, never a runtime sandbox. `_ensure_cognitive_profile_analyzed()`
+short-circuits for it, so no placeholder-tainted `cognitive_profile.json` is
+synthesized into the repo.
 
 **Atomic Save Protocol:**
 ```python
@@ -394,11 +417,17 @@ os.replace(tmp_path, config_path)  # Atomic on all OSes
 ### 3.6 `browser_manager.py` — CDP Lifecycle Manager (~136 lines)
 
 - Connects to existing Chrome instance via `chromium.connect_over_cdp(cdp_url)`
-- Reuses `browser.contexts[0]` for cookie/session persistence
+- `resolve_worker_context(browser, ctx.browser_context)` selects the CDP context by profile-configured name:
+  - `"default"` → `contexts[0]` (unchanged legacy behavior); falls back to `browser.new_context()` when no context exists
+  - `"incognito"` → `contexts[1]` (Chrome shares exactly ONE off-the-record context across all its incognito windows, so the index is deterministic) and **raises `RuntimeError`** when no incognito window is open — fail fast instead of ever running logged-out silently
 - `new_page()` reuses `context.pages[0]` if available, brings to foreground
 - Does NOT terminate Chrome on `.close()` — only stops Playwright
 
-**Architectural Note:** Currently only `05_apply_jobs.py` uses `BrowserManager`. All other scripts create their own `sync_playwright()` contexts directly. This causes redundant CDP connections and potential tab hijacking.
+**Consumers:** `resolve_worker_context` is used by `02_profile_sync_naukri.py`,
+`02b_naukri_fast_resume_upload.py`, `03_profile_sync_linkedin.py`,
+`04_job_discovery.py`, `05_apply_jobs.py`, and `generate_factual_tailored.py` —
+every script that drives a browser, so incognito/default routing is applied
+uniformly instead of each script re-deriving it.
 
 ---
 
@@ -420,7 +449,9 @@ os.replace(tmp_path, config_path)  # Atomic on all OSes
   python core/ipc_watcher.py --profile profiles/<profile_name> --poll 2.0
   ```
 - **Operational Mechanics**:
-  1. Polls `profiles/<profile_name>/output/pending_question.json` at a configurable interval (default 2.0 seconds).
+  1. Polls **both** IPC channels on a shared configurable interval (default 2.0 seconds):
+     - `profiles/<profile_name>/output/pending_question.json` — single-card IPC
+     - `profiles/<profile_name>/output/batch_question.json` — batch-card IPC (answered via the **separate** `batch_answer.json`; never mix the two file names)
   2. Detects files where `"status": "PENDING"` and `"answer": null`.
   3. Formats and prints a loud, structured ASCII alert block to `stdout` containing:
      - Timestamp (`HH:MM:SS`)
@@ -430,6 +461,7 @@ os.replace(tmp_path, config_path)  # Atomic on all OSes
      - `FULL_PROMPT` snippet for AG Brain context
   4. De-duplicates logs so the same question is printed once per occurrence (`last_printed_ts`), avoiding log flooding.
   5. Emits periodic heartbeat logs every 30 polling iterations (`Heartbeat: waiting for pending question...`).
+- **Profile resolution:** `--profile` is **optional** (`default=None`). It accepts a bare slug (`TARGET_PROFILE`) or a path (`profiles/TARGET_PROFILE`); `_resolve_profile_path()` resolves it against the **Operations** root `F:\Operations JOB AI AGENT\profiles\`, and auto-discovers when omitted.
 - **Zero API / Zero Hardcoding**: Contains no external AI API dependencies and zero candidate PII. Serves purely as a transparent signal relay.
 
 ---

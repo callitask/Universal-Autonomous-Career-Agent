@@ -1,7 +1,7 @@
 # CompanySiteApply: Enterprise ATS Form Filling Subsystem
 
-> **Document Version:** 3.2 — Hard Advance Gates, Dispatcher Cascade, Pre-Submit Order Gate, JET Radio Coverage, Structured Role Outputs & Zero-Hardcoding Architecture
-> **Last Updated:** 2026-10-14  
+> **Document Version:** 3.3 — Hard Advance Gates, Dispatcher Cascade, Pre-Submit Order Gate, JET Radio Coverage, Structured Role Outputs, BASE.md Seeding & Stage 4 Deterministic Tailoring & Zero-Hardcoding Architecture
+> **Last Updated:** 2026-10-17  
 > **Execution Mode:** Autonomous Full Lifecycle & On-Demand Human-Gated (Decoupled from background daemons)
 
 A decoupled, modular automation subsystem for applying directly to company career sites and enterprise Applicant Tracking Systems (ATSs) like Oracle Cloud HCM, Workday, and Greenhouse.
@@ -72,30 +72,43 @@ CompanySiteApply/
 │   ├── education_healer.py         # Fixes swapped degree vs. college mappings
 │   └── review_verifier.py          # Coordinates DOM-level pre-submit verification
 │
-├── tests/                          # Automated regression test suite (164 tests)
-│   ├── test_autonomous_job_agent.py# Lifecycle & matching test suite
-│   ├── test_ai_brain_resolver.py   # Screening Q&A dynamic deduction tests
-│   ├── test_sub_agents.py          # Granular sub-agent audit & heal tests
-│   ├── test_section_agents.py      # Section coordinator integration tests
-│   ├── test_parser_doctor.py       # Line wrap & education healing tests
-│   ├── test_ipc_and_modular_scripts.py # IPC lifecycle + discrete script tests
-│   ├── test_section_detection.py   # URL routing, gates, tripwires, cascade tests
-│   ├── test_experience_matcher.py  # resume.md parsing + employer matching tests
-│   ├── test_search_entry.py        # Site-root entry + 404-guard tests
-│   ├── test_dom_helpers.py         # Shared DOM helper tests
+├── tests/                          # Automated regression test suite (193 tests, 20 files)
 │   ├── test_anatomy.py             # Portal anatomy model tests
-│   └── test_application_docs.py    # Structured role-layout contract tests (+4)
+│   ├── test_ai_brain_resolver.py   # Screening Q&A dedup + answers.json mirror tests
+│   ├── test_answer_integrity.py    # Answer-integrity contract tests
+│   ├── test_application_docs.py    # Structured role-layout contract tests
+│   ├── test_autonomous_job_agent.py# Lifecycle & matching test suite
+│   ├── test_company_workspace.py   # BASE.md seeding/resolution + blueprint-placeholder guard
+│   ├── test_decisions_1_and_4.py   # Decision-gate regression tests
+│   ├── test_dom_helpers.py         # Shared DOM helper tests
+│   ├── test_experience_matcher.py  # resume.md bullet priority + employer matching tests
+│   ├── test_ipc_and_modular_scripts.py # IPC lifecycle + discrete script tests
+│   ├── test_match_report.py        # Match-report regression tests
+│   ├── test_parser_doctor.py       # Line wrap & education healing tests
+│   ├── test_repo_structure.py      # Repo layout / blueprint-only-profiles guard
+│   ├── test_runtime_paths.py       # Operations-root resolution tests
+│   ├── test_search_entry.py        # Site-root entry + 404-guard tests
+│   ├── test_section_agents.py      # Section coordinator integration tests
+│   ├── test_section_detection.py   # URL routing, gates, tripwires, cascade tests
+│   ├── test_sub_agents.py          # Granular sub-agent audit & heal tests
+│   ├── test_sync_bridge.py         # Sync-bridge regression tests
+│   └── test_task1_gaps.py          # Task-1 gap regression tests
 │
 ├── anatomy/                          # Portal anatomy models (base, oracle_cloud, surgical_auditor)
 ├── fingers/                          # Platform adapters: base/generic/oracle_cloud/workday/greenhouse (+ registry)
 ├── nails/                            # Company overrides: base_nail + oracle/{jpmc_nail, bristlecone_nail}
 │
-└── utils/                          # Common DOM and security utilities
+└── utils/                          # Common DOM, workspace, and security utilities (10 modules)
+    ├── application_docs.py         # Structured role-layout contract (fixed names, exact paths, resolve_company_name)
+    ├── company_workspace.py        # Company workspace ensure + 3-tier BASE.md seeding/resolution
     ├── config_resolver.py          # Dynamic search roots & candidate resolution
     ├── dom_helpers.py              # Framework-native JavaScript event dispatchers
+    ├── experience_matcher.py       # resume.md bullet priority + fuzzy employer matching
     ├── honeypot_guard.py           # Anti-bot honeypot detection
-    ├── application_docs.py         # Structured role-layout contract (fixed names, exact paths, resolve_company_name)
-    └── experience_matcher.py       # resume.md parsing + fuzzy employer matching
+    ├── match_report.py             # Cognitive match report writer
+    ├── question_hygiene.py         # Screening-question normalization & dedup helpers
+    ├── runtime_paths.py            # Operations-root path resolution (profiles/ipc/output)
+    └── sync_bridge.py              # Profile/ledger sync bridge
 ```
 
 
@@ -173,9 +186,21 @@ the flat directory (`resolve_company_roots()`). Slugs are alphanumeric
 (`company_slug()` strips `&`, spaces, and `Co/Inc/Ltd` suffixes). Inputs live
 here: root `README.md`-only plus `resumes/BASE.md` and
 `cover_letters/BASE.md` — auto-provisioned at Stage 4 start for every profile
-identically. The resume-markdown lookup (`resolve_base_resume_md()`) reads the
-company `resumes/BASE.md` first (placeholder-guarded) before the profile
-`resume.md`, so company-framed bases actually ground experience matching.
+identically.
+
+**4-step resolution + 3-tier non-overwriting seeding.** Seeding writes a tier
+**only when the file is absent or still a placeholder blueprint**
+(`_is_real_base_md()` rejects `[FIRSTNAME LASTNAME]`, `[FULL NAME]` and
+`{{FULL_NAME}}`), so a hand-written `BASE.md` is never clobbered. Resolution
+then walks 4 tiers, first hit wins:
+
+| Resolver | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
+| --- | --- | --- | --- | --- |
+| `resolve_base_resume_md(profile_dir, company_name)` | `company_site_apply/<Slug>/resumes/BASE.md` | `company_site_apply/<legacy>/resumes/BASE.md` (each legacy space-separated dirname, `_legacy_company_dirnames()`) | `company_site_apply/resume.md` | `profile_dir/resume.md` |
+| `resolve_base_cover_letter_md(profile_dir, company_name)` | `company_site_apply/<Slug>/cover_letters/BASE.md` | `company_site_apply/<legacy_dir>/cover_letters/BASE.md` | `company_site_apply/cover_letter.md` | `profile_dir/cover_letter_template.md` |
+
+Both return `None` when every tier is missing or is a placeholder blueprint, and
+both are re-exported from `CompanySiteApply/utils/application_docs.py`.
 
 **Future company agents:** call `ensure_company_workspace(candidate_data,
 company)` at run start — the workspace (plus `cover_letters/`, `resumes/`,
@@ -199,9 +224,39 @@ profiles/<slug>/APPLIED ON COMPANY WEBSITE/<Company>/<Role>_<jobid>/
 ├── <Stem>_Cover_Letter.pdf    # FIXED name (flat canonical)
 ├── resume/<Stem>_Resume.pdf           # mirrored copy
 ├── cover_letters/<Stem>_Cover_Letter.pdf  # mirrored copy
+├── resume.md                   # BASE.md-driven tailored role resume (Stage 4)
+├── answers.json                # screening_qa mirror for this role (Stage 5)
 ├── Cover_Letter.txt           # role-specific companions
-└── Cover_Letter.html
+└── Cover_Letter.md            # base-markdown prose source for the above
 ```
+
+- **Stage 4 deterministic role-resume tailoring** (`core/generate_factual_tailored.py`):
+  `tailor_and_compile_role_resume(..., allow_ipc=False)` tailors the resolved
+  company `resumes/BASE.md` into `<role_dir>/resume.md` and compiles
+  `<Stem>_Resume.pdf`. `allow_ipc=False` keeps the standalone compiler off the
+  IPC brain (the ATS flow already has context), and `_strip_html_comments()`
+  removes `<!-- ... -->` audit markers before PDF rendering. Falls back to a
+  master-PDF copy only when no `BASE.md` resolves or compilation fails.
+- **Stage 4 base-markdown cover-letter synthesis** (`core/generate_professional_cover_letter.py`):
+  `_parse_base_cover_letter_md()` substitutes the `BASE.md` placeholder set
+  (`[Job Title]`, `[Company Name]`, `[City, State, Country]`, and the alternate
+  spellings `[Exact Job Title]`, `[Company]`, `[Company Location]`), parses
+  `- `/`* `/`• ` bullets into `(title, body)` tuples, and emits `Cover_Letter.md`.
+  `_split_paragraphs()` renders `\n\n`-separated blocks as distinct `<p>` tags in
+  HTML/PDF (9.2pt font, 1.4 line-height CSS) while keeping raw `\n\n` in
+  `Cover_Letter.txt`. Company-framed prose reaches the PDF untouched; the
+  generic boilerplate fallback runs only when no `BASE.md` resolved.
+- **Stage 5 Section 3 markdown bullet priority**
+  (`CompanySiteApply/utils/experience_matcher.py`):
+  `load_role_bullets_for_employer()` sources `Achievements` bullets from
+  `<Role>_<jobid>/resume.md` → company `resumes/BASE.md` → master `resume.md`,
+  while city/country/dates stay grounded in the structured
+  `company_site_profile.employment` / `work_experience` records.
+- **Stage 5 Q&A ledger + per-role mirror** (`CompanySiteApply/ai_brain_resolver.py`):
+  `_is_noise_record()` and `_compact_history()` deduplicate `screening_answers.json`
+  in place on `(job_id, normalized_question)`, and `_mirror_role_answers()`
+  writes the `screening_qa` block into `<Role>_<jobid>/answers.json` (folder
+  discovery falls back to `*/*_<jobid>`).
 
 - **Stem** is the Title-Cased profile slug (`profile_stem()` prefers the
   folder identity, e.g. `first_last` → `First_Last`, `full_name` fallback

@@ -24,7 +24,12 @@
 
 ### 2.1 The IPC File
 
-**Location:** `F:\JOB AI AGENT\CompanySiteApply\ipc\section_question.json`
+**Template location (tracked):** `F:\JOB AI AGENT\CompanySiteApply\ipc\section_question.json`
+
+**Active runtime location:** resolved via `CompanySiteApply/utils/runtime_paths.py:ipc_dir()` →
+`F:\Operations JOB AI AGENT\ipc\section_question.json` (the Operations root,
+env-overridable via `JOB_AGENT_OPERATIONS`). The in-repo path is the committed
+**template fallback** only — live runtime state is never written into the git tree.
 
 This file is the shared message bus between Python (Playwright browser scripts) and AG Brain (Antigravity 2.0 model).
 
@@ -134,7 +139,7 @@ After `binary_questions`, `competency_questions`, and `dropdown_questions` compl
 
 | Subsection | Script | Notes |
 |-----------|--------|-------|
-| `education_tile` | `section_agents/scripts/s3_education_tile.py` | One education tile. Degree, Area of Study, Country from candidate_data. Non-IPC. |
+| `education_tile` | `section_agents/scripts/s3_education_tile.py` | One education tile. Degree, Area of Study, Country from candidate_data. Non-IPC in effect: the `edu_degree_major` question is serialized through `IPCManager` (`write_questions` then `write_answers` back-to-back, since the answer is deterministic profile data) — a **sync fast-path**, not a brain round-trip. |
 | `experience_tile_N` | `section_agents/scripts/s3_experience_tile.py` | Called N times (once per experience entry). N resolved from `candidate_data.work_experience` count. |
 | `experience_ordering` | `section_agents/scripts/s3_experience_ordering.py` | Called AFTER all tiles filled. Enforces reverse-chronological sort via date parsing (see §4.1). |
 
@@ -284,46 +289,46 @@ If verification fails for `experience_tile_3` (out of 9), the orchestrator calls
 > **Gate 3 Active.** No code may be written until this document is reviewed and approval is given for each phase. Each phase is a separate manual approval gate.
 
 ### Phase 0 — IPC Infrastructure (PREREQUISITE)
-- [ ] Create `CompanySiteApply/ipc/` directory
-- [ ] Create `CompanySiteApply/ipc/section_question.json` (empty template)
-- [ ] Create `CompanySiteApply/ipc/ipc_manager.py` — utility class: `write_questions()`, `write_answers()`, `read()`, `get_status()`, `wait_for_answers()`, `mark_done()`, `reset()`
-- [ ] Add `CompanySiteApply/ipc/*.json` to `.gitignore`
+- [x] Create `CompanySiteApply/ipc/` directory
+- [x] Create `CompanySiteApply/ipc/section_question.json` (empty template)
+- [x] Create `CompanySiteApply/ipc/ipc_manager.py` — utility class: `write_questions()`, `write_answers()`, `read()`, `get_status()`, `wait_for_answers()`, `mark_done()`, `reset()`
+- [x] Add `CompanySiteApply/ipc/*.json` to `.gitignore`
 
 ### Phase 1 — Modal Fix (CRITICAL BUG, HIGH PRIORITY)
-- [ ] Edit `apply_orchestrator.py`: Add Terms & Conditions modal pre-check at top of `while` loop (§4.2)
-- [ ] Add SCAR_TISSUE.md entry for modal trap fix
+- [x] Edit `apply_orchestrator.py`: Add Terms & Conditions modal pre-check at top of `while` loop (§4.2)
+- [x] Add SCAR_TISSUE.md entry for modal trap fix
 
 ### Phase 2 — Experience Ordering Fix (CONFIRMED BUG)
-- [ ] Create `section_agents/scripts/s3_experience_ordering.py` — DOM text date parsing sort (§4.1)
-- [ ] Update `ExperienceSectionAgent._reorder_tiles_reverse_chronological()` to call new script
-- [ ] Update `JPMCNail.reorder_experience_tiles()` to use DOM text sort instead of Knockout VM sort
-- [ ] Add SCAR_TISSUE.md entry for ordering fix
+- [x] Create `section_agents/scripts/s3_experience_ordering.py` — DOM text date parsing sort (§4.1)
+- [x] Update `ExperienceSectionAgent._reorder_tiles_reverse_chronological()` to call new script
+- [x] Update `JPMCNail.reorder_experience_tiles()` to use DOM text sort instead of Knockout VM sort
+- [x] Add SCAR_TISSUE.md entry for ordering fix
 
 ### Phase 3 — Conditional Question Rescan (CONFIRMED BUG)
-- [ ] Create `section_agents/scripts/s2_conditional_questions.py` — DOM rescan for newly visible required questions
-- [ ] Update `questionnaire_section_agent.py` `heal()` to call conditional rescan after first pass
-- [ ] IPC integration: conditional question answers go through full `ANSWER_REQUIRED → ANSWERED` cycle
+- [x] Create `section_agents/scripts/s2_conditional_questions.py` — DOM rescan for newly visible required questions
+- [x] Update `questionnaire_section_agent.py` `heal()` to call conditional rescan after first pass
+- [x] IPC integration: conditional question answers go through full `ANSWER_REQUIRED → ANSWERED` cycle
 
 ### Phase 4 — Section 2 IPC Integration
-- [ ] Create `section_agents/scripts/s2_binary_questions.py` — write to IPC, wait for ANSWERED, fill DOM
-- [ ] Create `section_agents/scripts/s2_competency_questions.py`
-- [ ] Create `section_agents/scripts/s2_dropdown_questions.py`
-- [ ] Update `BinaryQuestionSubAgent` and `TechnicalCompetencySubAgent` to delegate to scripts via `IPCManager`
+- [x] Create `section_agents/scripts/s2_binary_questions.py` — write to IPC, wait for ANSWERED, fill DOM
+- [x] Create `section_agents/scripts/s2_competency_questions.py`
+- [x] Create `section_agents/scripts/s2_dropdown_questions.py`
+- [x] Update `BinaryQuestionSubAgent` and `TechnicalCompetencySubAgent` to delegate to scripts via `IPCManager`
 
 ### Phase 5 — Section 3 IPC Integration
-- [ ] Create `section_agents/scripts/s3_experience_tile.py` (parametrized by `--tile-index N`)
-- [ ] Create `section_agents/scripts/s3_education_tile.py`
-- [ ] Update `ExperienceSectionAgent.heal()` to iterate tiles via the new script
+- [x] Create `section_agents/scripts/s3_experience_tile.py` (parametrized by `--tile-index N`)
+- [x] Create `section_agents/scripts/s3_education_tile.py`
+- [x] Update `ExperienceSectionAgent.heal()` to iterate tiles via the new script
 
 ### Phase 6 — Section 4 Document Independence
-- [ ] Create `section_agents/scripts/s4_resume_upload.py` (independent; checks own state)
-- [ ] Create `section_agents/scripts/s4_cover_letter_upload.py` (independent; stale → remove → upload)
-- [ ] Refactor `documents_subagent.py` to delegate to these two scripts
-- [ ] Session freshness flags stored in IPC `session_id` context (not in-memory class vars)
+- [x] Create `section_agents/scripts/s4_resume_upload.py` (independent; checks own state)
+- [x] Create `section_agents/scripts/s4_cover_letter_upload.py` (independent; stale → remove → upload)
+- [x] Refactor `documents_subagent.py` to delegate to these two scripts
+- [x] Session freshness flags stored in IPC `session_id` context (not in-memory class vars)
 
 ### Phase 7 — Verification & Visual Gate
-- [ ] Update `visual_verifier_subagent.py` — send structured DOM readback dict to AG Brain for confirmation
-- [ ] Full-page screenshot on Section 4 only
+- [x] Update `visual_verifier_subagent.py` — send structured DOM readback dict to AG Brain for confirmation
+- [x] Full-page screenshot on Section 4 only
 
 ---
 
@@ -335,10 +340,10 @@ If verification fails for `experience_tile_3` (out of 9), the orchestrator calls
 | `jpmc_nail.py` | Edit: replace `reorder_experience_tiles()` sort logic | 2 |
 | `experience_section_agent.py` | Edit: replace `_reorder_tiles_reverse_chronological()` | 2 |
 | `questionnaire_section_agent.py` | Edit: add conditional rescan loop | 3 |
-| `binary_question_subagent.py` | Edit: delegate to IPC scripts | 4 |
-| `technical_competency_subagent.py` | Edit: delegate to IPC scripts | 4 |
-| `documents_subagent.py` | Edit: split into two independent script calls | 6 |
-| `visual_verifier_subagent.py` | Edit: structured data verification + screenshot | 7 |
+| `section_agents/sub_agents/binary_question_subagent.py` | Edit: delegate to IPC scripts | 4 |
+| `section_agents/sub_agents/technical_competency_subagent.py` | Edit: delegate to IPC scripts | 4 |
+| `section_agents/sub_agents/documents_subagent.py` | Edit: split into two independent script calls | 6 |
+| `section_agents/sub_agents/visual_verifier_subagent.py` | Edit: structured data verification + screenshot | 7 |
 | `.gitignore` | Edit: add `ipc/*.json` | 0 |
 
 **New Files (all in `section_agents/scripts/`):**
@@ -388,7 +393,7 @@ If this session ends before full implementation:
 1. Re-read `ACTIVE_CONSTRAINT_BLOCK.md` + `SCAR_TISSUE.md` (mandatory).
 2. Check which Phase (§7) was last completed — grep for `# Phase N COMPLETE` comments in modified files.
 3. Resume from the next uncompleted phase.
-4. Before writing any code: run `python -m unittest discover -s CompanySiteApply/tests` — all 164 must pass (plus 7 cover-letter-id tests in `tests/`, 10 knowledge tests).
+4. Before writing any code: run `python -m unittest discover -s CompanySiteApply/tests` — all 193 must pass (plus 15 cover-letter-id tests in `tests/`, 10 knowledge tests).
 5. After each phase: run tests again. Regression = stop and investigate before continuing.
 6. This document is the canonical spec. Do not deviate without updating it first.
 
