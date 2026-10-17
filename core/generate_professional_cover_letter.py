@@ -53,6 +53,27 @@
 # Changes Made: Alternate tokens substituted; bullet regex accepts "•".
 # Rationale: Operators write BASE.md by hand — the parser must tolerate it.
 # Preventative Notes: When a token variant is accepted, pin it in tests.
+#
+# [ENTRY #006]
+# Term: [F_CL_02_MARKDOWN_BOLD_RENDERING]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-CL-02] BASE.md prose is authored with Markdown bold
+#   ("**Lead Software Engineer**", "**JPMorgan Chase & Co.**"). That text was
+#   interpolated straight into COVER_LETTER_HTML_TEMPLATE and into the .txt
+#   companion, so the literal "**" shipped to the employer - incident
+#   210795740 printed "**Lead Software Engineer-Python , Java ,Gen AI,
+#   Architect**" verbatim in the delivered PDF (24 stray "**" in the HTML).
+# Changes Made: New _md_bold_to_html() converts balanced **runs** to <strong>
+#   for the four HTML paragraph slots and both bullet fields; new
+#   _strip_md_bold() removes the markers for Cover_Letter.txt. Unbalanced
+#   trailing "**" is left intact rather than swallowing the rest of the letter.
+# Rationale: Markdown is the authoring format; the employer-facing PDF must
+#   never show authoring syntax, and the plain-text companion must stay
+#   readable for the operator and for freshness checks.
+# Preventative Notes: Any new HTML slot fed from markdown MUST go through
+#   _md_bold_to_html(); never interpolate raw markdown into the template.
+#   Do not convert "**" inside _split_paragraphs() - it operates before this
+#   layer and is also used for text-shape logic.
 # ==============================================================================
 
 import os
@@ -332,7 +353,9 @@ def generate_cover_letter_pdf(
         clean_name = re.sub(r'[^a-zA-Z0-9_]', '_', candidate_name.strip())
         pdf_filename = f"{clean_name}_Cover_Letter.pdf"
 
-    bullets_html = "\n  ".join([f"<li><strong>{b['title']}:</strong> {b['body']}</li>" for b in bullets])
+    bullets_html = "\n  ".join(
+        [f"<li><strong>{_md_bold_to_html(b['title'])}:</strong> "
+         f"{_md_bold_to_html(b['body'])}</li>" for b in bullets])
 
     # Contact line from known parts only — never invent a location.
     contact_parts = build_contact_parts(location, phone, email, linkedin)
@@ -357,20 +380,21 @@ def generate_cover_letter_pdf(
         .replace("{org_location}", org_location)
         .replace("{job_title}", job_title)
         .replace("{job_id}", job_id)
-        .replace("{opening_p}", _split_paragraphs(opening_p))
-        .replace("{transition_p}", _split_paragraphs(transition_p))
+        .replace("{opening_p}", _md_bold_to_html(_split_paragraphs(opening_p)))
+        .replace("{transition_p}", _md_bold_to_html(_split_paragraphs(transition_p)))
         .replace("{bullets_html}", bullets_html)
         .replace("{contact_html}", contact_html)
-        .replace("{synthesis_p}", _split_paragraphs(synthesis_p))
-        .replace("{closing_p}", _split_paragraphs(closing_p))
+        .replace("{synthesis_p}", _md_bold_to_html(_split_paragraphs(synthesis_p)))
+        .replace("{closing_p}", _md_bold_to_html(_split_paragraphs(closing_p)))
     )
     
     (target_path / "Cover_Letter.html").write_text(html_content, encoding="utf-8")
     
     def _clean_txt(text: str) -> str:
-        return re.sub(r'<[^>]+>', '', text)
+        return _strip_md_bold(re.sub(r'<[^>]+>', '', text))
 
-    bullets_txt = "\n".join([f"• {b['title']}: {b['body']}" for b in bullets])
+    bullets_txt = "\n".join([f"• {_strip_md_bold(b['title'])}: {_strip_md_bold(b['body'])}"
+                             for b in bullets])
     ref_line = (
         f"Re: Application for {job_title} (Job ID: {job_id})"
         if job_id
@@ -432,6 +456,37 @@ def _split_paragraphs(text: str) -> str:
     """
     parts = [p.strip() for p in re.split(r"\n\s*\n", str(text or "").strip()) if p.strip()]
     return "</p>\n<p>".join(parts)
+
+
+def _md_bold_to_html(text: str) -> str:
+    """[F-CL-02] Convert Markdown "**bold**" runs to <strong> for the HTML path.
+
+    BASE.md prose is authored with Markdown bold ("**Lead Software Engineer**",
+    "**JPMorgan Chase & Co.**"). That text was interpolated straight into
+    COVER_LETTER_HTML_TEMPLATE, so the literal "**" shipped to the employer
+    (incident 210795740: "**Lead Software Engineer-Python , Java ,Gen AI,
+    Architect**" printed verbatim in the PDF).
+
+    Only balanced pairs are converted; an odd trailing "**" is left untouched
+    rather than swallowing the rest of the letter.
+    """
+    def _pair(m):
+        return f"<strong>{m.group(1)}</strong>"
+    prev = None
+    out = str(text or "")
+    while prev != out:                      # handles **a****b** nesting
+        prev = out
+        out = re.sub(r"\*\*(.+?)\*\*", _pair, out, flags=re.S)
+    return out
+
+
+def _strip_md_bold(text: str) -> str:
+    """[F-CL-02] Remove Markdown bold markers for the plain-text companion.
+
+    Cover_Letter.txt is read by the operator and used for freshness checks; it
+    must not carry Markdown syntax.
+    """
+    return re.sub(r"\*\*(.+?)\*\*", r"\1", str(text or ""), flags=re.S)
 
 
 def _parse_base_cover_letter_md(base_md_path, ctx=None):

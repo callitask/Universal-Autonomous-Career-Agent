@@ -81,7 +81,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── ats_detector.py                # Portal platform detection engine
 │   ├── section_agents/                # Coordinators (5) + scripts/ (9 discrete actuators) + sub_agents/ (12)
 │   ├── ipc/                           # Section IPC bus (ipc_manager.py; runtime section_question.json)
-│   ├── tests/                         # Regression suite (193 tests)
+│   ├── tests/                         # Regression suite (202 tests)
 │   ├── fingers/                       # Platform adapters: Oracle Cloud HCM, Workday, Greenhouse, generic
 │   ├── nails/oracle/                  # Company overrides: JPMC, Bristlecone (on top of Oracle finger)
 │   ├── CompanyScraper/                # Direct career-site scrapers (JPMorgan example) + cli_scraper.py
@@ -94,7 +94,7 @@ The agent is built on a strict, candidate-agnostic framework. Zero personal data
 │   ├── build_knowledge_index.py       # Graph+vector rebuild (--build/--check); excludes secrets & live profiles
 │   ├── reevaluate_ledger.py           # Ledger re-evaluation reset utility (utf-8-sig BOM safe)
 │   ├── test_colab_connection.py       # Colab gateway diagnostic (120s finite timeout)
-│   ├── phase_4_run.ps1                # 193 CompanySiteApply + 15 cover-letter tests -> build -> check -> 10 knowledge tests -> purity -> query gate
+│   ├── phase_4_run.ps1                # 202 CompanySiteApply + 25 cover-letter tests -> build -> check -> 10 knowledge tests -> purity -> query gate
 │   └── legacy_company_apply/          # Archived one-off scripts (forensic reference only, never run)
 ├── tests/                               # Root regression suites (test_cover_letter_job_id.py [7], test_knowledge_index.py [10])
 ├── requirements.txt                   # Pinned runtime deps (playwright, markdown, genai, openai)

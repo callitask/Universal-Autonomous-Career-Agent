@@ -81,12 +81,12 @@ F:\Operations JOB AI AGENT\profiles\$TARGET_PROFILE\resume.md               ← 
 *(Note: `F:\JOB AI AGENT\profiles\` contains ONLY the PII-free starter blueprint `default_user/`. Passing `--profile default_user` raises `ValueError("Refusing to run against 'default_user' blueprint profile.")`.)*
 
 **Step 1 — Verify Zero-Trust Purity & Unit Test Suites:**
-Ensure zero PII and zero static domain fallbacks exist in the code. Run the CompanySiteApply test suite (`193` tests) and the live-profile Guardrail P1 purity check:
+Ensure zero PII and zero static domain fallbacks exist in the code. Run the CompanySiteApply test suite (`202` tests) and the live-profile Guardrail P1 purity check:
 ```powershell
 .venv\Scripts\python -m unittest discover -s CompanySiteApply/tests
 .venv\Scripts\python -c "from CompanySiteApply.utils.runtime_paths import resolve_profile_dir; from core.utils.profile_context import ProfileContext; ctx = ProfileContext(resolve_profile_dir('$TARGET_PROFILE')); print('Pure:', ctx.verify_codebase_purity())"
 ```
-Expected: All `193` CompanySiteApply tests pass (`OK`) and purity prints `Pure: (True, [])`. *(For full repository verification after code or doc edits, run `& .\scripts\phase_4_run.ps1`, which gates all `218` tests [`193` CompanySiteApply + `15` cover-letter + `10` knowledge index], knowledge index freshness, and codebase purity).*
+Expected: All `202` CompanySiteApply tests pass (`OK`) and purity prints `Pure: (True, [])`. *(For full repository verification after code or doc edits, run `& .\scripts\phase_4_run.ps1`, which gates all `237` tests [`202` CompanySiteApply + `25` cover-letter + `10` knowledge index], knowledge index freshness, and codebase purity).*
 
 **Step 2 — Verify Sandbox I/O Isolation:**
 All dynamic outputs MUST be restricted to the candidate sandbox in the sibling `F:\Operations JOB AI AGENT\` data root (via `CompanySiteApply/utils/runtime_paths.py`; the repo keeps code plus the `default_user` blueprint only):

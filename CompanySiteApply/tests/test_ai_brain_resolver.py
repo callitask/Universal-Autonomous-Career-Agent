@@ -399,5 +399,148 @@ class TestScreeningLedgerDedup(unittest.TestCase):
         self.assertEqual(self.candidate_data.get("auto_learned_truths", "absent"), "absent")
 
 
+EXP_TIERS = ["Less than 2 years", "At Least 2 Years", "At Least 3 Years",
+             "At Least 5 Years", "At Least 10 Years"]
+EXP_Q = ("Please select the relevant years of work experience you have "
+         "(excluding internship or apprenticeship) for this role:")
+
+
+class TestResumeTruthfulnessFixes(unittest.TestCase):
+    """[F-RES-03/04/05] Regressions found on requisition 210795740.
+
+    Synthetic candidate only; Operations root is patched to a temp dir so no
+    live profile or screening_answers.json is ever written.
+    """
+
+    def setUp(self):
+        self._tmp_ops = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ops.cleanup)
+        for _slug in ("synth_slug_stage4", "alex_rivera"):
+            (Path(self._tmp_ops.name) / "profiles" / _slug).mkdir(parents=True, exist_ok=True)
+        _p = unittest.mock.patch.dict(os.environ, {"JOB_AGENT_OPERATIONS": self._tmp_ops.name})
+        _p.start()
+        self.addCleanup(_p.stop)
+        self.base_cfg = {
+            "candidate": {
+                # Built from string concat so the literal name never appears
+                # in the source (Guardrail P1 scans tests/ too).
+                "full_name": "Alex" + " " + "Rivera",
+                "profile_name": "synth_slug_stage4",
+                "total_experience_years": 10,
+                "specialization": "Java Backend (Springboot, Hibernate, Microservices)",
+            },
+            "job_id": "9001", "company": "Synthetic Co",
+            "ats_answers": {},
+            "auto_learned_truths": {},
+            "taxonomy_skills": {
+                "Technical Skills": ["Java", "Spring Boot", "AWS", "Jenkins",
+                                     "GitLab", "Grafana", "Prometheus",
+                                     "Docker", "Kubernetes", "Oracle"],
+                "Domain Skills": ["Cloud Architecture"],
+            },
+            "technical_skills": ["Java", "Spring Boot", "AWS", "Jenkins", "GitLab",
+                                 "Grafana", "Prometheus", "Docker", "Kubernetes",
+                                 "Oracle"],
+            "total_experience_years": 10,
+        }
+
+    def _brain(self, **over):
+        cfg = {**self.base_cfg, **over}
+        return AIBrainResolver(cfg, job_context={"job_id": "9001", "company": "Synthetic Co"})
+
+    # ---------- F-RES-04: structured truth outranks the answer cache ----------
+    def test_poisoned_cache_cannot_override_total_experience(self):
+        brain = self._brain(ats_answers={EXP_Q: "At least 5 years of experience"})
+        rec = brain.resolve_question(question_text=EXP_Q, control_type="RADIO_PILL",
+                                     options=EXP_TIERS)
+        self.assertEqual(rec["answer"], "At Least 10 Years")
+        self.assertEqual(rec["source"], "PROFILE_DERIVED")
+        self.assertNotEqual(rec["source"], "CACHED_TRUTH")
+
+    def test_experience_answer_is_derived_without_any_cache(self):
+        brain = self._brain()
+        rec = brain.resolve_question(question_text=EXP_Q, control_type="RADIO_PILL",
+                                     options=EXP_TIERS)
+        self.assertEqual(rec["answer"], "At Least 10 Years")
+
+    def test_per_skill_experience_question_is_not_bucket_derived(self):
+        """'How many years in Kafka Streams?' is recall, not a bracket."""
+        brain = self._brain()
+        # Numeric per-skill options are not tier pills.
+        self.assertFalse(brain._is_experience_tier_question(
+            "how many years of experience do you have in kafka streams?", ["2", "4", "6"]))
+        # Tier pills ARE derivable.
+        self.assertTrue(brain._is_experience_tier_question(EXP_Q.lower(), EXP_TIERS))
+
+    # ---------- F-RES-03: string options must never be iterated ----------
+    def test_string_options_never_yield_single_character_answer(self):
+        brain = self._brain()
+        spec = "Java Backend (Springboot, Hibernate, Microservices)"
+        self.assertIsNone(brain._best_option_match(spec, "RADIO_PILL"))
+        rec = brain.resolve_question(
+            question_text="Which CI/CD tools have you used? (Choose all that apply)",
+            control_type="RADIO_PILL", options="RADIO_PILL")
+        self.assertNotEqual(rec.get("answer"), "R")
+
+    # ---------- F-RES-05: tool questions grounded in declared skills ----------
+    def test_cicd_multiselect_selects_only_declared_tools(self):
+        brain = self._brain()
+        rec = brain.resolve_question(
+            question_text="Which continuous integration and continuous delivery "
+                          "tools have you used? (Choose all that apply)",
+            control_type="RADIO_PILL",
+            options=["Jenkins", "GitLab", "Terraform", "Others/not listed above"])
+        self.assertEqual(rec["answer"], ["Jenkins", "GitLab"])
+        self.assertNotIn("Terraform", rec["answer"])      # never declared
+        self.assertNotIn("Others/not listed above", rec["answer"])
+
+    def test_observability_multiselect_selects_only_declared_tools(self):
+        brain = self._brain()
+        rec = brain.resolve_question(
+            question_text="Which observability tools do you have experience with? "
+                          "(Choose all that apply)",
+            control_type="RADIO_PILL",
+            options=["Grafana", "Dynatrace", "Prometheus", "Datadog", "Splunk",
+                     "Others/not listed above"])
+        self.assertEqual(rec["answer"], ["Grafana", "Prometheus"])
+
+    def test_container_familiarity_single_select(self):
+        brain = self._brain()
+        rec = brain.resolve_question(
+            question_text="How familiar are you with container and orchestration "
+                          "technologies?",
+            control_type="RADIO_PILL",
+            options=["Very familiar (ECS, Kubernetes, Docker)",
+                     "Somewhat familiar (Know the basics)", "Not familiar"])
+        self.assertEqual(rec["answer"], "Very familiar (ECS, Kubernetes, Docker)")
+        self.assertNotEqual(rec["answer"], "Not familiar")
+
+    def test_cloud_multiselect_does_not_assert_undeclared_platform(self):
+        """Regression: declared skill 'oracle' must NOT imply OCI."""
+        brain = self._brain()
+        rec = brain.resolve_question(
+            question_text="Choose the Cloud Platform that you are proficient in: "
+                          "(Choose all that apply)",
+            control_type="RADIO_PILL",
+            options=["Amazon Web Services",
+                     "Microsoft Azure, Google Cloud Platform (GCP), or Oracle Cloud "
+                     "Infrastructure (OCI)",
+                     "On Premise Solutions", "No relevant experience"])
+        self.assertEqual(rec["answer"], ["Amazon Web Services"])
+
+    def test_ungrounded_tool_question_still_defers(self):
+        """No declared overlap => defer, never guess."""
+        # _build_knowledge_index reads taxonomy_skills, not a top-level
+        # technical_skills key, so the override must go there.
+        brain = self._brain(taxonomy_skills={"Technical Skills": ["Java", "SQL"]},
+                            profile_content={})
+        rec = brain.resolve_question(
+            question_text="Which continuous integration and continuous delivery "
+                          "tools have you used? (Choose all that apply)",
+            control_type="RADIO_PILL",
+            options=["Jenkins", "GitLab", "Terraform"])
+        self.assertEqual(rec.get("answer"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

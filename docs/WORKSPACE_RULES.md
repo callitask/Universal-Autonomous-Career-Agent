@@ -647,7 +647,7 @@ F:\JOB AI AGENT\
 │   ├── ats_detector.py                # Portal platform detection engine
 │   ├── section_agents/                # Coordinators + discrete scripts/ + sub_agents/
 │   ├── ipc/                           # Section IPC bus (ipc_manager.py)
-│   ├── tests/                         # Regression suite (193 CompanySiteApply tests + 15 cover-letter-id tests + 10 knowledge tests)
+│   ├── tests/                         # Regression suite (202 CompanySiteApply tests + 25 cover-letter-id tests + 10 knowledge tests)
 │   ├── anatomy/                       # Portal anatomy models
 │   ├── fingers/                       # ATS platform adapters (Oracle Cloud, Workday, Greenhouse)
 │   ├── nails/                         # Company-specific ATS customizations (nails/oracle: JPMC, Bristlecone)

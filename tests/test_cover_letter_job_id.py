@@ -55,7 +55,10 @@ from core.generate_professional_cover_letter import (
     clean_empty_job_id_refs,
     verify_cover_letter_job_id,
     verify_cover_letter_job_title,
+    _md_bold_to_html,
+    _strip_md_bold,
 )
+from core.generate_factual_tailored import ResumeTailorEngine
 
 
 class TestCoverLetterJobId(unittest.TestCase):
@@ -299,6 +302,77 @@ class TestBaseCoverLetterParser(unittest.TestCase):
             self.assertIn("<p>Lead-in to bullets.</p>", html)
             txt = open(os.path.join(d, "Cover_Letter.txt"), encoding="utf-8").read()
             self.assertIn("Transition rationale.\n\nLead-in to bullets.", txt)
+
+
+class TestMarkdownBoldRendering(unittest.TestCase):
+    """[F-CL-02] Markdown "**bold**" must never reach the employer PDF."""
+
+    def test_balanced_pairs_become_strong(self):
+        self.assertEqual(
+            _md_bold_to_html("Apply for **Lead Software Engineer** at **Acme**."),
+            "Apply for <strong>Lead Software Engineer</strong> at <strong>Acme</strong>.")
+
+    def test_adjacent_pairs_each_converted(self):
+        self.assertEqual(_md_bold_to_html("**a** and **b**"),
+                         "<strong>a</strong> and <strong>b</strong>")
+
+    def test_unbalanced_marker_left_intact(self):
+        """An odd trailing ** must not swallow the rest of the letter."""
+        src = "dangling ** marker then more text"
+        self.assertEqual(_md_bold_to_html(src), src)
+        self.assertEqual(_strip_md_bold(src), src)
+
+    def test_plain_text_unchanged(self):
+        self.assertEqual(_md_bold_to_html("no bold here"), "no bold here")
+        self.assertEqual(_strip_md_bold("no bold here"), "no bold here")
+
+    def test_txt_strips_markers_but_keeps_text(self):
+        self.assertEqual(_strip_md_bold("**JPMorgan Chase & Co.** team"),
+                         "JPMorgan Chase & Co. team")
+
+
+class TestZeroOmissionSectionRestore(unittest.TestCase):
+    """[F-RES-01/02] Bullets restore into their SOURCE section, not the tail."""
+
+    TEMPLATE = (
+        "# NAME\n\n## SKILLS\n\n**Alpha Domain:** thing one\n\n"
+        "## EXPERIENCE\n\n- Alpha role bullet\n- Beta role bullet\n\n"
+        "## HONORS & AWARDS\n\n- Award one\n"
+    )
+    TAILORED = (
+        "# NAME\n\n## SKILLS\n\n**Alpha Domain:** thing one\n\n"
+        "## EXPERIENCE\n\n- Alpha role bullet\n\n"
+        "## HONORS & AWARDS\n\n- Award one\n"
+    )
+
+    def setUp(self):
+        self.engine = ResumeTailorEngine.__new__(ResumeTailorEngine)
+        self.engine._reframed_any = False
+
+    def test_bold_prose_is_not_a_bullet(self):
+        """Regression: '**Label:** ...' skill blocks were counted as bullets."""
+        self.assertNotIn("**Alpha Domain:** thing one",
+                         ResumeTailorEngine._bullets_of(self.TEMPLATE))
+        self.assertIn("- Beta role bullet",
+                      ResumeTailorEngine._bullets_of(self.TEMPLATE))
+
+    def test_asterisk_bullet_still_counts(self):
+        self.assertIn("* star bullet", ResumeTailorEngine._bullets_of("* star bullet"))
+        self.assertIn("- dash bullet", ResumeTailorEngine._bullets_of("- dash bullet"))
+
+    def test_missing_bullet_returns_to_its_own_section(self):
+        out = self.engine._enforce_content_preservation(self.TEMPLATE, self.TAILORED)
+        self.assertIn("- Beta role bullet", out)
+        # Restored BEFORE the last section, not appended after it.
+        self.assertLess(out.index("- Beta role bullet"), out.index("## HONORS & AWARDS"))
+
+    def test_restore_does_not_leak_html_marker(self):
+        out = self.engine._enforce_content_preservation(self.TEMPLATE, self.TAILORED)
+        self.assertNotIn("zero-omission", out)
+
+    def test_no_missing_bullets_leaves_document_untouched(self):
+        out = self.engine._enforce_content_preservation(self.TEMPLATE, self.TEMPLATE)
+        self.assertEqual(out, self.TEMPLATE)
 
 
 if __name__ == "__main__":

@@ -87,6 +87,30 @@
 #   audit trail, never in rendered PDFs; Stage 4 must never block on IPC.
 # Preventative Notes: Never render HTML comments into PDFs; never default
 #   Stage 4 tailoring to AI-gated paths.
+#
+# [ENTRY #007]
+# Term: [F_RES_01_BOLD_IS_NOT_A_BULLET + F_RES_02_SECTION_AWARE_RESTORE]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: [F-RES-01] _bullets_of() treated ANY line starting with "*"
+#   as a list item, so every "**Label:** ..." skill block under ## SKILLS was
+#   counted as a bullet. [F-RES-02] When the reframe pass altered those lines,
+#   the zero-omission guardrail "restored" them by CONCATENATING ONTO THE
+#   DOCUMENT TAIL (after the last section), so the six core-competency blocks
+#   rendered under HONORS & AWARDS with no heading, duplicating the SKILLS
+#   block (+2.9 KB, role resume +52%). A damaged SKILLS line had lost its
+#   leading "Apache Cassandra (Partition Modeling, " text, which is what
+#   tripped the guardrail in the first place.
+# Changes Made: _bullets_of() now accepts only "- ", "* " and bullet list
+#   markers and skips "**bold**" prose (mirroring parse_resume_sections()).
+#   New _restore_bullets_into_sections() maps each missing bullet to its
+#   source heading and re-inserts it there; only bullets with no matching
+#   heading fall back to the visibly tagged tail.
+# Rationale: Restoring content must not corrupt document STRUCTURE. A guard
+#   that silently re-parents a section is worse than the omission it
+#   prevents, because the output still looks plausible.
+# Preventative Notes: Never restore bullets by appending to the document end;
+#   always re-insert under the source heading. Never treat "**" as a list
+#   marker. If a source heading is missing, the fallback MUST stay tagged.
 # ================================================================================
 """
 ================================================================================
@@ -407,8 +431,32 @@ class ResumeTailorEngine:
 
     @staticmethod
     def _bullets_of(md_text):
-        return [l.strip() for l in md_text.splitlines()
-                if l.strip()[:1] in ("-", "\u2022", "*") and len(l.strip()) > 2]
+        """List items ONLY.
+
+        [F-RES-01] A line beginning with "**" is BOLDED PROSE
+        (e.g. "**Core Backend & Low-Latency Engineering:** Core Java ..."),
+        not a list item. The old naive scan matched any leading "*", so every
+        "**Label:** ..." skill block under ## SKILLS was counted as a bullet.
+        The zero-omission guardrail then "restored" those blocks at the
+        DOCUMENT TAIL - after the last section - where they read as part of
+        whatever section happened to be last (HONORS & AWARDS).
+
+        Real bullets are "- item", "* item", or "\\u2022 item" (asterisk or dash
+        followed by whitespace). This mirrors parse_resume_sections(), which
+        already routed "**bold**" prose to ["lines"], not ["bullets"].
+        """
+        out = []
+        for raw in (md_text or "").splitlines():
+            s = raw.strip()
+            if len(s) <= 2:
+                continue
+            if s[:2] == "**":
+                continue  # bolded prose, never a bullet
+            if s[0] in ("-", "\u2022"):
+                out.append(s)
+            elif s[0] == "*" and s[1] == " ":
+                out.append(s)
+        return out
 
     # Distinctive tech tokens only (single-Capital words like Java/Spring are
     # common English and excluded): ALLCAPS, CamelCase, ++, #, dotted names.
@@ -514,11 +562,56 @@ class ResumeTailorEngine:
                 print(f"  [!] Reframe failed validation for '{section.get('heading', '')[:40]}' — keeping originals.", flush=True)
         return sections
 
+    def _restore_bullets_into_sections(self, template_md, tailored_md, missing):
+        """[F-RES-02] Put each restored bullet back under its SOURCE heading.
+
+        The guardrail used to concatenate missing bullets onto the document
+        tail, which visually merged them into the final section. Here every
+        bullet is mapped to the heading it lived under in the template and
+        re-inserted there. Only bullets whose heading is absent from the
+        tailored output fall back to the tail (and are tagged so the condition
+        is greppable in the markdown).
+        """
+        if not missing:
+            return tailored_md
+
+        def _norm(t):
+            return re.sub(r"\s+", " ", t.strip().lower())
+
+        src_heading = {}
+        for sec in self.parse_resume_sections(template_md):
+            for b in sec["bullets"]:
+                src_heading.setdefault(_norm(b), sec["heading"])
+
+        sections = self.parse_resume_sections(tailored_md)
+        by_heading = {}
+        for sec in sections:
+            if sec["heading"]:
+                by_heading.setdefault(_norm(sec["heading"]), sec)
+
+        placed, orphans = 0, []
+        for b in missing:
+            sec = by_heading.get(_norm(src_heading.get(_norm(b), "")))
+            if sec is not None:
+                sec["bullets"].append(b)
+                placed += 1
+            else:
+                orphans.append(b)
+
+        if orphans:
+            print(f"  [!] Zero-Omission Guardrail: {len(orphans)} bullet(s) had no "
+                  f"matching section in the tailored output; appended at tail.", flush=True)
+            return (self.reassemble_markdown(sections).rstrip()
+                    + "\n\n<!-- restored by zero-omission guardrail (no source section) -->\n"
+                    + "\n".join(orphans) + "\n")
+        return self.reassemble_markdown(sections)
+
     def _enforce_content_preservation(self, template_md, tailored_md):
         """Zero-Omission Guardrail: every master bullet must survive tailoring.
 
         Reorder/highlight/re-frame only — never drop. Any missing bullet is
-        logged loudly and restored verbatim so content loss is impossible.
+        logged loudly and restored **into its original section** so content
+        loss is impossible without corrupting document structure.
         """
         norm = lambda b: re.sub(r"\s+", " ", b.strip().lower())
         kept = {norm(b) for b in self._bullets_of(tailored_md)}
@@ -533,9 +626,9 @@ class ResumeTailorEngine:
                 return tailored_md
             print(f"  [!] Zero-Omission Guardrail: bullet count drift ({_n_out}/{_n_master}) after reframe.", flush=True)
             return tailored_md
-        print(f"  [!] Zero-Omission Guardrail: restoring {len(missing)} dropped bullet(s).", flush=True)
-        return (tailored_md.rstrip() + "\n\n<!-- restored by zero-omission guardrail -->\n"
-                + "\n".join(missing) + "\n")
+        print(f"  [!] Zero-Omission Guardrail: restoring {len(missing)} dropped bullet(s) "
+              f"into their source section(s).", flush=True)
+        return self._restore_bullets_into_sections(template_md, tailored_md, missing)
 
     def build_tailored_resume(self, jd_text, base_resume_md_path=None):
         resume_src = Path(base_resume_md_path) if base_resume_md_path else self.base_resume_md_path

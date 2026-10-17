@@ -72,7 +72,7 @@ CompanySiteApply/
 │   ├── education_healer.py         # Fixes swapped degree vs. college mappings
 │   └── review_verifier.py          # Coordinates DOM-level pre-submit verification
 │
-├── tests/                          # Automated regression test suite (193 tests, 20 files)
+├── tests/                          # Automated regression test suite (202 tests, 20 files)
 │   ├── test_anatomy.py             # Portal anatomy model tests
 │   ├── test_ai_brain_resolver.py   # Screening Q&A dedup + answers.json mirror tests
 │   ├── test_answer_integrity.py    # Answer-integrity contract tests

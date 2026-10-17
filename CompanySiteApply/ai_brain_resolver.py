@@ -46,6 +46,36 @@
 # Rationale: Screening Q&A is only useful per requisition.
 # Preventative Notes: Never reset job_context implicitly; never require
 #                     company+title when a job_id can locate the role folder.
+#
+# [ENTRY #004]
+# Term: [F_RES_03_STRING_OPTIONS + F_RES_04_TRUTH_OVER_CACHE + F_RES_05_TOOL_GROUNDING]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: Three defects found on requisition 210795740.
+#   [F-RES-03] When `options` arrived as a bare string (the control_type
+#     "RADIO_PILL" in the options slot), _best_option_match() iterated it
+#     CHARACTER BY CHARACTER and substring-matched "R" inside "sp(R)ingboot",
+#     returning "R" as a confident answer ("Selected specialization 'R'").
+#   [F-RES-04] ats_answers/auto_learned_truths are CACHES, but they were
+#     consulted BEFORE derivation, so a poisoned entry ("At least 5 years of
+#     experience" against candidate.total_experience_years = 10) won and was
+#     stamped source=CACHED_TRUTH with the rationale "Exact match found in
+#     candidate ground-truth config." - a false provenance claim.
+#   [F-RES-05] _deduce_answer() had no handler for tool/platform categories
+#     (CI/CD, observability, container familiarity, cloud platform) and its
+#     branch-C catch-all claimed those questions; all four deferred empty.
+# Changes Made: options coerced to a list of non-empty strings in both
+#   resolve_question() and _best_option_match(); new
+#   _is_experience_tier_question() + _answer_matches_options() let structured
+#   truth (PROFILE_DERIVED) outrank the cache for bracket questions; new
+#   _ground_tool_options() answers tool categories from DECLARED
+#   technical_skills only, running before the branch-C catch-all, with
+#   generic-token and alias guards.
+# Rationale: A cache is a memory, not a truth. Ground truth computed from the
+#   candidate profile must outrank it, provenance labels must be honest, and
+#   the agent must never assert a tool/platform the candidate never declared.
+# Preventative Notes: Never label a cache hit as ground truth. Never iterate a
+#   string where a list is expected. Never select a tool option that is not
+#   present in candidate technical_skills; defer instead of guessing.
 # ==============================================================================
 
 import os
@@ -561,7 +591,17 @@ class AIBrainResolver:
         """
         q_clean = question_text.strip()
         q_lower = q_clean.lower()
-        options = options or []
+        # [F-RES-03] options MUST be a list of strings. A bare string (e.g. the
+        # control_type "RADIO_PILL" arriving in the options slot) used to be
+        # iterated CHARACTER-BY-CHARACTER by _best_option_match(), which
+        # substring-matched "R" inside "sp( R )ingboot" and returned "R" as a
+        # confident answer. Coerce defensively instead of trusting the caller.
+        if isinstance(options, str):
+            options = [options]
+        elif options is None:
+            options = []
+        else:
+            options = [o for o in options if isinstance(o, str) and o.strip()]
 
         # 0. Self-echo guard (incident 210788242): scanners sometimes emit an
         #    OPTION pill's text as the question (label fallback). Answering an
@@ -579,6 +619,29 @@ class AIBrainResolver:
             }
             self._persist_answer(record)
             return record
+
+        # 0b. [F-RES-04] Structured ground truth OUTRANKS the answer cache for
+        # derivable questions. ats_answers/auto_learned_truths are caches, not
+        # truth: a poisoned entry ("At least 5 years of experience" for a
+        # 10.8-year candidate) exact-matched first, got conformed onto the
+        # "At Least 5 Years" pill, and was stamped CACHED_TRUTH with the
+        # rationale "Exact match found in candidate ground-truth config." -
+        # a false provenance claim. Experience tiers are COMPUTED from
+        # candidate.total_experience_years, so compute them first.
+        if self._is_experience_tier_question(q_lower, options):
+            derived, why = self._deduce_answer(q_clean, control_type, options, req_count)
+            if derived and self._answer_matches_options(derived, options, control_type):
+                record = {
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "question": q_clean,
+                    "control_type": control_type,
+                    "options": options,
+                    "source": "PROFILE_DERIVED",
+                    "answer": derived,
+                    "rationale": why,
+                }
+                self._persist_answer(record)
+                return record
 
         # 1. Check exact match in ats_answers or auto_learned_truths
         cached_val = self._find_in_cached_truths(q_clean)
@@ -621,6 +684,141 @@ class AIBrainResolver:
         }
         self._persist_answer(record)
         return record
+
+    # [F-RES-05] Tool-category question hints and grounding vocabulary.
+    _TOOL_CATEGORY_HINTS = (
+        "continuous integration", "continuous delivery", "ci/cd", "cicd",
+        "observability", "monitoring tool", "container", "orchestration",
+        "cloud platform", "infrastructure as a service", "devops tool",
+        "version control", "source control", "build tool", "test framework",
+    )
+    # Generic words that appear inside tool option text but can NEVER ground a
+    # match on their own ("Google Cloud Platform" contains "cloud", which would
+    # otherwise assert Azure/GCP/OCI for a Java backend with no such skill).
+    _GENERIC_SKILL_TOKENS = frozenset({
+        "cloud", "platform", "tool", "tools", "technology", "service",
+        "services", "system", "systems", "software", "engineering", "developer",
+        "development", "programming", "data", "management", "support",
+        "experience", "other", "others", "solution", "solutions", "design",
+        "architecture", "application", "applications", "infrastructure",
+        "integration", "framework", "scripting", "web", "full", "native",
+    })
+    # Options that must never be selected by skill grounding: they are
+    # catch-alls / negations whose meaning is not a tool claim.
+    _OPTION_DISTRACTORS = (
+        "others/not listed", "other/not listed", "not listed above", "none of",
+        "no relevant experience", "not familiar", "none", "n/a",
+    )
+    # Common option spellings -> the skill token that grounds them.
+    _SKILL_ALIASES = {
+        "amazon web services": "aws", "microsoft azure": "azure",
+        "google cloud platform": "gcp", "gcp": "gcp",
+        "oracle cloud infrastructure": "oci", "oci": "oci",
+        "amazon elastic container service": "ecs", "amazon eks": "eks",
+        "red hat openshift": "openshift", "openshift": "openshift",
+        "continuous integration": "ci/cd", "site reliability": "sre",
+    }
+
+    def _ground_tool_options(
+        self,
+        q_lower: str,
+        idx: Dict[str, Any],
+        options: List[str],
+        control_type: str,
+    ):
+        """[F-RES-05] Answer tool/platform questions from DECLARED skills only.
+
+        Returns (answer, rationale), or None when the question is not a tool
+        category question or nothing is grounded (caller keeps deferring).
+        """
+        if not options or not any(h in q_lower for h in self._TOOL_CATEGORY_HINTS):
+            return None
+
+        declared = [str(s).strip().lower() for s in idx.get("technical_skills", [])]
+        declared = [s for s in declared if len(s) >= 2]
+        if not declared:
+            return None
+
+        multi = bool(re.search(r"all that apply|select all|multiple|choose all",
+                               q_lower)) or control_type == "DROPDOWN_MULTI"
+
+        matched: List[str] = []
+        declared_set = set(declared)
+        for opt in options:
+            opt_l = str(opt).strip().lower()
+            if any(d in opt_l for d in self._OPTION_DISTRACTORS):
+                continue
+            # 1) Near-exact: the option IS the declared tool ("Jenkins").
+            if opt_l in declared_set:
+                matched.append(opt)
+                continue
+            # 2) Known alias for a declared tool ("Amazon Web Services" -> aws).
+            alias = self._SKILL_ALIASES.get(opt_l)
+            if alias and alias in declared_set:
+                matched.append(opt)
+                continue
+            # 3) Whole-word containment by a SPECIFIC declared skill. SINGLE-SELECT
+            #    ONLY: for prose-style pills such as "Very familiar (ECS,
+            #    Kubernetes, Docker)" containment is the right test. For a
+            #    "choose all that apply" list the option IS the tool name, so
+            #    containment over-reaches - the declared skill "oracle"
+            #    (Oracle Database) would assert "Oracle Cloud Infrastructure
+            #    (OCI)" for a backend with no cloud experience.
+            hit = False
+            if not multi:
+                for sk in declared:
+                    if sk in self._GENERIC_SKILL_TOKENS or len(sk) < 4:
+                        continue
+                    if re.search(rf"\b{re.escape(sk)}\b", opt_l):
+                        hit = True
+                        break
+            if hit:
+                matched.append(opt)
+
+        if not matched:
+            return None
+
+        if multi:
+            picked = matched[:max(1, len(matched))]
+            return picked, ("Grounded in declared technical skills: "
+                            + ", ".join(picked))
+        return matched[0], (f"Selected '{matched[0]}' — matches declared technical "
+                            f"skills in candidate profile.")
+
+    def _is_experience_tier_question(self, q_lower: str, options: Optional[List[str]] = None) -> bool:
+        """[F-RES-04] True for experience-BRACKET questions that are derivable
+        from candidate.total_experience_years rather than recalled.
+
+        Guarded on the OPTIONS being tier-shaped, not on question wording alone.
+        "How many years of experience do you have in Kafka Streams?" also
+        contains "how many years", but its options are numeric inputs about a
+        single skill - deriving a bucket from total tenure would answer a
+        different question than the one asked.
+        """
+        opts = options or []
+        tier_shaped = any(
+            re.search(r"less than|at least|more than|over\s*\d|\d+\s*\+?\s*year",
+                      str(o), re.I)
+            for o in opts
+        )
+        if not tier_shaped:
+            return False
+        return any(w in q_lower for w in (
+            "years of work experience", "experience you have",
+            "relevant work experience", "years of experience",
+            "total experience", "total years of experience"))
+
+    @staticmethod
+    def _answer_matches_options(answer: Any, options: List[str], control_type: str) -> bool:
+        """[F-RES-04] Shared validity check for a resolved answer."""
+        if not options:
+            return True
+        if control_type in ("RADIO_PILL", "BINARY_PILL", "DROPDOWN"):
+            return answer in options
+        if control_type == "DROPDOWN_MULTI":
+            return (isinstance(answer, list) and len(answer) > 0
+                    and all(x in options for x in answer))
+        return True
 
     def _find_in_cached_truths(self, question: str) -> Optional[Any]:
         """Checks ats_answers and auto_learned_truths with normalization."""
@@ -732,6 +930,18 @@ class AIBrainResolver:
             selected_pill = self._resolve_tier_pill(total_exp, options)
             return selected_pill, f"Mapped {total_exp} years of total experience to bracket '{selected_pill}'."
 
+        # [F-RES-05] Tool / platform category questions (CI/CD, observability,
+        # container-orchestration familiarity, cloud platform). MUST run before
+        # branch C: that catch-all substring-matched the specialization against
+        # ANY option list and claimed the question ("Selected specialization
+        # 'R'..."). These questions instead ground strictly in the candidate's
+        # declared technical_skills - an option is selected ONLY when a declared
+        # skill is present in it. Nothing is inferred, so an ungrounded option
+        # (Terraform/Datadog/Splunk for a Java backend) is never asserted.
+        tool_ans = self._ground_tool_options(q_lower, idx, options, control_type)
+        if tool_ans is not None:
+            return tool_ans
+
         # C. Option-Driven Specialization Recognition
         # Search candidate specialization, target titles, and skills against options
         best = self._best_option_match(idx.get("specialization", ""), options)
@@ -826,6 +1036,14 @@ class AIBrainResolver:
     def _best_option_match(self, target: str, options: List[str]) -> Optional[str]:
         """Matches a target term against a list of DOM option strings."""
         if not target or not options:
+            return None
+        # [F-RES-03] Defence in depth: never iterate a bare string here. Doing so
+        # yielded single-character "matches" (e.g. "R" from the control_type
+        # string "RADIO_PILL") that were then accepted as real answers.
+        if isinstance(options, str):
+            options = [options]
+        options = [o for o in options if isinstance(o, str) and o.strip()]
+        if not options:
             return None
         target_norm = target.strip().lower()
 
