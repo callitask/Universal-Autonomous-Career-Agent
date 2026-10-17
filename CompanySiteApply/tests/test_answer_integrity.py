@@ -11,6 +11,18 @@
 #               deferral fallback, threadsafe generation wrapper, and honest
 #               review-branch status.
 # Preventative Notes: Never answer a question that is one of its own options.
+#
+# [ENTRY #002]
+# Term: [F_S4_01_FRESHNESS_GATE_PATH]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: s4_cover_letter_upload imported Path as _Path BELOW the
+#                  freshness gate, making _Path function-local; the resulting
+#                  UnboundLocalError was swallowed, silently disabling the
+#                  PDF-vs-txt mtime gate.
+# Changes Made: Source-level pin: no `_Path` alias, freshness gate reads
+#               `Path(_role_root) / "Cover_Letter.txt"` and keeps the 5.0s margin.
+# Rationale: Silent gate bypass is worse than a loud failure.
+# Preventative Notes: Never alias Path locally below its first use.
 # ==============================================================================
 
 import asyncio
@@ -124,6 +136,25 @@ class TestThreadsafeGeneration(unittest.TestCase):
                 return _generate_cover_letter_threadsafe({}, {"job_id": "1"}, "/tmp")
 
         self.assertEqual(asyncio.run(_run()), "letter.pdf")
+
+    def test_freshness_gate_uses_module_path(self):
+        # [F-S4-01] regression: `from pathlib import Path as _Path` sat below
+        # the freshness gate, making _Path function-local and raising
+        # UnboundLocalError that the outer `except Exception` swallowed —
+        # so _mt_ok never actually evaluated (stale PDF could pass).
+        import inspect
+        import re as _re
+        from CompanySiteApply.section_agents.scripts import s4_cover_letter_upload as mod
+        src = inspect.getsource(mod)
+        # Strip comments/docstrings — prose may name the old alias, code must not.
+        code = "\n".join(l.split("#", 1)[0] for l in src.splitlines())
+        code = _re.sub(r'"""[\s\S]*?"""', "", code)
+        self.assertNotIn("_Path", code)
+        self.assertIn('from pathlib import Path', code)
+        # The freshness comparison must still exist and read the role txt.
+        self.assertIn('_txt = Path(_role_root) / "Cover_Letter.txt"', code)
+        self.assertIn("_txt.stat().st_mtime - 5.0", code)
+        self.assertIn("_mt_ok", code)
 
 
 class TestReviewBranchHonesty(unittest.TestCase):

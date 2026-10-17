@@ -30,8 +30,22 @@
 #               dedup, paragraph/bullet extraction, missing-file guard).
 # Rationale: Parser output feeds PDF kwargs; pin it with synthetic data.
 # Preventative Notes: Never use real candidate names in test fixtures.
+#
+# [ENTRY #004]
+# Term: [F_CL_01_FALLBACK_OVERWRITE_REGRESSION]
+# Timestamp: 2026-10-17 +05:30
+# Issue / Context: The generic fallback block in generate_tailored_cover_letter()
+#                  sat at function scope, so it overwrote company BASE.md
+#                  prose and bullets with hardcoded boilerplate.
+# Changes Made: Two pins — BASE.md prose+bullets survive end-to-end (no
+#               boilerplate in kwargs), and the no-BASE fallback still emits
+#               4 generic bullets.
+# Rationale: Both branches must be independently verifiable.
+# Preventative Notes: Never assert only one branch; never let fallback run at
+#                     function scope.
 # ==============================================================================
 
+import json
 import os
 import tempfile
 import unittest
@@ -204,6 +218,58 @@ class TestBaseCoverLetterParser(unittest.TestCase):
         from core.generate_professional_cover_letter import _parse_base_cover_letter_md
         out = _parse_base_cover_letter_md("/nonexistent_dir_xyz/BASE.md", self._ctx())
         self.assertEqual(out, {"opening": [], "bullets": [], "closing": [], "rendered_md": ""})
+
+    def test_base_letter_survives_no_fallback_interference(self):
+        # [F-CL-01] regression: the generic fallback block once ran at
+        # function scope and overwrote BASE.md prose + bullets, shipping
+        # boilerplate ("Distributed Event-Driven Architecture") instead of
+        # the company-framed letter.
+        from pathlib import Path as _P
+        from unittest.mock import patch
+        from core.generate_professional_cover_letter import generate_tailored_cover_letter
+        with tempfile.TemporaryDirectory() as d:
+            prof = _P(d) / "synth_cov"
+            (prof / "company_site_apply" / "JPMorganChase" / "cover_letters").mkdir(parents=True)
+            (prof / "company_site_apply" / "JPMorganChase" / "cover_letters" / "BASE.md").write_text(
+                "Dear Hiring Team,\n\n"
+                "First BASE paragraph.\n\n"
+                "Second BASE paragraph.\n\n"
+                "- **BASE Bullet One:** Real tailored content.\n"
+                "- **BASE Bullet Two:** More real tailored content.\n\n"
+                "Closing BASE paragraph.\n\n"
+                "Sincerely,\nAlex Rivera\n", encoding="utf-8")
+            cand = {"profile_dir": str(prof),
+                    "candidate": {"full_name": "Alex Rivera", "total_experience_years": 10}}
+            jd = {"title": "Staff Engineer", "job_id": "3001",
+                  "company": "JPMorgan Chase & Co.", "location": "Bengaluru, India"}
+            with patch("core.generate_professional_cover_letter.generate_cover_letter_pdf") as mock_pdf:
+                mock_pdf.return_value = _P(d) / "x.pdf"
+                generate_tailored_cover_letter(cand, jd, d)
+                kwargs = mock_pdf.call_args.kwargs
+            self.assertEqual([b["title"] for b in kwargs["bullets"]],
+                             ["BASE Bullet One", "BASE Bullet Two"])
+            self.assertIn("First BASE paragraph", kwargs["opening_p"])
+            self.assertIn("Second BASE paragraph", kwargs["transition_p"])
+            self.assertIn("Closing BASE paragraph", kwargs["synthesis_p"])
+            blob = json.dumps(kwargs)
+            self.assertNotIn("Distributed Event-Driven Architecture", blob)
+            self.assertNotIn("Cloud-Native Resilience", blob)
+
+    def test_no_base_letter_still_falls_back_to_generic(self):
+        # Guard both ways: no BASE.md must keep the deterministic fallback.
+        from unittest.mock import patch
+        from core.generate_professional_cover_letter import generate_tailored_cover_letter
+        with tempfile.TemporaryDirectory() as d:
+            cand = {"candidate": {"full_name": "Alex Rivera", "total_experience_years": 10}}
+            jd = {"title": "Staff Engineer", "job_id": "3001",
+                  "company": "JPMorgan Chase & Co.", "location": "Bengaluru, India"}
+            with patch("core.generate_professional_cover_letter.generate_cover_letter_pdf") as mock_pdf:
+                mock_pdf.return_value = os.path.join(d, "x.pdf")
+                generate_tailored_cover_letter(cand, jd, d)
+                kwargs = mock_pdf.call_args.kwargs
+            self.assertEqual(len(kwargs["bullets"]), 4)
+            self.assertIn("Distributed Event-Driven Architecture",
+                          kwargs["bullets"][0]["title"])
 
     def test_multiparagraph_transition_splits_html_paragraphs(self):
         # Phase 4 Stage 1: \n\n-separated prose must render as separate <p>

@@ -25,6 +25,22 @@
 #            paragraph breaks while txt stays plain-text faithful.
 # Preventative Notes: Never change generate_cover_letter_pdf() signature;
 #                     split HTML only, never txt.
+#
+# [ENTRY #003]
+# Term: [F_CL_01_FALLBACK_INDENTATION_FIX]
+# Timestamp: 2026-10-17 16:25:00 +05:30
+# Issue / Context: [F-CL-01] The generic fallback block (transition_p,
+#                  bullets, synthesis_p, closing_p) sat at function scope
+#                  instead of inside `else:`, so it unconditionally
+#                  OVERWROTE the company BASE.md prose and bullets with
+#                  boilerplate whenever a BASE.md WAS parsed.
+# Changes Made: Entire fallback block moved into `else:`; BASE branch also
+#               hardened (guarded list indexes, explanatory comment).
+# Rationale: Company-framed letters must reach the PDF untouched; the
+#            fallback exists only when no BASE.md was found.
+# Preventative Notes: Never hoist fallback assignments out of `else:`; never
+#                     trust a client-supplied full-file replacement verbatim —
+#                     re-derive from disk and pin both branches with tests.
 # ==============================================================================
 
 import os
@@ -568,55 +584,57 @@ def generate_tailored_cover_letter(
     if base_parsed and (base_parsed["opening"] or base_parsed["bullets"]):
         _open = base_parsed["opening"]
         _close = base_parsed["closing"]
-        opening_p = _open[0]
-        transition_p = "\n\n".join(_open[1:])
+        opening_p = _open[0] if _open else ""
+        transition_p = "\n\n".join(_open[1:]) if len(_open) > 1 else ""
         bullets = [{"title": t, "body": b} for (t, b) in base_parsed["bullets"]]
         synthesis_p = _close[0] if _close else ""
-        closing_p = "\n\n".join(_close[1:])
+        closing_p = "\n\n".join(_close[1:]) if len(_close) > 1 else ""
     else:
-        # Generate content via AIClient if available, otherwise synthesize from config
+        # No usable BASE.md — synthesize a deterministic generic letter.
+        # This block MUST stay inside `else:`; when it ran at function
+        # scope it overwrote company-framed BASE.md prose and bullets.
         opening_p = (
-        f"I am writing to express my enthusiastic interest in the <strong>{job_title}</strong> "
-        f"position" + (f" (Job ID: {job_id})" if job_id else "") + f" at {company_s}. "
-        f"With over {cand.get('total_experience_years', 10)}+ years of software engineering leadership "
-        f"architecting high-throughput distributed systems and mission-critical enterprise platforms, "
-        f"I am strongly aligned with your mandate to engineer resilient, market-leading solutions."
-    )
-    transition_p = "Throughout my career leading engineering deliverables across enterprise platforms, I have specialized in marrying core backend architecture with high operational reliability:"
-    
-    bullets = [
-        {
-            "title": "Distributed Event-Driven Architecture",
-            "body": "Architected scalable, low-latency microservices supporting high-throughput transactions with 99.99% delivery reliability. Designed resilient event streaming pipelines incorporating schema governance, partition tuning, and dead-letter queues."
-        },
-        {
-            "title": "Enterprise Data Architecture & High Performance Persistence",
-            "body": "Architected hybrid data persistence layers leveraging relational RDBMS for strict ACID transaction semantics alongside distributed stores for massive data workloads and automated data analytics pipelines."
-        },
-        {
-            "title": "Cloud-Native Resilience & DevSecOps",
-            "body": "Built cloud-native microservices deployed across containerized platforms (Kubernetes, Docker, Cloud), establishing zero-downtime CI/CD deployment pipelines, automated testing gates, and strict infrastructure monitoring protocols."
-        },
-        {
-            "title": "Technical Leadership & Architecture Governance",
-            "body": "Directed cross-functional engineering teams, instituting rigorous code review standards, observability frameworks (distributed tracing, metrics, alerting), and mentoring developers in enterprise design patterns."
-        }
-    ]
-    
-    synthesis_p = (
-        f"{company}’s dedication to technology excellence requires platforms that are not only performant and scalable, "
-        f"but fundamentally auditable, secure, and fault-tolerant. My empirical background in designing distributed backend microservices, "
-        f"optimizing asynchronous messaging, and leading enterprise engineering teams directly equips me to deliver immediate value."
-    )
-    try:
-        from CompanySiteApply.utils.company_workspace import company_cover_tone
-        _tone = company_cover_tone(company)
-    except Exception:
-        _tone = ""
-    if _tone:
-        synthesis_p += f" I am drawn to this role by {_tone}."
-    closing_p = f"I welcome the opportunity to discuss how my technical leadership, distributed backend expertise, and passion for engineering quality can contribute to the mission of {company_s}. Thank you for your time and consideration."
-    
+            f"I am writing to express my enthusiastic interest in the <strong>{job_title}</strong> "
+            f"position" + (f" (Job ID: {job_id})" if job_id else "") + f" at {company_s}. "
+            f"With over {cand.get('total_experience_years', 10)}+ years of software engineering leadership "
+            f"architecting high-throughput distributed systems and mission-critical enterprise platforms, "
+            f"I am strongly aligned with your mandate to engineer resilient, market-leading solutions."
+        )
+        transition_p = "Throughout my career leading engineering deliverables across enterprise platforms, I have specialized in marrying core backend architecture with high operational reliability:"
+
+        bullets = [
+            {
+                "title": "Distributed Event-Driven Architecture",
+                "body": "Architected scalable, low-latency microservices supporting high-throughput transactions with 99.99% delivery reliability. Designed resilient event streaming pipelines incorporating schema governance, partition tuning, and dead-letter queues."
+            },
+            {
+                "title": "Enterprise Data Architecture & High Performance Persistence",
+                "body": "Architected hybrid data persistence layers leveraging relational RDBMS for strict ACID transaction semantics alongside distributed stores for massive data workloads and automated data analytics pipelines."
+            },
+            {
+                "title": "Cloud-Native Resilience & DevSecOps",
+                "body": "Built cloud-native microservices deployed across containerized platforms (Kubernetes, Docker, Cloud), establishing zero-downtime CI/CD deployment pipelines, automated testing gates, and strict infrastructure monitoring protocols."
+            },
+            {
+                "title": "Technical Leadership & Architecture Governance",
+                "body": "Directed cross-functional engineering teams, instituting rigorous code review standards, observability frameworks (distributed tracing, metrics, alerting), and mentoring developers in enterprise design patterns."
+            }
+        ]
+
+        synthesis_p = (
+            f"{company}’s dedication to technology excellence requires platforms that are not only performant and scalable, "
+            f"but fundamentally auditable, secure, and fault-tolerant. My empirical background in designing distributed backend microservices, "
+            f"optimizing asynchronous messaging, and leading enterprise engineering teams directly equips me to deliver immediate value."
+        )
+        try:
+            from CompanySiteApply.utils.company_workspace import company_cover_tone
+            _tone = company_cover_tone(company)
+        except Exception:
+            _tone = ""
+        if _tone:
+            synthesis_p += f" I am drawn to this role by {_tone}."
+        closing_p = f"I welcome the opportunity to discuss how my technical leadership, distributed backend expertise, and passion for engineering quality can contribute to the mission of {company_s}. Thank you for your time and consideration."
+
     return generate_cover_letter_pdf(
         target_dir=target_dir,
         candidate_name=name.upper(),

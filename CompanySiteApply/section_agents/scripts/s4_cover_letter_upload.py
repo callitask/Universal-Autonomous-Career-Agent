@@ -9,6 +9,22 @@
 #               tailored PDF resolution/synthesis, attachment upload, and transition verification to --filled.
 # Rationale: Guarantees 100% role-accurate document matching and modular sub-section isolation.
 # Preventative Notes: Always remove pre-uploaded/stale cover letters before attaching fresh documents.
+#
+# [ENTRY #004]
+# Term: [F_S4_01_UNBOUND_LOCAL_PATH_FIX]
+# Timestamp: 2026-10-17 16:25:00 +05:30
+# Issue / Context: [F-S4-01] `from pathlib import Path as _Path` sat at line
+#                  276, BELOW the freshness gate at line 205. Python treats
+#                  _Path as function-local, so line 205 raised
+#                  UnboundLocalError — swallowed by the enclosing
+#                  `except Exception:` — silently disabling the Decision 2
+#                  PDF-vs-txt mtime freshness check (stale PDF could pass).
+# Changes Made: Line 205 now uses the module-level `Path` (imported at the
+#               top); the late alias renamed `_LocalPath` so no shadowing
+#               exists; the later `_txt2` check also uses `Path`.
+# Rationale: A silently skipped staleness gate ships stale cover letters.
+# Preventative Notes: Never alias an import below its first use; never let a
+#                     freshness gate live inside a broad `except Exception`.
 # ==============================================================================
 # [ENTRY #002]
 # Term: [REQUISITION_REGEX_PREVIEW_EXPANSION]
@@ -202,7 +218,13 @@ def heal_cover_letter_upload(
                             # paired with refreshed companions must not pass).
                             _mt_ok = True
                             try:
-                                _txt = _Path(_role_root) / "Cover_Letter.txt"
+                                # Module-level Path (line 37) — the local
+                                # `from pathlib import Path as _Path` below
+                                # (line 276) made _Path function-local and
+                                # raised UnboundLocalError here, which the
+                                # outer `except Exception` swallowed: the
+                                # freshness gate silently never ran.
+                                _txt = Path(_role_root) / "Cover_Letter.txt"
                                 if _txt.is_file():
                                     _mt_ok = (_cand.stat().st_mtime
                                               >= _txt.stat().st_mtime - 5.0)
@@ -273,8 +295,8 @@ def heal_cover_letter_upload(
                     verify_cover_letter_job_id,
                     verify_cover_letter_job_title,
                 )
-                from pathlib import Path as _Path
-                _cp = _Path(cover_path)
+                from pathlib import Path as _LocalPath
+                _cp = _LocalPath(cover_path)
                 if "APPLIED ON COMPANY WEBSITE" in str(_cp):
                     # Walk up to the <Role>_<id> folder.
                     _par = _cp.parent
@@ -305,7 +327,7 @@ def heal_cover_letter_upload(
                     # PDF older than its txt is stale (regenerated companions
                     # beside an old PDF) — force regeneration.
                     try:
-                        _txt2 = _Path(_parent) / "Cover_Letter.txt"
+                        _txt2 = Path(_parent) / "Cover_Letter.txt"
                         if _txt2.is_file() and _cp.is_file() and (
                                 _cp.stat().st_mtime < _txt2.stat().st_mtime - 5.0):
                             logger.warning(
